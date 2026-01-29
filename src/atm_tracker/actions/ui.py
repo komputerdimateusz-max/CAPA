@@ -55,7 +55,7 @@ def _render_add() -> None:
         with col2:
             status = st.selectbox("Status", ["OPEN", "IN_PROGRESS", "CLOSED"], index=0)
             created_at = st.date_input("Created at *", value=date.today())
-            implemented_at = st.date_input("Implemented at", value=None)
+            target_date = st.date_input("Target Date", value=None)
             closed_at = st.date_input("Closed at", value=None)
 
             st.markdown("**Action cost (MVP)**")
@@ -84,7 +84,7 @@ def _render_add() -> None:
             champion=_normalize_name(champion),
             status=status,
             created_at=created_at,
-            implemented_at=implemented_at,
+            target_date=target_date,
             closed_at=closed_at,
             cost_internal_hours=cost_internal_hours,
             cost_external_eur=cost_external_eur,

@@ -19,7 +19,7 @@ class ActionCreate(BaseModel):
 
     status: Status = "OPEN"
     created_at: date
-    implemented_at: Optional[date] = None
+    target_date: Optional[date] = None
     closed_at: Optional[date] = None
 
     cost_internal_hours: float = Field(default=0.0, ge=0.0)
@@ -36,10 +36,10 @@ class ActionCreate(BaseModel):
             raise ValueError("closed_at is required when status=CLOSED")
         return v
 
-    @field_validator("implemented_at")
+    @field_validator("target_date")
     @classmethod
-    def implemented_before_closed(cls, v, info):
+    def target_date_before_closed(cls, v, info):
         closed_at = info.data.get("closed_at")
         if v and closed_at and v > closed_at:
-            raise ValueError("implemented_at cannot be after closed_at")
+            raise ValueError("target_date cannot be after closed_at")
         return v
