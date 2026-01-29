@@ -50,6 +50,7 @@ def _render_add() -> None:
             line = st.text_input("Line *", placeholder="e.g. L1")
             project = st.text_input("Project / family", placeholder="e.g. ProjectX")
             champion = _render_champion_input(champions_df)
+            team_selection = _render_team_input(champions_df, champion_options, selected_ids=team_selection)
             tags = st.text_input("Tags (comma-separated)", placeholder="scrap, coating, poka-yoke")
 
         with col2:
@@ -64,7 +65,6 @@ def _render_add() -> None:
             cost_material_eur = st.number_input("Material cost (€)", min_value=0.0, value=0.0, step=10.0)
 
         description = st.text_area("Description", height=120, placeholder="Context, root cause, what we changed, expected effect...")
-        team_selection = _render_team_input(champions_df, champion_options, selected_ids=team_selection)
 
         submitted = st.form_submit_button("Save action")
 
