@@ -7,7 +7,16 @@ from pydantic import ValidationError
 
 from atm_tracker.actions.db import init_db
 from atm_tracker.actions.models import ActionCreate
-from atm_tracker.actions.repo import insert_action, list_actions, soft_delete_action, update_status
+from atm_tracker.actions.repo import (
+    MAX_TEAM_MEMBERS,
+    get_action_team,
+    get_action_team_sizes,
+    insert_action,
+    list_actions,
+    set_action_team,
+    soft_delete_action,
+    update_status,
+)
 from atm_tracker.champions.repo import list_champions
 
 
@@ -30,6 +39,8 @@ def _render_add() -> None:
     st.subheader("New action")
 
     champions_df = list_champions(active_only=True)
+    champion_options = _build_champion_options(champions_df)
+    team_selection: list[int] = []
 
     with st.form("add_action", clear_on_submit=True):
         col1, col2 = st.columns(2)
@@ -53,6 +64,7 @@ def _render_add() -> None:
             cost_material_eur = st.number_input("Material cost (€)", min_value=0.0, value=0.0, step=10.0)
 
         description = st.text_area("Description", height=120, placeholder="Context, root cause, what we changed, expected effect...")
+        team_selection = _render_team_input(champions_df, champion_options, selected_ids=team_selection)
 
         submitted = st.form_submit_button("Save action")
 
@@ -60,6 +72,9 @@ def _render_add() -> None:
         return
 
     try:
+        if len(team_selection) > MAX_TEAM_MEMBERS:
+            st.error(f"Team members cannot exceed {MAX_TEAM_MEMBERS}.")
+            return
         a = ActionCreate(
             title=title.strip(),
             description=description.strip(),
@@ -82,6 +97,7 @@ def _render_add() -> None:
         return
 
     new_id = insert_action(a)
+    set_action_team(new_id, team_selection)
     st.success(f"Saved ✅ (id={new_id})")
 
 
@@ -126,6 +142,11 @@ def _render_list() -> None:
     if "owner" in df.columns:
         df = df.drop(columns=["owner"])
 
+    action_ids = df["id"].tolist()
+    team_sizes = get_action_team_sizes(action_ids)
+    if "id" in df.columns:
+        df["team_size"] = df["id"].map(lambda action_id: team_sizes.get(int(action_id), 0))
+
     st.dataframe(df, use_container_width=True, hide_index=True)
 
     st.divider()
@@ -135,7 +156,6 @@ def _render_list() -> None:
         st.info("No actions to edit.")
         return
 
-    action_ids = df["id"].tolist()
     selected_id = st.selectbox("Select action id", action_ids)
 
     row = df[df["id"] == selected_id].iloc[0]
@@ -162,3 +182,65 @@ def _render_list() -> None:
             soft_delete_action(int(selected_id))
             st.success("Deleted (soft) ✅")
             st.rerun()
+
+    st.divider()
+    st.markdown("### Team members")
+
+    champions_all = list_champions(active_only=False)
+    options = _build_champion_options(champions_all)
+    current_team = get_action_team(int(selected_id))
+
+    if champions_all.empty:
+        st.info("Add champions in Global Settings first.")
+        return
+
+    selection = st.multiselect(
+        f"Team members (max {MAX_TEAM_MEMBERS})",
+        options=list(options.keys()),
+        default=current_team,
+        format_func=options.get,
+    )
+    names = [options.get(champion_id, f"ID {champion_id}") for champion_id in current_team]
+    if names:
+        st.caption(f"Current team: {', '.join(names)}")
+    else:
+        st.caption("Current team: (none)")
+
+    if st.button("Save team"):
+        if len(selection) > MAX_TEAM_MEMBERS:
+            st.error(f"Team members cannot exceed {MAX_TEAM_MEMBERS}.")
+        else:
+            set_action_team(int(selected_id), selection)
+            st.success("Team updated ✅")
+            st.rerun()
+
+
+def _render_team_input(champions_df, champion_options, selected_ids: list[int]) -> list[int]:
+    if champions_df.empty:
+        st.info("Add champions in Global Settings first.")
+        return []
+
+    selection = st.multiselect(
+        f"Team members (max {MAX_TEAM_MEMBERS})",
+        options=list(champion_options.keys()),
+        default=selected_ids,
+        format_func=champion_options.get,
+    )
+    if len(selection) > MAX_TEAM_MEMBERS:
+        st.error(f"Team members cannot exceed {MAX_TEAM_MEMBERS}.")
+    return selection
+
+
+def _build_champion_options(champions_df):
+    options = {}
+    if champions_df.empty:
+        return options
+
+    active_column = "is_active" in champions_df.columns
+    for _, row in champions_df.iterrows():
+        champion_id = int(row["id"])
+        name = row.get("name_display", "") or row.get("name", "") or f"ID {champion_id}"
+        if active_column and int(row.get("is_active", 1)) == 0:
+            name = f"{name} (inactive)"
+        options[champion_id] = name
+    return options

@@ -9,6 +9,8 @@ import pandas as pd
 from atm_tracker.actions.db import connect
 from atm_tracker.actions.models import ActionCreate
 
+MAX_TEAM_MEMBERS = 15
+
 
 def _d(d: Optional[date]) -> Optional[str]:
     return d.isoformat() if d else None
@@ -131,3 +133,106 @@ def soft_delete_action(action_id: int) -> None:
     )
     con.commit()
     con.close()
+
+
+def get_action_team(action_id: int) -> list[int]:
+    con = connect()
+    cur = con.cursor()
+    cur.execute(
+        """
+        SELECT champion_id
+        FROM action_team_members
+        WHERE action_id = ? AND deleted = 0
+        ORDER BY champion_id;
+        """,
+        (action_id,),
+    )
+    rows = cur.fetchall()
+    con.close()
+    return [int(row[0]) for row in rows]
+
+
+def set_action_team(action_id: int, champion_ids: list[int]) -> None:
+    cleaned: list[int] = []
+    seen: set[int] = set()
+    for champion_id in champion_ids:
+        if champion_id is None:
+            continue
+        cid = int(champion_id)
+        if cid not in seen:
+            seen.add(cid)
+            cleaned.append(cid)
+
+    if len(cleaned) > MAX_TEAM_MEMBERS:
+        raise ValueError(f"Team members cannot exceed {MAX_TEAM_MEMBERS}.")
+
+    con = connect()
+    cur = con.cursor()
+    try:
+        cur.execute(
+            """
+            SELECT champion_id, deleted
+            FROM action_team_members
+            WHERE action_id = ?;
+            """,
+            (action_id,),
+        )
+        existing_rows = cur.fetchall()
+        existing_any = {int(row[0]) for row in existing_rows}
+        existing_active = {int(row[0]) for row in existing_rows if int(row[1]) == 0}
+
+        to_remove = existing_active - set(cleaned)
+
+        for champion_id in to_remove:
+            cur.execute(
+                """
+                UPDATE action_team_members
+                SET deleted = 1, updated_at = datetime('now')
+                WHERE action_id = ? AND champion_id = ? AND deleted = 0;
+                """,
+                (action_id, champion_id),
+            )
+
+        for champion_id in cleaned:
+            if champion_id in existing_any:
+                cur.execute(
+                    """
+                    UPDATE action_team_members
+                    SET deleted = 0, updated_at = datetime('now')
+                    WHERE action_id = ? AND champion_id = ?;
+                    """,
+                    (action_id, champion_id),
+                )
+            else:
+                cur.execute(
+                    """
+                    INSERT INTO action_team_members (action_id, champion_id)
+                    VALUES (?, ?);
+                    """,
+                    (action_id, champion_id),
+                )
+
+        con.commit()
+    finally:
+        con.close()
+
+
+def get_action_team_sizes(action_ids: list[int]) -> dict[int, int]:
+    if not action_ids:
+        return {}
+
+    placeholders = ",".join(["?"] * len(action_ids))
+    con = connect()
+    cur = con.cursor()
+    cur.execute(
+        f"""
+        SELECT action_id, COUNT(*) as team_size
+        FROM action_team_members
+        WHERE deleted = 0 AND action_id IN ({placeholders})
+        GROUP BY action_id;
+        """,
+        tuple(action_ids),
+    )
+    rows = cur.fetchall()
+    con.close()
+    return {int(row[0]): int(row[1]) for row in rows}
