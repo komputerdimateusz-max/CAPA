@@ -1,0 +1,65 @@
+# Action-to-Money Tracker (CAPA ROI)
+
+Action-to-Money Tracker is a **decision-intelligence layer** between shopfloor data and management.
+It links **corrective actions (CAPA / actions)** with **production metrics** (scrap, downtime, OEE) and converts
+their impact into **real money (€), time, ROI and payback**.
+
+This is **not** a QMS/MES/ERP replacement.
+It’s the missing layer that answers one question:
+
+> Which actions actually save money — and which ones are just “closed” on paper?
+
+---
+
+## Core Value
+
+- **Money-first decisions**: rank and prioritize actions by **€ savings**, not by status.
+- **Before/After impact**: every action is evaluated against a baseline.
+- **Confidence & auditability**: show uncertainty and explain every number.
+- **Champion ranking**: reward people for *real impact*, not activity.
+- **Management PDF**: 1–3 pages executive summary.
+
+---
+
+## MVP Scope
+
+✅ Before/After analysis (scrap, downtime, OEE)  
+✅ Savings calculation in € + time recovered  
+✅ ROI + payback time  
+✅ Champion ranking (weighted by confidence)  
+✅ PDF report for management  
+
+---
+
+## Data Inputs (MVP)
+
+### 1) Actions (CAPA)
+Minimal fields:
+- `id, title, line, project_or_family, owner, champion`
+- `implemented_at, closed_at`
+- optional: `cost_internal_hours, cost_external_eur, cost_material_eur`
+
+### 2) Production metrics (daily)
+Minimal fields:
+- `date, line, project_or_family`
+- `produced_qty`
+- `scrap_qty, scrap_cost_eur`
+- `downtime_min`
+- optional: `oee`
+
+---
+
+## KPI Logic (High level)
+
+- **Scrap savings (€)**: reduced scrap rate or scrap cost (before vs after)
+- **Downtime savings (€)**: reduced downtime minutes × cost per minute
+- **ROI**: `total_savings / total_action_cost`
+- **Payback**: `total_action_cost / savings_per_day`
+- **Confidence score**: heuristic score based on window length, number of production days, stability, overlaps
+
+Detailed formulas live in: `docs/02_kpis_formulas.md`
+
+---
+
+## Repo Structure (planned)
+
