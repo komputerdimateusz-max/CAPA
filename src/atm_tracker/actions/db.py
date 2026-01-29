@@ -50,8 +50,39 @@ def init_db() -> None:
         """
     )
 
+    _migrate_actions_schema(cur)
+
     cur.execute("CREATE INDEX IF NOT EXISTS idx_actions_status ON actions(status);")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_actions_line ON actions(line);")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_actions_project ON actions(project_or_family);")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_actions_deleted ON actions(deleted);")
     con.commit()
     con.close()
+
+
+def _migrate_actions_schema(cur: sqlite3.Cursor) -> None:
+    cur.execute("PRAGMA table_info(actions);")
+    existing_cols = {row[1] for row in cur.fetchall()}
+    required_cols = {
+        "created_by": "TEXT NOT NULL DEFAULT ''",
+        "updated_by": "TEXT NOT NULL DEFAULT ''",
+        "updated_at": "TEXT NOT NULL DEFAULT (datetime('now'))",
+        "deleted": "INTEGER NOT NULL DEFAULT 0",
+    }
+
+    for col, definition in required_cols.items():
+        if col not in existing_cols:
+            cur.execute(f"ALTER TABLE actions ADD COLUMN {col} {definition};")
+
+    if "updated_at" in (existing_cols | required_cols.keys()):
+        cur.execute(
+            """
+            CREATE TRIGGER IF NOT EXISTS trg_actions_updated_at
+            AFTER UPDATE ON actions
+            FOR EACH ROW
+            WHEN NEW.updated_at = OLD.updated_at
+            BEGIN
+                UPDATE actions SET updated_at = datetime('now') WHERE id = OLD.id;
+            END;
+            """
+        )
