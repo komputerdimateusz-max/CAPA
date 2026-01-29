@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from dataclasses import asdict
 from datetime import date
 from typing import Any, Optional
 
@@ -55,12 +54,15 @@ def list_actions(
     line: Optional[str] = None,
     project_or_family: Optional[str] = None,
     search: Optional[str] = None,
+    include_deleted: bool = False,
 ) -> pd.DataFrame:
     con = connect()
     q = "SELECT * FROM actions"
     where: list[str] = []
     params: list[Any] = []
 
+    if not include_deleted:
+        where.append("deleted = 0")
     if status:
         where.append("status = ?")
         params.append(status)
@@ -101,6 +103,21 @@ def update_status(action_id: int, status: str, closed_at: Optional[date]) -> Non
         WHERE id = ?;
         """,
         (status, closed_at.isoformat() if closed_at else None, action_id),
+    )
+    con.commit()
+    con.close()
+
+
+def soft_delete_action(action_id: int) -> None:
+    con = connect()
+    cur = con.cursor()
+    cur.execute(
+        """
+        UPDATE actions
+        SET deleted = 1
+        WHERE id = ?;
+        """,
+        (action_id,),
     )
     con.commit()
     con.close()

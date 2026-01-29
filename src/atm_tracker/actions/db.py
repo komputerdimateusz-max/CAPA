@@ -45,13 +45,41 @@ def init_db() -> None:
 
             tags TEXT NOT NULL,
 
-            updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+            created_by TEXT NOT NULL DEFAULT '',
+            updated_by TEXT NOT NULL DEFAULT '',
+            updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+            deleted INTEGER NOT NULL DEFAULT 0
         );
+        """
+    )
+
+    # Lightweight migrations for existing DBs: add missing columns only.
+    cur.execute("PRAGMA table_info(actions);")
+    existing_cols = {row["name"] for row in cur.fetchall()}
+    columns_to_add = {
+        "created_by": "TEXT NOT NULL DEFAULT ''",
+        "updated_by": "TEXT NOT NULL DEFAULT ''",
+        "updated_at": "TEXT NOT NULL DEFAULT (datetime('now'))",
+        "deleted": "INTEGER NOT NULL DEFAULT 0",
+    }
+    for col_name, col_def in columns_to_add.items():
+        if col_name not in existing_cols:
+            cur.execute(f"ALTER TABLE actions ADD COLUMN {col_name} {col_def};")
+
+    cur.execute(
+        """
+        CREATE TRIGGER IF NOT EXISTS trg_actions_updated_at
+        AFTER UPDATE ON actions
+        FOR EACH ROW
+        BEGIN
+            UPDATE actions SET updated_at = datetime('now') WHERE id = NEW.id;
+        END;
         """
     )
 
     cur.execute("CREATE INDEX IF NOT EXISTS idx_actions_status ON actions(status);")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_actions_line ON actions(line);")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_actions_project ON actions(project_or_family);")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_actions_deleted ON actions(deleted);")
     con.commit()
     con.close()

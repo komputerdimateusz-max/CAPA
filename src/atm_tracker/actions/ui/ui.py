@@ -2,12 +2,13 @@ from __future__ import annotations
 
 from datetime import date
 
+import pandas as pd
 import streamlit as st
 from pydantic import ValidationError
 
 from atm_tracker.actions.db import init_db
 from atm_tracker.actions.models import ActionCreate
-from atm_tracker.actions.repo import insert_action, list_actions, update_status
+from atm_tracker.actions.repo import insert_action, list_actions, soft_delete_action, update_status
 
 
 def render_actions_module() -> None:
@@ -116,11 +117,12 @@ def _render_list() -> None:
     selected_id = st.selectbox("Select action id", action_ids)
 
     row = df[df["id"] == selected_id].iloc[0]
-    colA, colB, colC = st.columns(3)
+    colA, colB, colC, colD = st.columns(4)
     with colA:
         new_status = st.selectbox("New status", ["OPEN", "IN_PROGRESS", "CLOSED"], index=["OPEN","IN_PROGRESS","CLOSED"].index(row["status"]))
     with colB:
-        new_closed = st.date_input("Closed at (required if CLOSED)", value=row["closed_at"])
+        closed_value = None if pd.isna(row["closed_at"]) else row["closed_at"]
+        new_closed = st.date_input("Closed at (required if CLOSED)", value=closed_value)
     with colC:
         st.write("")
         st.write("")
@@ -131,3 +133,10 @@ def _render_list() -> None:
                 update_status(int(selected_id), new_status, new_closed if new_status == "CLOSED" else None)
                 st.success("Updated ✅")
                 st.rerun()
+    with colD:
+        st.write("")
+        st.write("")
+        if st.button("Delete (soft)", type="secondary"):
+            soft_delete_action(int(selected_id))
+            st.success("Deleted (soft) ✅")
+            st.rerun()
