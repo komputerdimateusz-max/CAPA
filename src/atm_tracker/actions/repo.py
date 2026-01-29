@@ -18,6 +18,7 @@ def insert_action(a: ActionCreate) -> int:
     con = connect()
     cur = con.cursor()
 
+    owner_value = a.champion or ""
     cur.execute(
         """
         INSERT INTO actions (
@@ -32,7 +33,7 @@ def insert_action(a: ActionCreate) -> int:
             a.description,
             a.line,
             a.project_or_family,
-            a.owner,
+            owner_value,
             a.champion,
             a.status,
             a.created_at.isoformat(),
@@ -85,6 +86,14 @@ def list_actions(
 
     df = pd.read_sql_query(q, con, params=params)
     con.close()
+
+    if "champion" in df.columns and "owner" in df.columns:
+        df["champion"] = df["champion"].fillna("").astype(str)
+        df["owner"] = df["owner"].fillna("").astype(str)
+        df["champion"] = df.apply(
+            lambda row: row["champion"] or row["owner"],
+            axis=1,
+        )
 
     # normalize dates for UI
     for col in ["created_at", "implemented_at", "closed_at", "updated_at"]:
