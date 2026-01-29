@@ -95,6 +95,9 @@ def _init_champions_schema(cur: sqlite3.Cursor) -> None:
         CREATE TABLE IF NOT EXISTS champions (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT NOT NULL UNIQUE,
+            first_name TEXT NOT NULL DEFAULT '',
+            last_name TEXT NOT NULL DEFAULT '',
+            name_display TEXT NOT NULL DEFAULT '',
             is_active INTEGER NOT NULL DEFAULT 1,
             created_by TEXT NOT NULL DEFAULT '',
             updated_by TEXT NOT NULL DEFAULT '',
@@ -104,6 +107,35 @@ def _init_champions_schema(cur: sqlite3.Cursor) -> None:
         """
     )
 
+    _migrate_champions_schema(cur)
     cur.execute("CREATE INDEX IF NOT EXISTS idx_champions_name ON champions(name);")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_champions_is_active ON champions(is_active);")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_champions_deleted ON champions(deleted);")
+
+
+def _migrate_champions_schema(cur: sqlite3.Cursor) -> None:
+    cur.execute("PRAGMA table_info(champions);")
+    existing_cols = {row[1] for row in cur.fetchall()}
+    required_cols = {
+        "first_name": "TEXT NOT NULL DEFAULT ''",
+        "last_name": "TEXT NOT NULL DEFAULT ''",
+        "name_display": "TEXT NOT NULL DEFAULT ''",
+    }
+    for col, definition in required_cols.items():
+        if col not in existing_cols:
+            cur.execute(f"ALTER TABLE champions ADD COLUMN {col} {definition};")
+
+    cur.execute(
+        """
+        UPDATE champions
+        SET name_display = TRIM(name)
+        WHERE name_display = '' AND name IS NOT NULL;
+        """
+    )
+
+    cur.execute(
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_champions_name_display_lower
+        ON champions(LOWER(name_display));
+        """
+    )

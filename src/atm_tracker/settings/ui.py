@@ -14,12 +14,13 @@ def render_global_settings() -> None:
 
     with st.expander("Add champion", expanded=True):
         with st.form("add_champion", clear_on_submit=True):
-            champion_name = st.text_input("Champion name")
+            first_name = st.text_input("First name")
+            last_name = st.text_input("Last name")
             submitted = st.form_submit_button("Add")
 
         if submitted:
             try:
-                new_id = add_champion(champion_name)
+                new_id = add_champion(first_name, last_name)
             except ValueError as exc:
                 st.error(str(exc))
             else:
@@ -35,7 +36,7 @@ def render_global_settings() -> None:
 
     for _, row in champions.iterrows():
         champion_id = int(row["id"])
-        st.markdown(f"**{row['name']}**")
+        st.markdown(f"**{row['name_display']}**")
         active_value = bool(row["is_active"])
         is_active = st.checkbox("Active", value=active_value, key=f"champion_active_{champion_id}")
 

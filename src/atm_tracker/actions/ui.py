@@ -38,7 +38,6 @@ def _render_add() -> None:
             title = st.text_input("Title *", placeholder="e.g. Reduce scratch defects on L1")
             line = st.text_input("Line *", placeholder="e.g. L1")
             project = st.text_input("Project / family", placeholder="e.g. ProjectX")
-            owner = st.text_input("Owner *", placeholder="e.g. Mateusz")
             champion = _render_champion_input(champions_df)
             tags = st.text_input("Tags (comma-separated)", placeholder="scrap, coating, poka-yoke")
 
@@ -66,8 +65,8 @@ def _render_add() -> None:
             description=description.strip(),
             line=line.strip(),
             project_or_family=project.strip(),
-            owner=owner.strip(),
-            champion=champion.strip(),
+            owner="",
+            champion=_normalize_name(champion),
             status=status,
             created_at=created_at,
             implemented_at=implemented_at,
@@ -90,7 +89,7 @@ def _render_champion_input(champions_df) -> str:
     if champions_df.empty:
         return st.text_input("Champion", placeholder="e.g. Anna")
 
-    options = ["(none)"] + champions_df["name"].tolist() + ["Other (type manually)"]
+    options = ["(none)"] + champions_df["name_display"].tolist() + ["Other (type manually)"]
     selection = st.selectbox("Champion", options)
 
     if selection == "Other (type manually)":
@@ -98,6 +97,10 @@ def _render_champion_input(champions_df) -> str:
     if selection == "(none)":
         return ""
     return selection
+
+
+def _normalize_name(value: str) -> str:
+    return " ".join(value.split())
 
 
 def _render_list() -> None:
@@ -111,7 +114,7 @@ def _render_list() -> None:
     with c3:
         project = st.text_input("Filter: project/family", placeholder="e.g. ProjectX")
     with c4:
-        search = st.text_input("Search", placeholder="title/desc/owner/champion")
+        search = st.text_input("Search", placeholder="title/desc/champion")
 
     df = list_actions(
         status=None if status == "(all)" else status,
@@ -119,6 +122,9 @@ def _render_list() -> None:
         project_or_family=project.strip() or None,
         search=search.strip() or None,
     )
+
+    if "owner" in df.columns:
+        df = df.drop(columns=["owner"])
 
     st.dataframe(df, use_container_width=True, hide_index=True)
 
