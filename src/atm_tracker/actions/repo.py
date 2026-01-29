@@ -25,10 +25,10 @@ def insert_action(a: ActionCreate) -> int:
         """
         INSERT INTO actions (
             title, description, line, project_or_family, owner, champion,
-            status, created_at, implemented_at, closed_at,
+            status, created_at, implemented_at, target_date, closed_at,
             cost_internal_hours, cost_external_eur, cost_material_eur,
             tags
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
         """,
         (
             a.title,
@@ -39,7 +39,8 @@ def insert_action(a: ActionCreate) -> int:
             a.champion,
             a.status,
             a.created_at.isoformat(),
-            _d(a.implemented_at),
+            None,
+            _d(a.target_date),
             _d(a.closed_at),
             float(a.cost_internal_hours),
             float(a.cost_external_eur),
@@ -98,7 +99,7 @@ def list_actions(
         )
 
     # normalize dates for UI
-    for col in ["created_at", "implemented_at", "closed_at", "updated_at"]:
+    for col in ["created_at", "implemented_at", "target_date", "closed_at", "updated_at"]:
         if col in df.columns:
             df[col] = pd.to_datetime(df[col], errors="coerce").dt.date
 

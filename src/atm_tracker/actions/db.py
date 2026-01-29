@@ -37,6 +37,7 @@ def init_db() -> None:
             status TEXT NOT NULL,
             created_at TEXT NOT NULL,
             implemented_at TEXT,
+            target_date TEXT,
             closed_at TEXT,
 
             cost_internal_hours REAL NOT NULL,
@@ -70,6 +71,7 @@ def _migrate_actions_schema(cur: sqlite3.Cursor) -> None:
         "updated_by": "TEXT NOT NULL DEFAULT ''",
         "updated_at": "TEXT NOT NULL DEFAULT (datetime('now'))",
         "deleted": "INTEGER NOT NULL DEFAULT 0",
+        "target_date": "TEXT",
     }
 
     for col, definition in required_cols.items():
