@@ -1,8 +1,17 @@
 from __future__ import annotations
 
-import streamlit as st
+import sys
+from pathlib import Path
 
-from atm_tracker.actions.ui import render_actions_module
+# Ensure "src" is on PYTHONPATH when running via:
+# streamlit run src/atm_tracker/app.py
+SRC_DIR = Path(__file__).resolve().parents[1]  # .../src
+if str(SRC_DIR) not in sys.path:
+    sys.path.insert(0, str(SRC_DIR))
+
+import streamlit as st  # noqa: E402
+
+from atm_tracker.actions.ui import render_actions_module  # noqa: E402
 
 
 def main() -> None:
