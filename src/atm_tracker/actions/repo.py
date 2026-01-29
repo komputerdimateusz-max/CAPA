@@ -10,10 +10,20 @@ from atm_tracker.actions.db import connect
 from atm_tracker.actions.models import ActionCreate
 
 MAX_TEAM_MEMBERS = 15
+TASK_STATUSES = ["OPEN", "IN_PROGRESS", "DONE"]
+_UNSET = object()
 
 
 def _d(d: Optional[date]) -> Optional[str]:
     return d.isoformat() if d else None
+
+
+def _normalize_dates(df: pd.DataFrame, columns: list[str]) -> pd.DataFrame:
+    for col in columns:
+        if col in df.columns:
+            df[col] = pd.to_datetime(df[col], errors="coerce").dt.date
+            df[col] = df[col].apply(lambda value: value if pd.notna(value) else None)
+    return df
 
 
 def insert_action(a: ActionCreate) -> int:
@@ -99,11 +109,34 @@ def list_actions(
         )
 
     # normalize dates for UI
-    for col in ["created_at", "implemented_at", "target_date", "closed_at", "updated_at"]:
-        if col in df.columns:
-            df[col] = pd.to_datetime(df[col], errors="coerce").dt.date
+    df = _normalize_dates(
+        df,
+        ["created_at", "implemented_at", "target_date", "closed_at", "updated_at"],
+    )
 
     return df
+
+
+def get_action(action_id: int) -> Optional[pd.Series]:
+    con = connect()
+    df = pd.read_sql_query(
+        "SELECT * FROM actions WHERE id = ? AND deleted = 0;",
+        con,
+        params=(action_id,),
+    )
+    con.close()
+    if df.empty:
+        return None
+    df = _normalize_dates(
+        df,
+        ["created_at", "implemented_at", "target_date", "closed_at", "updated_at"],
+    )
+    row = df.iloc[0].copy()
+    champion = str(row.get("champion", "") or "")
+    owner = str(row.get("owner", "") or "")
+    if champion or owner:
+        row["champion"] = champion or owner
+    return row
 
 
 def update_status(action_id: int, status: str, closed_at: Optional[date]) -> None:
@@ -116,6 +149,126 @@ def update_status(action_id: int, status: str, closed_at: Optional[date]) -> Non
         WHERE id = ?;
         """,
         (status, closed_at.isoformat() if closed_at else None, action_id),
+    )
+    con.commit()
+    con.close()
+
+
+def list_tasks(action_id: int, include_deleted: bool = False) -> pd.DataFrame:
+    con = connect()
+    q = "SELECT * FROM action_tasks WHERE action_id = ?"
+    params: list[Any] = [action_id]
+    if not include_deleted:
+        q += " AND deleted = 0"
+    q += " ORDER BY sort_order ASC, id ASC;"
+    df = pd.read_sql_query(q, con, params=params)
+    con.close()
+    df = _normalize_dates(df, ["created_at", "target_date", "done_at", "updated_at"])
+    return df
+
+
+def add_task(
+    action_id: int,
+    title: str,
+    description: str,
+    assignee_champion_id: Optional[int],
+    status: str,
+    target_date: Optional[date],
+) -> int:
+    con = connect()
+    cur = con.cursor()
+    cur.execute(
+        """
+        INSERT INTO action_tasks (
+            action_id,
+            title,
+            description,
+            assignee_champion_id,
+            status,
+            target_date
+        ) VALUES (?, ?, ?, ?, ?, ?);
+        """,
+        (
+            action_id,
+            title,
+            description,
+            assignee_champion_id,
+            status,
+            _d(target_date),
+        ),
+    )
+    con.commit()
+    new_id = int(cur.lastrowid)
+    con.close()
+    return new_id
+
+
+def update_task(
+    task_id: int,
+    title: Optional[str] = None,
+    description: Optional[str] = None,
+    assignee_champion_id: Optional[int] | object = _UNSET,
+    status: Optional[str] = None,
+    target_date: Optional[date] | object = _UNSET,
+) -> None:
+    fields: list[str] = []
+    params: list[Any] = []
+
+    if title is not None:
+        fields.append("title = ?")
+        params.append(title)
+    if description is not None:
+        fields.append("description = ?")
+        params.append(description)
+    if assignee_champion_id is not _UNSET:
+        fields.append("assignee_champion_id = ?")
+        params.append(None if assignee_champion_id is None else int(assignee_champion_id))
+    if status is not None:
+        fields.append("status = ?")
+        params.append(status)
+        fields.append(
+            """
+            done_at = CASE
+                WHEN ? = 'DONE' THEN COALESCE(done_at, date('now'))
+                ELSE NULL
+            END
+            """.strip()
+        )
+        params.append(status)
+    if target_date is not _UNSET:
+        fields.append("target_date = ?")
+        params.append(_d(target_date if target_date is not None else None))
+
+    if not fields:
+        return
+
+    fields.append("updated_at = datetime('now')")
+    params.append(task_id)
+
+    con = connect()
+    cur = con.cursor()
+    cur.execute(
+        f"""
+        UPDATE action_tasks
+        SET {", ".join(fields)}
+        WHERE id = ?;
+        """,
+        tuple(params),
+    )
+    con.commit()
+    con.close()
+
+
+def soft_delete_task(task_id: int) -> None:
+    con = connect()
+    cur = con.cursor()
+    cur.execute(
+        """
+        UPDATE action_tasks
+        SET deleted = 1, updated_at = datetime('now')
+        WHERE id = ?;
+        """,
+        (task_id,),
     )
     con.commit()
     con.close()
@@ -237,3 +390,28 @@ def get_action_team_sizes(action_ids: list[int]) -> dict[int, int]:
     rows = cur.fetchall()
     con.close()
     return {int(row[0]): int(row[1]) for row in rows}
+
+
+def get_task_counts(action_ids: list[int]) -> dict[int, dict[str, int]]:
+    if not action_ids:
+        return {}
+    placeholders = ",".join(["?"] * len(action_ids))
+    con = connect()
+    cur = con.cursor()
+    cur.execute(
+        f"""
+        SELECT action_id,
+               COUNT(*) as total_count,
+               SUM(CASE WHEN status = 'DONE' THEN 1 ELSE 0 END) as done_count
+        FROM action_tasks
+        WHERE deleted = 0 AND action_id IN ({placeholders})
+        GROUP BY action_id;
+        """,
+        tuple(action_ids),
+    )
+    rows = cur.fetchall()
+    con.close()
+    return {
+        int(row[0]): {"total": int(row[1] or 0), "done": int(row[2] or 0)}
+        for row in rows
+    }

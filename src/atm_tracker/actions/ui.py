@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date
+from typing import Optional
 
 import streamlit as st
 from pydantic import ValidationError
@@ -9,13 +10,20 @@ from atm_tracker.actions.db import init_db
 from atm_tracker.actions.models import ActionCreate
 from atm_tracker.actions.repo import (
     MAX_TEAM_MEMBERS,
+    TASK_STATUSES,
+    add_task,
+    get_action,
     get_action_team,
     get_action_team_sizes,
+    get_task_counts,
     insert_action,
     list_actions,
+    list_tasks,
     set_action_team,
     soft_delete_action,
+    soft_delete_task,
     update_status,
+    update_task,
 )
 from atm_tracker.champions.repo import list_champions
 
@@ -26,13 +34,23 @@ def render_actions_module() -> None:
     st.title("➕ CAPA Actions — Input Module")
     st.caption("Fast action capture with validation. No ROI yet — we build clean foundations.")
 
-    tab_add, tab_list = st.tabs(["Add action", "Actions list / edit"])
+    if "actions_view" not in st.session_state:
+        st.session_state["actions_view"] = "Add action"
+    if "actions_view_override" in st.session_state:
+        st.session_state["actions_view"] = st.session_state.pop("actions_view_override")
 
-    with tab_add:
+    view_options = ["Add action", "Actions list / edit"]
+    if st.session_state.get("selected_action_id"):
+        view_options.append("Action details")
+
+    current_view = st.radio("View", view_options, horizontal=True, key="actions_view")
+
+    if current_view == "Add action":
         _render_add()
-
-    with tab_list:
+    elif current_view == "Actions list / edit":
         _render_list()
+    else:
+        _render_action_details()
 
 
 def _render_add() -> None:
@@ -146,8 +164,34 @@ def _render_list() -> None:
     team_sizes = get_action_team_sizes(action_ids)
     if "id" in df.columns:
         df["team_size"] = df["id"].map(lambda action_id: team_sizes.get(int(action_id), 0))
+        task_counts = get_task_counts([int(action_id) for action_id in action_ids])
+        df["tasks_total"] = df["id"].map(
+            lambda action_id: task_counts.get(int(action_id), {}).get("total", 0)
+        )
+        df["tasks_done"] = df["id"].map(
+            lambda action_id: task_counts.get(int(action_id), {}).get("done", 0)
+        )
 
     st.dataframe(df, use_container_width=True, hide_index=True)
+
+    st.divider()
+    st.markdown("### Open action details")
+
+    if df.empty:
+        st.info("No actions to open.")
+        return
+
+    action_lookup = {int(row["id"]): f"{int(row['id'])} — {row['title']}" for _, row in df.iterrows()}
+    selected_action_id = st.selectbox(
+        "Select action",
+        options=action_ids,
+        format_func=lambda action_id: action_lookup.get(int(action_id), str(action_id)),
+    )
+    st.button(
+        "Open action",
+        on_click=_queue_action_details,
+        args=(int(selected_action_id),),
+    )
 
     st.divider()
     st.markdown("### Quick edit (status / close date)")
@@ -215,6 +259,160 @@ def _render_list() -> None:
             st.rerun()
 
 
+def _render_action_details() -> None:
+    action_id = st.session_state.get("selected_action_id")
+    if not action_id:
+        st.info("Select an action from the list to view details.")
+        return
+
+    action = get_action(int(action_id))
+    if action is None:
+        st.warning("Selected action not found.")
+        st.session_state.pop("selected_action_id", None)
+        st.session_state["actions_view_override"] = "Actions list / edit"
+        st.rerun()
+        return
+
+    st.button("Back to list", on_click=_queue_actions_list)
+
+    title = action.get("title", "")
+    st.subheader(f"Action {int(action_id)} — {title}")
+
+    champions_all = list_champions(active_only=False)
+    champion_options = _build_champion_options(champions_all)
+    team_ids = get_action_team(int(action_id))
+    team_names = [champion_options.get(member_id, f"ID {member_id}") for member_id in team_ids]
+
+    status = action.get("status", "")
+    champion = action.get("champion", "")
+    created_at = action.get("created_at")
+    target_date = action.get("target_date")
+    closed_at = action.get("closed_at")
+    updated_at = action.get("updated_at")
+    description = action.get("description", "")
+
+    st.markdown(f"**Status:** {status or '(unknown)'}")
+    st.markdown(f"**Champion (responsible):** {champion or '(unassigned)'}")
+    st.markdown(f"**Team members:** {', '.join(team_names) if team_names else '(none)'}")
+    st.markdown("**Key dates:**")
+    st.markdown(
+        f"- Created at: {created_at or '(not set)'}\n"
+        f"- Target date: {target_date or '(not set)'}\n"
+        f"- Closed at: {closed_at or '(not set)'}\n"
+        f"- Status updated: {updated_at or '(not set)'}"
+    )
+    st.markdown("**Description:**")
+    st.write(description or "(none)")
+
+    st.divider()
+    _render_tasks_section(
+        action_id=int(action_id),
+        team_ids=team_ids,
+        champion_options=champion_options,
+    )
+
+
+def _render_tasks_section(
+    action_id: int,
+    team_ids: list[int],
+    champion_options: dict[int, str],
+) -> None:
+    st.subheader("Tasks / Sub-actions")
+
+    champions_active = list_champions(active_only=True)
+    active_ids = [int(row["id"]) for _, row in champions_active.iterrows()] if not champions_active.empty else []
+
+    show_all = st.checkbox("Show all champions", value=False, key="tasks_show_all_champions")
+    assignee_options = _build_assignee_options(
+        team_ids=team_ids,
+        active_ids=active_ids,
+        show_all=show_all,
+    )
+
+    assignee_labels = {None: "(unassigned)", **champion_options}
+
+    with st.form(f"add_task_{action_id}", clear_on_submit=True):
+        title = st.text_input("Title *")
+        assignee = st.selectbox(
+            "Assignee",
+            options=assignee_options,
+            format_func=lambda cid: assignee_labels.get(cid, f"ID {cid}"),
+        )
+        status = st.selectbox("Status", TASK_STATUSES, index=0)
+        target_date = st.date_input("Target date", value=None)
+        description = st.text_area("Description", height=100)
+        submitted = st.form_submit_button("Add task")
+
+    if submitted:
+        if not title.strip():
+            st.error("Title is required.")
+        else:
+            add_task(
+                action_id=action_id,
+                title=title.strip(),
+                description=description.strip(),
+                assignee_champion_id=None if assignee is None else int(assignee),
+                status=status,
+                target_date=target_date,
+            )
+            st.success("Task added ✅")
+            st.rerun()
+
+    tasks_df = list_tasks(action_id)
+    if tasks_df.empty:
+        st.info("No tasks yet.")
+        return
+
+    for _, task in tasks_df.iterrows():
+        task_id = int(task["id"])
+        task_title = task.get("title", "")
+        task_status = task.get("status", "OPEN")
+        task_assignee = task.get("assignee_champion_id")
+        task_target = task.get("target_date")
+        task_description = task.get("description", "")
+
+        with st.expander(f"{task_title} (#{task_id})", expanded=False):
+            title_value = st.text_input("Title", value=task_title, key=f"task_title_{task_id}")
+            description_value = st.text_area(
+                "Description", value=task_description, height=100, key=f"task_desc_{task_id}"
+            )
+            status_value = st.selectbox(
+                "Status",
+                TASK_STATUSES,
+                index=TASK_STATUSES.index(task_status) if task_status in TASK_STATUSES else 0,
+                key=f"task_status_{task_id}",
+            )
+            assignee_value = st.selectbox(
+                "Assignee",
+                options=assignee_options,
+                index=_safe_index(assignee_options, task_assignee),
+                format_func=lambda cid: assignee_labels.get(cid, f"ID {cid}"),
+                key=f"task_assignee_{task_id}",
+            )
+            target_value = st.date_input(
+                "Target date", value=task_target, key=f"task_target_{task_id}"
+            )
+
+            col_save, col_delete = st.columns(2)
+            with col_save:
+                if st.button("Save", key=f"task_save_{task_id}"):
+                    update_task(
+                        task_id=task_id,
+                        title=title_value.strip(),
+                        description=description_value.strip(),
+                        assignee_champion_id=None if assignee_value is None else int(assignee_value),
+                        status=status_value,
+                        target_date=target_value,
+                    )
+                    st.success("Task updated ✅")
+                    st.rerun()
+            with col_delete:
+                if st.button("Delete", key=f"task_delete_{task_id}"):
+                    soft_delete_task(task_id)
+                    st.success("Task deleted ✅")
+                    st.rerun()
+
+
 def _render_team_input(champions_df, champion_options, selected_ids: list[int]) -> list[int]:
     if champions_df.empty:
         st.info("Add champions in Global Settings first.")
@@ -244,3 +442,39 @@ def _build_champion_options(champions_df):
             name = f"{name} (inactive)"
         options[champion_id] = name
     return options
+
+
+def _build_assignee_options(
+    team_ids: list[int],
+    active_ids: list[int],
+    show_all: bool,
+) -> list[Optional[int]]:
+    unique_ids: list[int] = []
+    seen: set[int] = set()
+
+    base_ids = active_ids if show_all or not team_ids else team_ids
+    for cid in base_ids + team_ids:
+        if cid is None:
+            continue
+        cid_int = int(cid)
+        if cid_int not in seen:
+            seen.add(cid_int)
+            unique_ids.append(cid_int)
+
+    return [None] + unique_ids
+
+
+def _safe_index(options: list[Optional[int]], value: Optional[int]) -> int:
+    try:
+        return options.index(value)
+    except ValueError:
+        return 0
+
+
+def _queue_action_details(action_id: int) -> None:
+    st.session_state["selected_action_id"] = int(action_id)
+    st.session_state["actions_view_override"] = "Action details"
+
+
+def _queue_actions_list() -> None:
+    st.session_state["actions_view_override"] = "Actions list / edit"

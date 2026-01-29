@@ -54,6 +54,7 @@ def init_db() -> None:
     _migrate_actions_schema(cur)
     _init_champions_schema(cur)
     _init_action_team_schema(cur)
+    _init_action_tasks_schema(cur)
 
     cur.execute("CREATE INDEX IF NOT EXISTS idx_actions_status ON actions(status);")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_actions_line ON actions(line);")
@@ -175,5 +176,52 @@ def _init_action_team_schema(cur: sqlite3.Cursor) -> None:
         """
         CREATE INDEX IF NOT EXISTS idx_action_team_deleted
         ON action_team_members(deleted);
+        """
+    )
+
+
+def _init_action_tasks_schema(cur: sqlite3.Cursor) -> None:
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS action_tasks (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            action_id INTEGER NOT NULL,
+            title TEXT NOT NULL,
+            description TEXT NOT NULL DEFAULT '',
+            assignee_champion_id INTEGER,
+            status TEXT NOT NULL DEFAULT 'OPEN',
+            created_at TEXT NOT NULL DEFAULT (date('now')),
+            target_date TEXT,
+            done_at TEXT,
+            sort_order INTEGER NOT NULL DEFAULT 0,
+            created_by TEXT NOT NULL DEFAULT '',
+            updated_by TEXT NOT NULL DEFAULT '',
+            updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+            deleted INTEGER NOT NULL DEFAULT 0
+        );
+        """
+    )
+    cur.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_tasks_action_id
+        ON action_tasks(action_id);
+        """
+    )
+    cur.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_tasks_deleted
+        ON action_tasks(deleted);
+        """
+    )
+    cur.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_tasks_status
+        ON action_tasks(status);
+        """
+    )
+    cur.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_tasks_assignee
+        ON action_tasks(assignee_champion_id);
         """
     )
