@@ -1,0 +1,57 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "action-to-money-tracker"
+version = "0.1.0"
+description = "Decision intelligence layer linking CAPA actions with production data and real financial impact (€)"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "Proprietary" }
+
+authors = [
+  { name = "Mateusz", email = "your_email@domain.com" }
+]
+
+dependencies = [
+  "streamlit>=1.31",
+  "pandas>=2.0",
+  "numpy>=1.24",
+  "plotly>=5.18",
+  "pydantic>=2.5",
+  "python-dateutil>=2.8",
+  "reportlab>=4.0"
+]
+
+[project.optional-dependencies]
+dev = [
+  "black>=23.0",
+  "ruff>=0.1",
+  "pytest>=7.4",
+  "mypy>=1.6"
+]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+# =========================
+# Tooling configuration
+# =========================
+
+[tool.black]
+line-length = 100
+target-version = ["py311"]
+
+[tool.ruff]
+line-length = 100
+select = ["E", "F", "W", "I"]
+ignore = ["E501"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = false
+ignore_missing_imports = true
