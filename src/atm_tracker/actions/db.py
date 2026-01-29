@@ -51,6 +51,7 @@ def init_db() -> None:
     )
 
     _migrate_actions_schema(cur)
+    _init_champions_schema(cur)
 
     cur.execute("CREATE INDEX IF NOT EXISTS idx_actions_status ON actions(status);")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_actions_line ON actions(line);")
@@ -86,3 +87,23 @@ def _migrate_actions_schema(cur: sqlite3.Cursor) -> None:
             END;
             """
         )
+
+
+def _init_champions_schema(cur: sqlite3.Cursor) -> None:
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS champions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL UNIQUE,
+            is_active INTEGER NOT NULL DEFAULT 1,
+            created_by TEXT NOT NULL DEFAULT '',
+            updated_by TEXT NOT NULL DEFAULT '',
+            updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+            deleted INTEGER NOT NULL DEFAULT 0
+        );
+        """
+    )
+
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_champions_name ON champions(name);")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_champions_is_active ON champions(is_active);")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_champions_deleted ON champions(deleted);")

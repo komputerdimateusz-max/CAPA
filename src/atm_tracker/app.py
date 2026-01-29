@@ -12,11 +12,19 @@ if str(SRC_DIR) not in sys.path:
 import streamlit as st  # noqa: E402
 
 from atm_tracker.actions.ui import render_actions_module  # noqa: E402
+from atm_tracker.settings.ui import render_global_settings  # noqa: E402
 
 
 def main() -> None:
     st.set_page_config(page_title="CAPA Actions", layout="wide")
-    render_actions_module()
+
+    st.sidebar.title("Navigation")
+    page = st.sidebar.radio("Go to", ["Actions", "Global Settings"])
+
+    if page == "Global Settings":
+        render_global_settings()
+    else:
+        render_actions_module()
 
 
 if __name__ == "__main__":

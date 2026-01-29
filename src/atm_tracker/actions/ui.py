@@ -8,6 +8,7 @@ from pydantic import ValidationError
 from atm_tracker.actions.db import init_db
 from atm_tracker.actions.models import ActionCreate
 from atm_tracker.actions.repo import insert_action, list_actions, soft_delete_action, update_status
+from atm_tracker.champions.repo import list_champions
 
 
 def render_actions_module() -> None:
@@ -28,6 +29,8 @@ def render_actions_module() -> None:
 def _render_add() -> None:
     st.subheader("New action")
 
+    champions_df = list_champions(active_only=True)
+
     with st.form("add_action", clear_on_submit=True):
         col1, col2 = st.columns(2)
 
@@ -36,7 +39,7 @@ def _render_add() -> None:
             line = st.text_input("Line *", placeholder="e.g. L1")
             project = st.text_input("Project / family", placeholder="e.g. ProjectX")
             owner = st.text_input("Owner *", placeholder="e.g. Mateusz")
-            champion = st.text_input("Champion", placeholder="e.g. Anna")
+            champion = _render_champion_input(champions_df)
             tags = st.text_input("Tags (comma-separated)", placeholder="scrap, coating, poka-yoke")
 
         with col2:
@@ -81,6 +84,20 @@ def _render_add() -> None:
 
     new_id = insert_action(a)
     st.success(f"Saved ✅ (id={new_id})")
+
+
+def _render_champion_input(champions_df) -> str:
+    if champions_df.empty:
+        return st.text_input("Champion", placeholder="e.g. Anna")
+
+    options = ["(none)"] + champions_df["name"].tolist() + ["Other (type manually)"]
+    selection = st.selectbox("Champion", options)
+
+    if selection == "Other (type manually)":
+        return st.text_input("Champion name")
+    if selection == "(none)":
+        return ""
+    return selection
 
 
 def _render_list() -> None:
