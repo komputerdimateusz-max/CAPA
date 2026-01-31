@@ -18,16 +18,33 @@ def _normalize_display(first_name: str, last_name: str) -> str:
     return first_clean, last_clean, name_display
 
 
-def list_champions(active_only: bool = True) -> pd.DataFrame:
+def list_champions(
+    active_only: bool = True,
+    include_inactive: bool | None = None,
+    search: str | None = None,
+    limit: int = 50,
+) -> pd.DataFrame:
     con = connect()
     q = "SELECT * FROM champions WHERE deleted = 0"
+    params: list[object] = []
 
-    if active_only:
+    if include_inactive is None:
+        include_inactive = not active_only
+
+    if not include_inactive:
         q += " AND is_active = 1"
+
+    if search:
+        q += " AND LOWER(name_display) LIKE ?"
+        params.append(f"%{search.lower()}%")
 
     q += " ORDER BY name_display ASC"
 
-    df = pd.read_sql_query(q, con)
+    if include_inactive is not None and not search and limit:
+        q += " LIMIT ?"
+        params.append(int(limit))
+
+    df = pd.read_sql_query(q, con, params=params)
     con.close()
     if "name_display" in df.columns:
         df["name_display"] = df["name_display"].fillna("").astype(str)
@@ -39,6 +56,50 @@ def list_champions(active_only: bool = True) -> pd.DataFrame:
             axis=1,
         )
     return df
+
+
+def get_champion(champion_id: int) -> dict[str, object] | None:
+    con = connect()
+    cur = con.cursor()
+    cur.execute("SELECT * FROM champions WHERE id = ?;", (champion_id,))
+    row = cur.fetchone()
+    if row is None:
+        con.close()
+        return None
+    columns = [col[0] for col in cur.description]
+    con.close()
+    return dict(zip(columns, row))
+
+
+def update_champion(champion_id: int, first_name: str, last_name: str, is_active: bool) -> None:
+    cleaned_first, cleaned_last, name_display = _normalize_display(first_name, last_name)
+    if not cleaned_first or not cleaned_last:
+        raise ValueError("First name and last name are required.")
+
+    con = connect()
+    cur = con.cursor()
+    cur.execute(
+        """
+        SELECT id
+        FROM champions
+        WHERE LOWER(name_display) = LOWER(?) AND id != ?;
+        """,
+        (name_display, champion_id),
+    )
+    if cur.fetchone():
+        con.close()
+        raise ValueError("Champion name already exists.")
+
+    cur.execute(
+        """
+        UPDATE champions
+        SET name = ?, first_name = ?, last_name = ?, name_display = ?, is_active = ?, updated_at = datetime('now')
+        WHERE id = ?;
+        """,
+        (name_display, cleaned_first, cleaned_last, name_display, 1 if is_active else 0, champion_id),
+    )
+    con.commit()
+    con.close()
 
 
 def add_champion(first_name: str, last_name: str) -> int:
