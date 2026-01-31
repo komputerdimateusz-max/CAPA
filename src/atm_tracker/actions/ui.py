@@ -174,6 +174,28 @@ def _build_action_label(
     return f"{label} — {int(progress)}%"
 
 
+def _progress_color(
+    progress_percent: Optional[int],
+    has_overdue_subtasks: Optional[bool],
+    is_action_overdue: Optional[bool],
+) -> str:
+    try:
+        progress_value = int(progress_percent)
+    except (TypeError, ValueError):
+        progress_value = 0
+
+    overdue_subtasks = has_overdue_subtasks if isinstance(has_overdue_subtasks, bool) else False
+    overdue_action = is_action_overdue if isinstance(is_action_overdue, bool) else False
+
+    if progress_value > 80:
+        return "green"
+    if 40 <= progress_value <= 80:
+        return "yellow"
+    if not overdue_subtasks and not overdue_action:
+        return "yellow"
+    return "red"
+
+
 def _render_list() -> None:
     st.subheader("Actions list")
 
