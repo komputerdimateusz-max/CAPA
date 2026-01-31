@@ -29,6 +29,15 @@ from atm_tracker.actions.repo import (
 from atm_tracker.champions.repo import list_champions
 from atm_tracker.projects.repo import list_projects
 
+DEFAULT_ACTION_PROGRESS_SUMMARY = {
+    "progress_percent": 0,
+    "has_overdue_subtasks": False,
+    "is_action_overdue": False,
+    "total": 0,
+    "done": 0,
+    "open": 0,
+}
+
 
 def render_actions_module() -> None:
     init_db()
@@ -50,7 +59,11 @@ def render_actions_module() -> None:
     elif current_view == "Actions list / edit":
         _render_list()
     else:
-        _render_action_details()
+        try:
+            _render_action_details()
+        except Exception as exc:
+            st.error(f"Action details error (hotfix): {exc}")
+            st.info("Please select another action or go back to list.")
 
 
 def _render_add() -> None:
@@ -194,6 +207,40 @@ def _progress_color(
     if not overdue_subtasks and not overdue_action:
         return "yellow"
     return "red"
+
+
+def _format_progress_percent(progress_percent: int) -> str:
+    try:
+        value = int(progress_percent)
+    except (TypeError, ValueError):
+        value = 0
+    value = max(0, min(100, value))
+    return f"{value:03d}%"
+
+
+def _render_action_header(
+    action_id: int,
+    title: str,
+    progress_percent: int,
+    progress_color: str,
+) -> None:
+    safe_title = str(title or "")
+    safe_progress = progress_percent if isinstance(progress_percent, int) else 0
+    safe_color = progress_color or "yellow"
+    percent_label = _format_progress_percent(safe_progress)
+
+    title_text = safe_title if safe_title else f"Action #{int(action_id)}"
+    col_title, col_progress = st.columns([4, 1])
+    with col_title:
+        st.subheader(title_text)
+    with col_progress:
+        st.markdown(
+            f"<div style='text-align:right;'>"
+            f"<span style='padding:6px 12px; border-radius:999px; "
+            f"background-color:{safe_color}; color:black; font-weight:600;'>"
+            f"{percent_label}</span></div>",
+            unsafe_allow_html=True,
+        )
 
 
 def _render_list() -> None:
@@ -402,13 +449,7 @@ def _render_action_details() -> None:
     title = action.get("title", "")
     progress_summary = progress_summaries.get(
         int(action_id),
-        {
-            "total": 0,
-            "done": 0,
-            "progress_percent": 0,
-            "has_overdue_subtasks": False,
-            "is_action_overdue": False,
-        },
+        DEFAULT_ACTION_PROGRESS_SUMMARY,
     )
     progress_percent = int(progress_summary.get("progress_percent", 0))
     progress_color = _progress_color(
