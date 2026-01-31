@@ -53,6 +53,7 @@ def init_db() -> None:
 
     _migrate_actions_schema(cur)
     _init_champions_schema(cur)
+    _init_projects_schema(cur)
     _init_action_team_schema(cur)
     _init_action_tasks_schema(cur)
 
@@ -141,6 +142,32 @@ def _migrate_champions_schema(cur: sqlite3.Cursor) -> None:
         """
         CREATE UNIQUE INDEX IF NOT EXISTS idx_champions_name_display_lower
         ON champions(LOWER(name_display));
+        """
+    )
+
+
+def _init_projects_schema(cur: sqlite3.Cursor) -> None:
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS projects (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            code TEXT NOT NULL DEFAULT '',
+            is_active INTEGER NOT NULL DEFAULT 1,
+            created_by TEXT NOT NULL DEFAULT '',
+            updated_by TEXT NOT NULL DEFAULT '',
+            updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+            deleted INTEGER NOT NULL DEFAULT 0
+        );
+        """
+    )
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_projects_name ON projects(name);")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_projects_active ON projects(is_active);")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_projects_deleted ON projects(deleted);")
+    cur.execute(
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_projects_name_lower
+        ON projects(LOWER(name));
         """
     )
 

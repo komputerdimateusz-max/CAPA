@@ -26,6 +26,7 @@ from atm_tracker.actions.repo import (
     update_task,
 )
 from atm_tracker.champions.repo import list_champions
+from atm_tracker.projects.repo import list_projects
 
 
 def render_actions_module() -> None:
@@ -58,6 +59,7 @@ def _render_add() -> None:
 
     champions_df = list_champions(active_only=True)
     champion_options = _build_champion_options(champions_df)
+    projects_df = list_projects(include_inactive=False)
     team_selection: list[int] = []
 
     with st.form("add_action", clear_on_submit=True):
@@ -66,7 +68,7 @@ def _render_add() -> None:
         with col1:
             title = st.text_input("Title *", placeholder="e.g. Reduce scratch defects on L1")
             line = st.text_input("Line *", placeholder="e.g. L1")
-            project = st.text_input("Project / family", placeholder="e.g. ProjectX")
+            project = _render_project_input(projects_df)
             champion = _render_champion_input(champions_df)
             team_selection = _render_team_input(champions_df, champion_options, selected_ids=team_selection)
             tags = st.text_input("Tags (comma-separated)", placeholder="scrap, coating, poka-yoke")
@@ -97,7 +99,7 @@ def _render_add() -> None:
             title=title.strip(),
             description=description.strip(),
             line=line.strip(),
-            project_or_family=project.strip(),
+            project_or_family=_normalize_name(project),
             owner="",
             champion=_normalize_name(champion),
             status=status,
@@ -128,6 +130,25 @@ def _render_champion_input(champions_df) -> str:
 
     if selection == "Other (type manually)":
         return st.text_input("Champion name")
+    if selection == "(none)":
+        return ""
+    return selection
+
+
+def _render_project_input(projects_df) -> str:
+    if projects_df.empty:
+        st.info("Add projects in Global Settings.")
+        return st.text_input("Project", placeholder="e.g. ProjectX")
+
+    options = ["(none)"] + projects_df["name"].tolist()
+    labels = {}
+    for _, row in projects_df.iterrows():
+        name = row.get("name", "")
+        code = row.get("code", "")
+        label = f"{name} ({code})" if code else name
+        labels[name] = label
+
+    selection = st.selectbox("Project", options, format_func=lambda value: labels.get(value, value))
     if selection == "(none)":
         return ""
     return selection
