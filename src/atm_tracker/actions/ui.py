@@ -23,7 +23,6 @@ from atm_tracker.actions.repo import (
     set_action_team,
     soft_delete_action,
     soft_delete_task,
-    update_status,
     update_task,
 )
 from atm_tracker.champions.repo import list_champions
@@ -284,102 +283,6 @@ def _render_list() -> None:
         df["progress"] = df["progress"].map(lambda value: f"{int(value)}%")
 
     st.dataframe(df, use_container_width=True, hide_index=True)
-
-    st.divider()
-    st.markdown("### Open action details")
-
-    if df.empty:
-        st.info("No actions to open.")
-        return
-
-    action_lookup = {
-        int(row["id"]): _build_action_label(
-            int(row["id"]),
-            row.get("project_or_family", ""),
-            row.get("title", ""),
-            progress_map.get(int(row["id"]), 0),
-        )
-        for _, row in df.iterrows()
-    }
-    selected_action_id = st.selectbox(
-        "Select action",
-        options=action_ids,
-        format_func=lambda action_id: action_lookup.get(int(action_id), str(action_id)),
-    )
-    st.button(
-        "Open action",
-        on_click=_queue_action_details,
-        args=(int(selected_action_id),),
-    )
-
-    st.divider()
-    st.markdown("### Quick edit (status / close date)")
-
-    if df.empty:
-        st.info("No actions to edit.")
-        return
-
-    selected_id = st.selectbox(
-        "Select action id",
-        action_ids,
-        format_func=lambda action_id: action_lookup.get(int(action_id), str(action_id)),
-    )
-
-    row = df[df["id"] == selected_id].iloc[0]
-    colA, colB, colC, colD = st.columns(4)
-    with colA:
-        new_status = st.selectbox("New status", ["OPEN", "IN_PROGRESS", "CLOSED"], index=["OPEN","IN_PROGRESS","CLOSED"].index(row["status"]))
-    with colB:
-        new_closed = st.date_input("Closed at (required if CLOSED)", value=row["closed_at"])
-    with colC:
-        st.write("")
-        st.write("")
-        if st.button("Update"):
-            if new_status == "CLOSED" and not new_closed:
-                st.error("closed_at is required when status=CLOSED")
-            else:
-                update_status(int(selected_id), new_status, new_closed if new_status == "CLOSED" else None)
-                st.success("Updated ✅")
-                st.rerun()
-    with colD:
-        st.write("")
-        st.write("")
-        if st.button("Delete (soft)"):
-            # Hide action from lists without losing history.
-            soft_delete_action(int(selected_id))
-            st.success("Deleted (soft) ✅")
-            st.rerun()
-
-    st.divider()
-    st.markdown("### Team members")
-
-    champions_all = list_champions(active_only=False)
-    options = _build_champion_options(champions_all)
-    current_team = get_action_team(int(selected_id))
-
-    if champions_all.empty:
-        st.info("Add champions in Global Settings first.")
-        return
-
-    selection = st.multiselect(
-        f"Team members (max {MAX_TEAM_MEMBERS})",
-        options=list(options.keys()),
-        default=current_team,
-        format_func=options.get,
-    )
-    names = [options.get(champion_id, f"ID {champion_id}") for champion_id in current_team]
-    if names:
-        st.caption(f"Current team: {', '.join(names)}")
-    else:
-        st.caption("Current team: (none)")
-
-    if st.button("Save team"):
-        if len(selection) > MAX_TEAM_MEMBERS:
-            st.error(f"Team members cannot exceed {MAX_TEAM_MEMBERS}.")
-        else:
-            set_action_team(int(selected_id), selection)
-            st.success("Team updated ✅")
-            st.rerun()
 
 
 def _render_action_details() -> None:
