@@ -322,6 +322,12 @@ def _render_action_details() -> None:
 
     action_ids = [int(row["id"]) for _, row in actions_df.iterrows()]
     progress_map = get_actions_progress_map(action_ids)
+    try:
+        progress_summaries = get_action_progress_summaries(action_ids)
+        if not isinstance(progress_summaries, dict):
+            progress_summaries = {}
+    except Exception:
+        progress_summaries = {}
     action_lookup = {
         int(row["id"]): _build_action_label(
             int(row["id"]),
