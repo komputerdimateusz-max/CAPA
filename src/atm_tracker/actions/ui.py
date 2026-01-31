@@ -337,6 +337,8 @@ def _render_list() -> None:
 
 def _render_action_details() -> None:
     actions_df = list_actions()
+    if st.session_state.pop("flash_action_deleted", False):
+        st.info("Action deleted")
     if actions_df.empty:
         st.info("No actions available.")
         st.session_state.pop("selected_action_id", None)
@@ -344,6 +346,7 @@ def _render_action_details() -> None:
 
     action_ids = [int(row["id"]) for _, row in actions_df.iterrows()]
     progress_map = get_actions_progress_map(action_ids)
+    progress_summaries: dict[int, dict] = {}
     try:
         progress_summaries = get_action_progress_summaries(action_ids)
         if not isinstance(progress_summaries, dict):
@@ -390,6 +393,11 @@ def _render_action_details() -> None:
         return
 
     st.button("Back to list", on_click=_queue_actions_list)
+    if st.button("Delete action (soft)"):
+        soft_delete_action(int(action_id))
+        st.session_state.pop("selected_action_id", None)
+        st.session_state["flash_action_deleted"] = True
+        st.rerun()
 
     title = action.get("title", "")
     progress_summary = progress_summaries.get(
