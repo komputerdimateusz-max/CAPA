@@ -349,6 +349,11 @@ def _render_action_details() -> None:
 
     title = action.get("title", "")
     st.subheader(f"Action {int(action_id)} — {title}")
+    task_counts = get_task_counts([int(action_id)]).get(int(action_id), {"total": 0, "done": 0})
+    tasks_total = int(task_counts.get("total", 0))
+    tasks_done = int(task_counts.get("done", 0))
+    tasks_open = tasks_total - tasks_done
+    st.caption(f"Tasks: {tasks_total} total • {tasks_done} done • {tasks_open} open")
 
     champions_all = list_champions(active_only=False)
     champion_options = _build_champion_options(champions_all)
@@ -403,6 +408,59 @@ def _render_tasks_section(
 
     assignee_labels = {None: "(unassigned)", **champion_options}
 
+    tasks_df = list_tasks(action_id)
+    if tasks_df.empty:
+        st.info("No tasks yet.")
+    else:
+        for _, task in tasks_df.iterrows():
+            task_id = int(task["id"])
+            task_title = task.get("title", "")
+            task_status = task.get("status", "OPEN")
+            task_assignee = task.get("assignee_champion_id")
+            task_target = task.get("target_date")
+            task_description = task.get("description", "")
+
+            with st.expander(f"{task_title} (#{task_id})", expanded=False):
+                title_value = st.text_input("Title", value=task_title, key=f"task_title_{task_id}")
+                description_value = st.text_area(
+                    "Description", value=task_description, height=100, key=f"task_desc_{task_id}"
+                )
+                status_value = st.selectbox(
+                    "Status",
+                    TASK_STATUSES,
+                    index=TASK_STATUSES.index(task_status) if task_status in TASK_STATUSES else 0,
+                    key=f"task_status_{task_id}",
+                )
+                assignee_value = st.selectbox(
+                    "Assignee",
+                    options=assignee_options,
+                    index=_safe_index(assignee_options, task_assignee),
+                    format_func=lambda cid: assignee_labels.get(cid, f"ID {cid}"),
+                    key=f"task_assignee_{task_id}",
+                )
+                target_value = st.date_input(
+                    "Target date", value=task_target, key=f"task_target_{task_id}"
+                )
+
+                col_save, col_delete = st.columns(2)
+                with col_save:
+                    if st.button("Save", key=f"task_save_{task_id}"):
+                        update_task(
+                            task_id=task_id,
+                            title=title_value.strip(),
+                            description=description_value.strip(),
+                            assignee_champion_id=None if assignee_value is None else int(assignee_value),
+                            status=status_value,
+                            target_date=target_value,
+                        )
+                        st.success("Task updated ✅")
+                        st.rerun()
+                with col_delete:
+                    if st.button("Delete", key=f"task_delete_{task_id}"):
+                        soft_delete_task(task_id)
+                        st.success("Task deleted ✅")
+                        st.rerun()
+
     with st.form(f"add_task_{action_id}", clear_on_submit=True):
         title = st.text_input("Title *")
         assignee = st.selectbox(
@@ -429,60 +487,6 @@ def _render_tasks_section(
             )
             st.success("Task added ✅")
             st.rerun()
-
-    tasks_df = list_tasks(action_id)
-    if tasks_df.empty:
-        st.info("No tasks yet.")
-        return
-
-    for _, task in tasks_df.iterrows():
-        task_id = int(task["id"])
-        task_title = task.get("title", "")
-        task_status = task.get("status", "OPEN")
-        task_assignee = task.get("assignee_champion_id")
-        task_target = task.get("target_date")
-        task_description = task.get("description", "")
-
-        with st.expander(f"{task_title} (#{task_id})", expanded=False):
-            title_value = st.text_input("Title", value=task_title, key=f"task_title_{task_id}")
-            description_value = st.text_area(
-                "Description", value=task_description, height=100, key=f"task_desc_{task_id}"
-            )
-            status_value = st.selectbox(
-                "Status",
-                TASK_STATUSES,
-                index=TASK_STATUSES.index(task_status) if task_status in TASK_STATUSES else 0,
-                key=f"task_status_{task_id}",
-            )
-            assignee_value = st.selectbox(
-                "Assignee",
-                options=assignee_options,
-                index=_safe_index(assignee_options, task_assignee),
-                format_func=lambda cid: assignee_labels.get(cid, f"ID {cid}"),
-                key=f"task_assignee_{task_id}",
-            )
-            target_value = st.date_input(
-                "Target date", value=task_target, key=f"task_target_{task_id}"
-            )
-
-            col_save, col_delete = st.columns(2)
-            with col_save:
-                if st.button("Save", key=f"task_save_{task_id}"):
-                    update_task(
-                        task_id=task_id,
-                        title=title_value.strip(),
-                        description=description_value.strip(),
-                        assignee_champion_id=None if assignee_value is None else int(assignee_value),
-                        status=status_value,
-                        target_date=target_value,
-                    )
-                    st.success("Task updated ✅")
-                    st.rerun()
-            with col_delete:
-                if st.button("Delete", key=f"task_delete_{task_id}"):
-                    soft_delete_task(task_id)
-                    st.success("Task deleted ✅")
-                    st.rerun()
 
 
 def _render_team_input(champions_df, champion_options, selected_ids: list[int]) -> list[int]:

@@ -160,7 +160,15 @@ def list_tasks(action_id: int, include_deleted: bool = False) -> pd.DataFrame:
     params: list[Any] = [action_id]
     if not include_deleted:
         q += " AND deleted = 0"
-    q += " ORDER BY sort_order ASC, id ASC;"
+    q += """
+        ORDER BY
+            CASE
+                WHEN status IN ('OPEN', 'IN_PROGRESS') THEN 0
+                ELSE 1
+            END,
+            sort_order ASC,
+            id ASC;
+        """
     df = pd.read_sql_query(q, con, params=params)
     con.close()
     df = _normalize_dates(df, ["created_at", "target_date", "done_at", "updated_at"])
