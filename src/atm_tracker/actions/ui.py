@@ -385,8 +385,6 @@ def _render_action_details() -> None:
     tasks_total = int(progress_summary.get("total", 0))
     tasks_done = int(progress_summary.get("done", 0))
     tasks_open = tasks_total - tasks_done
-    st.caption(f"Tasks: {tasks_total} total • {tasks_done} done • {tasks_open} open")
-
     champions_all = list_champions(active_only=False)
     champion_options = _build_champion_options(champions_all)
     team_ids = get_action_team(int(action_id))
@@ -400,15 +398,20 @@ def _render_action_details() -> None:
     updated_at = action.get("updated_at")
     description = action.get("description", "")
 
-    st.markdown(f"**Status:** {status or '(unknown)'}")
-    st.markdown(f"**Champion (responsible):** {champion or '(unassigned)'}")
-    st.markdown(f"**Team members:** {', '.join(team_names) if team_names else '(none)'}")
-    st.markdown("**Key dates:**")
     st.markdown(
-        f"- Created at: {created_at or '(not set)'}\n"
-        f"- Target date: {target_date or '(not set)'}\n"
-        f"- Closed at: {closed_at or '(not set)'}\n"
-        f"- Status updated: {updated_at or '(not set)'}"
+        "\n".join(
+            [
+                f"- **Tasks:** {tasks_total} total • {tasks_done} done • {tasks_open} open",
+                f"- **Status:** {status or '(unknown)'}",
+                f"- **Champion (responsible):** {champion or '(unassigned)'}",
+                f"- **Team members:** {', '.join(team_names) if team_names else '(none)'}",
+                "- **Key dates:**",
+                f"  - Created at: {created_at or '(not set)'}",
+                f"  - Target date: {target_date or '(not set)'}",
+                f"  - Closed at: {closed_at or '(not set)'}",
+                f"  - Status updated: {updated_at or '(not set)'}",
+            ]
+        )
     )
     st.markdown("**Description:**")
     st.write(description or "(none)")
