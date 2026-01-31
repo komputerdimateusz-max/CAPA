@@ -423,3 +423,41 @@ def get_task_counts(action_ids: list[int]) -> dict[int, dict[str, int]]:
         int(row[0]): {"total": int(row[1] or 0), "done": int(row[2] or 0)}
         for row in rows
     }
+
+
+def get_actions_progress_map(action_ids: list[int]) -> dict[int, int]:
+    if not action_ids:
+        return {}
+    placeholders = ",".join(["?"] * len(action_ids))
+    con = connect()
+    cur = con.cursor()
+    cur.execute(
+        f"""
+        SELECT a.id,
+               a.status,
+               COUNT(t.id) as total_count,
+               SUM(CASE WHEN t.status = 'DONE' THEN 1 ELSE 0 END) as done_count
+        FROM actions a
+        LEFT JOIN action_tasks t
+            ON a.id = t.action_id AND t.deleted = 0
+        WHERE a.id IN ({placeholders})
+        GROUP BY a.id, a.status;
+        """,
+        tuple(action_ids),
+    )
+    rows = cur.fetchall()
+    con.close()
+    progress_map: dict[int, int] = {}
+    for row in rows:
+        action_id = int(row[0])
+        status = str(row[1] or "")
+        total = int(row[2] or 0)
+        done = int(row[3] or 0)
+        if status == "CLOSED":
+            progress = 100
+        elif total == 0:
+            progress = 0
+        else:
+            progress = int(round(done / total * 100))
+        progress_map[action_id] = progress
+    return progress_map

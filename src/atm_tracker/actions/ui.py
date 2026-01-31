@@ -12,6 +12,7 @@ from atm_tracker.actions.repo import (
     MAX_TEAM_MEMBERS,
     TASK_STATUSES,
     add_task,
+    get_actions_progress_map,
     get_action,
     get_action_team,
     get_action_team_sizes,
@@ -156,7 +157,12 @@ def _normalize_name(value: str) -> str:
     return " ".join(value.split())
 
 
-def _build_action_label(action_id: int, project_or_family: str, title: str) -> str:
+def _build_action_label(
+    action_id: int,
+    project_or_family: str,
+    title: str,
+    progress: int,
+) -> str:
     project_value = _normalize_name(str(project_or_family or ""))
     title_value = _normalize_name(str(title or ""))
     parts = [str(action_id)]
@@ -164,7 +170,8 @@ def _build_action_label(action_id: int, project_or_family: str, title: str) -> s
         parts.append(project_value)
     if title_value:
         parts.append(title_value)
-    return " ".join(parts)
+    label = " ".join(parts)
+    return f"{label} — {int(progress)}%"
 
 
 def _render_list() -> None:
@@ -192,6 +199,7 @@ def _render_list() -> None:
 
     action_ids = df["id"].tolist()
     team_sizes = get_action_team_sizes(action_ids)
+    progress_map = get_actions_progress_map([int(action_id) for action_id in action_ids])
     if "id" in df.columns:
         df["team_size"] = df["id"].map(lambda action_id: team_sizes.get(int(action_id), 0))
         task_counts = get_task_counts([int(action_id) for action_id in action_ids])
@@ -201,6 +209,8 @@ def _render_list() -> None:
         df["tasks_done"] = df["id"].map(
             lambda action_id: task_counts.get(int(action_id), {}).get("done", 0)
         )
+        df["progress"] = df["id"].map(lambda action_id: progress_map.get(int(action_id), 0))
+        df["progress"] = df["progress"].map(lambda value: f"{int(value)}%")
 
     st.dataframe(df, use_container_width=True, hide_index=True)
 
@@ -216,6 +226,7 @@ def _render_list() -> None:
             int(row["id"]),
             row.get("project_or_family", ""),
             row.get("title", ""),
+            progress_map.get(int(row["id"]), 0),
         )
         for _, row in df.iterrows()
     }
@@ -307,11 +318,14 @@ def _render_action_details() -> None:
         st.session_state.pop("selected_action_id", None)
         return
 
+    action_ids = [int(row["id"]) for _, row in actions_df.iterrows()]
+    progress_map = get_actions_progress_map(action_ids)
     action_lookup = {
         int(row["id"]): _build_action_label(
             int(row["id"]),
             row.get("project_or_family", ""),
             row.get("title", ""),
+            progress_map.get(int(row["id"]), 0),
         )
         for _, row in actions_df.iterrows()
     }
