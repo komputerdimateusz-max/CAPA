@@ -461,3 +461,72 @@ def get_actions_progress_map(action_ids: list[int]) -> dict[int, int]:
             progress = int(round(done / total * 100))
         progress_map[action_id] = progress
     return progress_map
+
+
+def get_action_progress_summaries(action_ids: list[int]) -> dict[int, dict[str, Any]]:
+    if not action_ids:
+        return {}
+
+    placeholders = ",".join(["?"] * len(action_ids))
+    con = connect()
+    cur = con.cursor()
+    cur.execute(
+        f"""
+        SELECT a.id,
+               a.status,
+               a.target_date,
+               COUNT(t.id) as total_count,
+               SUM(CASE WHEN t.status = 'DONE' THEN 1 ELSE 0 END) as done_count,
+               SUM(
+                   CASE
+                       WHEN t.status != 'DONE'
+                            AND t.target_date IS NOT NULL
+                            AND date(t.target_date) < date('now')
+                       THEN 1
+                       ELSE 0
+                   END
+               ) as overdue_subtasks
+               ,
+               CASE
+                   WHEN a.status != 'CLOSED'
+                        AND a.target_date IS NOT NULL
+                        AND date(a.target_date) < date('now')
+                   THEN 1
+                   ELSE 0
+               END as action_overdue
+        FROM actions a
+        LEFT JOIN action_tasks t
+            ON a.id = t.action_id AND t.deleted = 0
+        WHERE a.id IN ({placeholders})
+        GROUP BY a.id, a.status, a.target_date;
+        """,
+        tuple(action_ids),
+    )
+    rows = cur.fetchall()
+    con.close()
+
+    summaries: dict[int, dict[str, Any]] = {}
+    for row in rows:
+        action_id = int(row[0])
+        status = str(row[1] or "")
+        total = int(row[3] or 0)
+        done = int(row[4] or 0)
+        overdue_subtasks = int(row[5] or 0)
+        action_overdue = int(row[6] or 0)
+
+        if status == "CLOSED":
+            progress_percent = 100
+        elif total == 0:
+            progress_percent = 0
+        else:
+            progress_percent = int(round(done / total * 100))
+
+        summaries[action_id] = {
+            "total": total,
+            "done": done,
+            "progress_percent": progress_percent,
+            "has_overdue_subtasks": overdue_subtasks > 0,
+            "is_action_overdue": action_overdue > 0,
+        }
+
+    return summaries
