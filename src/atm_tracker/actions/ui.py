@@ -40,9 +40,7 @@ def render_actions_module() -> None:
     if "actions_view_override" in st.session_state:
         st.session_state["actions_view"] = st.session_state.pop("actions_view_override")
 
-    view_options = ["Add action", "Actions list / edit"]
-    if st.session_state.get("selected_action_id"):
-        view_options.append("Action details")
+    view_options = ["Add action", "Actions list / edit", "Action details"]
 
     current_view = st.radio("View", view_options, horizontal=True, key="actions_view")
 
@@ -158,6 +156,17 @@ def _normalize_name(value: str) -> str:
     return " ".join(value.split())
 
 
+def _build_action_label(action_id: int, project_or_family: str, title: str) -> str:
+    project_value = _normalize_name(str(project_or_family or ""))
+    title_value = _normalize_name(str(title or ""))
+    parts = [str(action_id)]
+    if project_value:
+        parts.append(project_value)
+    if title_value:
+        parts.append(title_value)
+    return " ".join(parts)
+
+
 def _render_list() -> None:
     st.subheader("Actions list")
 
@@ -202,7 +211,14 @@ def _render_list() -> None:
         st.info("No actions to open.")
         return
 
-    action_lookup = {int(row["id"]): f"{int(row['id'])} — {row['title']}" for _, row in df.iterrows()}
+    action_lookup = {
+        int(row["id"]): _build_action_label(
+            int(row["id"]),
+            row.get("project_or_family", ""),
+            row.get("title", ""),
+        )
+        for _, row in df.iterrows()
+    }
     selected_action_id = st.selectbox(
         "Select action",
         options=action_ids,
@@ -221,7 +237,11 @@ def _render_list() -> None:
         st.info("No actions to edit.")
         return
 
-    selected_id = st.selectbox("Select action id", action_ids)
+    selected_id = st.selectbox(
+        "Select action id",
+        action_ids,
+        format_func=lambda action_id: action_lookup.get(int(action_id), str(action_id)),
+    )
 
     row = df[df["id"] == selected_id].iloc[0]
     colA, colB, colC, colD = st.columns(4)
@@ -281,10 +301,41 @@ def _render_list() -> None:
 
 
 def _render_action_details() -> None:
-    action_id = st.session_state.get("selected_action_id")
-    if not action_id:
-        st.info("Select an action from the list to view details.")
+    actions_df = list_actions()
+    if actions_df.empty:
+        st.info("No actions available.")
+        st.session_state.pop("selected_action_id", None)
         return
+
+    action_lookup = {
+        int(row["id"]): _build_action_label(
+            int(row["id"]),
+            row.get("project_or_family", ""),
+            row.get("title", ""),
+        )
+        for _, row in actions_df.iterrows()
+    }
+    action_ids = list(action_lookup.keys())
+    current_action_id = st.session_state.get("selected_action_id")
+    options = [None] + action_ids
+    index = options.index(current_action_id) if current_action_id in action_ids else 0
+    selected_action_id = st.selectbox(
+        "Select action",
+        options=options,
+        index=index,
+        format_func=lambda action_id: "(select...)"
+        if action_id is None
+        else action_lookup.get(int(action_id), str(action_id)),
+        key="action_details_select_action",
+    )
+
+    if not selected_action_id:
+        st.session_state.pop("selected_action_id", None)
+        st.info("Select an action to view details.")
+        return
+
+    st.session_state["selected_action_id"] = int(selected_action_id)
+    action_id = int(selected_action_id)
 
     action = get_action(int(action_id))
     if action is None:
