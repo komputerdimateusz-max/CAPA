@@ -12,6 +12,7 @@ from atm_tracker.actions.repo import (
     MAX_TEAM_MEMBERS,
     TASK_STATUSES,
     add_task,
+    get_actions_progress_map,
     get_action,
     get_action_progress_summaries,
     get_action_team,
@@ -156,35 +157,11 @@ def _normalize_name(value: str) -> str:
     return " ".join(value.split())
 
 
-def _format_progress_percent(value: int) -> str:
-    return f"{value:03d}%"
-
-
-def _progress_color(
-    progress_percent: int,
-    has_overdue_subtasks: bool,
-    is_action_overdue: bool,
-) -> str:
-    if progress_percent > 80:
-        return "green"
-    if 40 <= progress_percent <= 80:
-        return "yellow"
-    if not has_overdue_subtasks and not is_action_overdue:
-        return "yellow"
-    return "red"
-
-
-def _progress_emoji(color: str) -> str:
-    return {"green": "🟢", "yellow": "🟡", "red": "🔴"}.get(color, "🟡")
-
-
 def _build_action_label(
     action_id: int,
     project_or_family: str,
     title: str,
-    progress_percent: int,
-    has_overdue_subtasks: bool,
-    is_action_overdue: bool,
+    progress: int,
 ) -> str:
     project_value = _normalize_name(str(project_or_family or ""))
     title_value = _normalize_name(str(title or ""))
@@ -193,52 +170,8 @@ def _build_action_label(
         parts.append(project_value)
     if title_value:
         parts.append(title_value)
-    progress_color = _progress_color(progress_percent, has_overdue_subtasks, is_action_overdue)
-    progress_label = _format_progress_percent(progress_percent)
-    return f"{' '.join(parts)} — {progress_label} {_progress_emoji(progress_color)}"
-
-
-def _render_action_header(action_id: int, title: str, progress_percent: int, color: str) -> None:
-    color_map = {
-        "green": {"bg": "#2e7d32", "text": "#ffffff"},
-        "yellow": {"bg": "#f9a825", "text": "#1f1f1f"},
-        "red": {"bg": "#c62828", "text": "#ffffff"},
-    }
-    colors = color_map.get(color, color_map["yellow"])
-    st.markdown(
-        f"""
-        <style>
-            .action-header {{
-                display: flex;
-                flex-wrap: wrap;
-                align-items: center;
-                gap: 0.5rem;
-            }}
-            .action-progress-pill {{
-                display: inline-flex;
-                align-items: center;
-                justify-content: center;
-                min-width: 64px;
-                padding: 0.15rem 0.6rem;
-                border-radius: 999px;
-                font-weight: 600;
-                font-size: 0.85rem;
-                background: {colors["bg"]};
-                color: {colors["text"]};
-                white-space: nowrap;
-            }}
-            .action-title {{
-                font-size: 1.25rem;
-                font-weight: 600;
-            }}
-        </style>
-        <div class="action-header">
-            <div class="action-title">Action {action_id} — {title}</div>
-            <div class="action-progress-pill">{_format_progress_percent(progress_percent)}</div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+    label = " ".join(parts)
+    return f"{label} — {int(progress)}%"
 
 
 def _render_list() -> None:
@@ -266,6 +199,7 @@ def _render_list() -> None:
 
     action_ids = df["id"].tolist()
     team_sizes = get_action_team_sizes(action_ids)
+    progress_map = get_actions_progress_map([int(action_id) for action_id in action_ids])
     if "id" in df.columns:
         df["team_size"] = df["id"].map(lambda action_id: team_sizes.get(int(action_id), 0))
         progress_summaries = get_action_progress_summaries(
@@ -277,8 +211,8 @@ def _render_list() -> None:
         df["tasks_done"] = df["id"].map(
             lambda action_id: progress_summaries.get(int(action_id), {}).get("done", 0)
         )
-    else:
-        progress_summaries = {}
+        df["progress"] = df["id"].map(lambda action_id: progress_map.get(int(action_id), 0))
+        df["progress"] = df["progress"].map(lambda value: f"{int(value)}%")
 
     st.dataframe(df, use_container_width=True, hide_index=True)
 
@@ -294,9 +228,7 @@ def _render_list() -> None:
             int(row["id"]),
             row.get("project_or_family", ""),
             row.get("title", ""),
-            progress_summaries.get(int(row["id"]), {}).get("progress_percent", 0),
-            progress_summaries.get(int(row["id"]), {}).get("has_overdue_subtasks", False),
-            progress_summaries.get(int(row["id"]), {}).get("is_action_overdue", False),
+            progress_map.get(int(row["id"]), 0),
         )
         for _, row in df.iterrows()
     }
@@ -388,17 +320,14 @@ def _render_action_details() -> None:
         st.session_state.pop("selected_action_id", None)
         return
 
-    progress_summaries = get_action_progress_summaries(
-        [int(row["id"]) for _, row in actions_df.iterrows()]
-    )
+    action_ids = [int(row["id"]) for _, row in actions_df.iterrows()]
+    progress_map = get_actions_progress_map(action_ids)
     action_lookup = {
         int(row["id"]): _build_action_label(
             int(row["id"]),
             row.get("project_or_family", ""),
             row.get("title", ""),
-            progress_summaries.get(int(row["id"]), {}).get("progress_percent", 0),
-            progress_summaries.get(int(row["id"]), {}).get("has_overdue_subtasks", False),
-            progress_summaries.get(int(row["id"]), {}).get("is_action_overdue", False),
+            progress_map.get(int(row["id"]), 0),
         )
         for _, row in actions_df.iterrows()
     }
