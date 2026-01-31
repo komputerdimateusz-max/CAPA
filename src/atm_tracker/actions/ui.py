@@ -14,9 +14,9 @@ from atm_tracker.actions.repo import (
     add_task,
     get_actions_progress_map,
     get_action,
+    get_action_progress_summaries,
     get_action_team,
     get_action_team_sizes,
-    get_task_counts,
     insert_action,
     list_actions,
     list_tasks,
@@ -202,12 +202,14 @@ def _render_list() -> None:
     progress_map = get_actions_progress_map([int(action_id) for action_id in action_ids])
     if "id" in df.columns:
         df["team_size"] = df["id"].map(lambda action_id: team_sizes.get(int(action_id), 0))
-        task_counts = get_task_counts([int(action_id) for action_id in action_ids])
+        progress_summaries = get_action_progress_summaries(
+            [int(action_id) for action_id in action_ids]
+        )
         df["tasks_total"] = df["id"].map(
-            lambda action_id: task_counts.get(int(action_id), {}).get("total", 0)
+            lambda action_id: progress_summaries.get(int(action_id), {}).get("total", 0)
         )
         df["tasks_done"] = df["id"].map(
-            lambda action_id: task_counts.get(int(action_id), {}).get("done", 0)
+            lambda action_id: progress_summaries.get(int(action_id), {}).get("done", 0)
         )
         df["progress"] = df["id"].map(lambda action_id: progress_map.get(int(action_id), 0))
         df["progress"] = df["progress"].map(lambda value: f"{int(value)}%")
@@ -362,10 +364,26 @@ def _render_action_details() -> None:
     st.button("Back to list", on_click=_queue_actions_list)
 
     title = action.get("title", "")
-    st.subheader(f"Action {int(action_id)} — {title}")
-    task_counts = get_task_counts([int(action_id)]).get(int(action_id), {"total": 0, "done": 0})
-    tasks_total = int(task_counts.get("total", 0))
-    tasks_done = int(task_counts.get("done", 0))
+    progress_summary = progress_summaries.get(
+        int(action_id),
+        {
+            "total": 0,
+            "done": 0,
+            "progress_percent": 0,
+            "has_overdue_subtasks": False,
+            "is_action_overdue": False,
+        },
+    )
+    progress_percent = int(progress_summary.get("progress_percent", 0))
+    progress_color = _progress_color(
+        progress_percent,
+        bool(progress_summary.get("has_overdue_subtasks", False)),
+        bool(progress_summary.get("is_action_overdue", False)),
+    )
+    _render_action_header(int(action_id), str(title or ""), progress_percent, progress_color)
+
+    tasks_total = int(progress_summary.get("total", 0))
+    tasks_done = int(progress_summary.get("done", 0))
     tasks_open = tasks_total - tasks_done
     st.caption(f"Tasks: {tasks_total} total • {tasks_done} done • {tasks_open} open")
 
