@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-from datetime import date, timedelta
+from contextlib import contextmanager
 import importlib.util
 from typing import Iterable
 
@@ -11,551 +10,96 @@ import streamlit as st
 
 from atm_tracker.actions.db import init_db
 from atm_tracker.actions.repo import get_actions_days_late, list_actions
-from atm_tracker.analyses.repo import list_analyses
-from atm_tracker.ui.layout import footer, kpi_row, main_grid, page_header, section
-from atm_tracker.ui.styles import inject_global_styles, muted
+from atm_tracker.ui.layout import footer, kpi_row, main_grid, page_header
+from atm_tracker.ui.styles import card, inject_global_styles, muted, pill
 
 
-@dataclass(frozen=True)
-class WeeklyMetric:
-    name: str
-    label: str
-    target_key: str | None = None
-
-
-TARGET_KEYS = {
-    "open_actions": "target_open_actions",
-    "closed_actions": "target_closed_actions",
-    "open_analysis": "target_open_analysis",
-    "closed_analysis": "target_closed_analysis",
+FILTER_KEYS = {
+    "project": "analysis_filter_project",
+    "champion": "analysis_filter_champion",
+    "status": "analysis_filter_status",
+    "search": "analysis_filter_search",
+    "date_from": "analysis_filter_date_from",
+    "date_to": "analysis_filter_date_to",
 }
 
 
-def to_week_index(df: pd.DataFrame, date_col: str) -> pd.DataFrame:
-    if date_col not in df.columns:
-        return df
-    df = df.copy()
-    df[date_col] = pd.to_datetime(df[date_col], errors="coerce").dt.date
-    iso = pd.to_datetime(df[date_col], errors="coerce").dt.isocalendar()
-    df["iso_year"] = iso["year"].astype("Int64")
-    df["iso_week"] = iso["week"].astype("Int64")
-    df["week_label"] = "CW" + iso["week"].astype(str)
-    df["week_start_date"] = df.apply(
-        lambda row: _week_start_date(row.get("iso_year"), row.get("iso_week")), axis=1
-    )
-    return df
-
-
-def build_weekly_series(
-    df: pd.DataFrame,
-    date_col: str,
-    *,
-    all_weeks: pd.DataFrame,
-    value_name: str,
-    mask: pd.Series | None = None,
-) -> pd.DataFrame:
-    if df.empty or date_col not in df.columns or all_weeks.empty:
-        return _empty_weekly_series(all_weeks, value_name)
-
-    working = df.copy()
-    if mask is not None:
-        working = working[mask]
-    if working.empty:
-        return _empty_weekly_series(all_weeks, value_name)
-
-    working = to_week_index(working, date_col)
-    working = working.dropna(subset=["iso_year", "iso_week"])
-    if working.empty:
-        return _empty_weekly_series(all_weeks, value_name)
-
-    grouped = (
-        working.groupby(["iso_year", "iso_week"], dropna=False)
-        .size()
-        .reset_index(name=value_name)
-    )
-    merged = all_weeks.merge(grouped, on=["iso_year", "iso_week"], how="left")
-    merged[value_name] = merged[value_name].fillna(0).astype(int)
-    return merged
-
-
-def build_dashboard_dataset(
-    actions_df: pd.DataFrame,
-    analyses_df: pd.DataFrame,
-    *,
-    warnings: list[str],
-) -> pd.DataFrame:
-    start_date = _min_date(actions_df, analyses_df, warnings=warnings)
-    end_date = _max_end_date(actions_df, analyses_df)
-    if not start_date or not end_date:
-        return pd.DataFrame()
-
-    all_weeks = _build_week_index(start_date, end_date)
-    if all_weeks.empty:
-        return pd.DataFrame()
-
-    actions_status = _normalized_status(actions_df.get("status"))
-    analyses_status = _normalized_status(analyses_df.get("status"))
-    open_actions_mask = actions_status != "closed" if actions_status is not None else None
-    closed_actions_mask = actions_status == "closed" if actions_status is not None else None
-    open_analysis_mask = analyses_status != "closed" if analyses_status is not None else None
-    closed_analysis_mask = analyses_status == "closed" if analyses_status is not None else None
-
-    if actions_status is None:
-        warnings.append("Actions status column missing; open/closed action series unavailable.")
-    if analyses_status is None:
-        warnings.append("Analysis status column missing; open/closed analysis series unavailable.")
-
-    open_actions = build_weekly_series(
-        actions_df,
-        "created_at",
-        all_weeks=all_weeks,
-        value_name="open_actions",
-        mask=open_actions_mask,
-    )
-    closed_actions = build_weekly_series(
-        actions_df,
-        "closed_at",
-        all_weeks=all_weeks,
-        value_name="closed_actions",
-        mask=closed_actions_mask,
-    )
-    open_analysis = build_weekly_series(
-        analyses_df,
-        "created_at",
-        all_weeks=all_weeks,
-        value_name="open_analysis",
-        mask=open_analysis_mask,
-    )
-    closed_analysis = build_weekly_series(
-        analyses_df,
-        "closed_at",
-        all_weeks=all_weeks,
-        value_name="closed_analysis",
-        mask=closed_analysis_mask,
-    )
-
-    champion_col = _find_column(actions_df.columns, ["champion", "owner"])
-    champions_mask: pd.Series | None = None
-    if champion_col and actions_status is not None:
-        champions_mask = open_actions_mask & actions_df[champion_col].fillna("").astype(str).ne("")
-    else:
-        warnings.append("Champion column missing; champion open actions series unavailable.")
-
-    champions_open = build_weekly_series(
-        actions_df,
-        "created_at",
-        all_weeks=all_weeks,
-        value_name="champions_open_actions",
-        mask=champions_mask,
-    )
-
-    dataset = all_weeks.copy()
-    for frame in [open_actions, closed_actions, open_analysis, closed_analysis, champions_open]:
-        dataset = dataset.merge(
-            frame[["iso_year", "iso_week", frame.columns[-1]]],
-            on=["iso_year", "iso_week"],
-            how="left",
-        )
-
-    for col in [
-        "open_actions",
-        "closed_actions",
-        "open_analysis",
-        "closed_analysis",
-        "champions_open_actions",
-    ]:
-        if col not in dataset.columns:
-            dataset[col] = 0
-    dataset[
-        [
-            "open_actions",
-            "closed_actions",
-            "open_analysis",
-            "closed_analysis",
-            "champions_open_actions",
-        ]
-    ] = dataset[
-        [
-            "open_actions",
-            "closed_actions",
-            "open_analysis",
-            "closed_analysis",
-            "champions_open_actions",
-        ]
-    ].fillna(0)
-    return dataset
+@contextmanager
+def card_section(title: str, caption: str | None = None) -> Iterable[None]:
+    st.markdown("<div class='ds-card'>", unsafe_allow_html=True)
+    st.markdown(f"#### {title}")
+    if caption:
+        st.caption(caption)
+    yield
+    st.markdown("</div>", unsafe_allow_html=True)
 
 
 def render_kpi_dashboard() -> None:
     init_db()
     inject_global_styles()
 
+    export_available = True
+
+    def _render_header_actions() -> None:
+        col_left, col_right = st.columns(2)
+        with col_left:
+            if st.button("🔄 Refresh", use_container_width=True):
+                st.rerun()
+        if export_available:
+            with col_right:
+                if st.button("⬇️ Export", use_container_width=True):
+                    st.session_state["analysis_export_open"] = True
+
     page_header(
-        "📊 KPI Dashboard",
-        "Weekly signals across actions, analyses, and champions (read-only).",
-    )
-    view = st.radio(
-        "View",
-        ["Both", "Actions", "Analysis"],
-        horizontal=True,
-        key="kpi_dashboard_view",
+        "🧠 Analysis",
+        "Explore trends, drivers, and CAPA effectiveness.",
+        actions=_render_header_actions,
     )
     st.divider()
 
     actions_df = list_actions()
-    analyses_df = list_analyses()
-    warnings: list[str] = []
-    dataset = build_dashboard_dataset(actions_df, analyses_df, warnings=warnings)
+    column_map = _find_action_columns(actions_df.columns)
+    _initialize_filter_state(actions_df, column_map)
+    filtered_df = _apply_filters(actions_df, column_map)
+    _append_days_late(filtered_df)
 
-    totals = _build_totals(actions_df, analyses_df, warnings=warnings)
-    _render_kpi_tiles(view, totals)
+    _render_kpi_row(filtered_df, column_map)
     st.divider()
 
-    targets = _render_targets_expander()
+    _render_filters(actions_df, column_map)
+    st.divider()
 
-    charts: dict[str, go.Figure] = {}
-    if dataset.empty:
-        st.info("No KPI time series available yet.")
-    else:
-        week_order = dataset["week_label"].tolist()
-
-        if view in ("Both", "Actions"):
-            section("Actions throughput")
-            actions_fig = _build_chart(
-                dataset,
-                week_order,
-                [
-                    WeeklyMetric("open_actions", "Open actions", TARGET_KEYS["open_actions"]),
-                    WeeklyMetric("closed_actions", "Closed actions", TARGET_KEYS["closed_actions"]),
-                ],
-                targets,
-                y_title="Actions",
-            )
-            st.plotly_chart(actions_fig, use_container_width=True)
-            charts["Actions throughput"] = actions_fig
-
-            section("Champions with open actions")
-            champions_fig = _build_chart(
-                dataset,
-                week_order,
-                [WeeklyMetric("champions_open_actions", "Open actions with champions")],
-                targets,
-                y_title="Open actions",
-            )
-            st.plotly_chart(champions_fig, use_container_width=True)
-            charts["Champions open actions"] = champions_fig
-
-        if view in ("Both", "Analysis"):
-            section("Analysis throughput")
-            analysis_fig = _build_chart(
-                dataset,
-                week_order,
-                [
-                    WeeklyMetric("open_analysis", "Open analyses", TARGET_KEYS["open_analysis"]),
-                    WeeklyMetric("closed_analysis", "Closed analyses", TARGET_KEYS["closed_analysis"]),
-                ],
-                targets,
-                y_title="Analyses",
-            )
-            st.plotly_chart(analysis_fig, use_container_width=True)
-            charts["Analysis throughput"] = analysis_fig
-
-    if warnings:
-        for warning in warnings:
-            st.warning(warning)
-
-    with st.expander("Export", expanded=False):
-        if dataset.empty:
-            st.info("No data to export yet.")
-        else:
-            export_df = dataset[
-                [
-                    "week_label",
-                    "week_start_date",
-                    "open_actions",
-                    "closed_actions",
-                    "open_analysis",
-                    "closed_analysis",
-                    "champions_open_actions",
-                ]
-            ].copy()
-            st.download_button(
-                "Download weekly KPI data (CSV)",
-                export_df.to_csv(index=False),
-                file_name="kpi_weekly_summary.csv",
-                mime="text/csv",
-            )
-
-        if not charts:
-            st.caption("Chart export available when charts are visible.")
-        elif not _png_export_available():
-            st.caption("Chart PNG export unavailable (install kaleido to enable).")
-        else:
-            chart_name = st.selectbox("Select chart", list(charts.keys()))
-            fig = charts.get(chart_name)
-            if fig:
-                png_bytes = fig.to_image(format="png")
-                st.download_button(
-                    "Download chart image (PNG)",
-                    png_bytes,
-                    file_name=f"{chart_name.lower().replace(' ', '_')}.png",
-                    mime="image/png",
+    with main_grid("split") as (main, side):
+        with main:
+            if actions_df.empty:
+                st.markdown(muted("📭 No data available for Analysis."), unsafe_allow_html=True)
+            elif filtered_df.empty:
+                st.markdown(
+                    muted("📭 No results for current filters. Adjust filters or date range."),
+                    unsafe_allow_html=True,
                 )
-
-    footer("Action-to-Money Tracker • Weekly KPIs are directional, not ROI.")
-
-
-def _render_kpi_tiles(view: str, totals: dict[str, int]) -> None:
-    tiles: list[tuple[str, int]] = []
-    if view in ("Both", "Actions"):
-        tiles.extend(
-            [
-                ("Total open actions", totals.get("open_actions", 0)),
-                ("Total overdue actions", totals.get("overdue_actions", 0)),
-                ("Total closed actions", totals.get("closed_actions", 0)),
-                ("Champions with open actions", totals.get("champions_open", 0)),
-            ]
-        )
-    if view in ("Both", "Analysis"):
-        tiles.extend(
-            [
-                ("Total open analysis", totals.get("open_analysis", 0)),
-                ("Total closed analysis", totals.get("closed_analysis", 0)),
-            ]
-        )
-    kpi_row(tiles)
-
-
-def _build_totals(
-    actions_df: pd.DataFrame,
-    analyses_df: pd.DataFrame,
-    *,
-    warnings: list[str],
-) -> dict[str, int]:
-    totals: dict[str, int] = {
-        "open_actions": 0,
-        "closed_actions": 0,
-        "overdue_actions": 0,
-        "open_analysis": 0,
-        "closed_analysis": 0,
-        "champions_open": 0,
-    }
-
-    actions_status = _normalized_status(actions_df.get("status"))
-    if actions_status is None:
-        warnings.append("Actions status column missing; open/closed totals unavailable.")
-    else:
-        totals["open_actions"] = int((actions_status != "closed").sum())
-        totals["closed_actions"] = int((actions_status == "closed").sum())
-
-    analyses_status = _normalized_status(analyses_df.get("status"))
-    if analyses_status is None:
-        warnings.append("Analysis status column missing; open/closed totals unavailable.")
-    else:
-        totals["open_analysis"] = int((analyses_status != "closed").sum())
-        totals["closed_analysis"] = int((analyses_status == "closed").sum())
-
-    if not actions_df.empty:
-        totals["overdue_actions"] = _compute_overdue_actions(actions_df, actions_status, warnings)
-        totals["champions_open"] = _compute_champions_open(actions_df, actions_status, warnings)
-
-    return totals
-
-
-def _compute_overdue_actions(
-    actions_df: pd.DataFrame,
-    actions_status: pd.Series | None,
-    warnings: list[str],
-) -> int:
-    if actions_status is None:
-        return 0
-    if "id" in actions_df.columns:
-        action_ids = [int(value) for value in actions_df["id"].dropna().tolist() if str(value).isdigit()]
-        days_late = get_actions_days_late(action_ids)
-        if not action_ids:
-            return 0
-        return int(sum(1 for value in action_ids if days_late.get(int(value), 0) > 0))
-
-    due_col = _find_column(actions_df.columns, ["target_date", "due_date"])
-    if due_col:
-        due_dates = pd.to_datetime(actions_df[due_col], errors="coerce").dt.date
-        return int(((due_dates < date.today()) & (actions_status != "closed")).sum())
-
-    warnings.append("Due date column missing; overdue actions unavailable.")
-    return 0
-
-
-def _compute_champions_open(
-    actions_df: pd.DataFrame,
-    actions_status: pd.Series | None,
-    warnings: list[str],
-) -> int:
-    champion_col = _find_column(actions_df.columns, ["champion", "owner"])
-    if actions_status is None:
-        return 0
-    if not champion_col:
-        warnings.append("Champion column missing; champions with open actions unavailable.")
-        return 0
-    open_mask = actions_status != "closed"
-    champions = actions_df.loc[open_mask, champion_col].fillna("").astype(str)
-    return int(champions[champions.str.strip().ne("")].nunique())
-
-
-def _render_targets_expander() -> dict[str, float | None]:
-    targets: dict[str, float | None] = {}
-    if "kpi_targets" not in st.session_state:
-        st.session_state["kpi_targets"] = {
-            key: None for key in TARGET_KEYS.values()
-        }
-
-    with st.expander("Targets", expanded=False):
-        st.caption("Optional weekly targets (session-only).")
-        for label, key in [
-            ("Open actions weekly target", TARGET_KEYS["open_actions"]),
-            ("Closed actions weekly target", TARGET_KEYS["closed_actions"]),
-            ("Open analysis weekly target", TARGET_KEYS["open_analysis"]),
-            ("Closed analysis weekly target", TARGET_KEYS["closed_analysis"]),
-        ]:
-            enabled_key = f"{key}_enabled"
-            current_value = st.session_state["kpi_targets"].get(key)
-            if enabled_key not in st.session_state:
-                st.session_state[enabled_key] = current_value is not None
-
-            enabled = st.checkbox(label, key=enabled_key)
-            if enabled:
-                default_value = 0.0 if current_value is None else float(current_value)
-                value = st.number_input(
-                    "Target value",
-                    min_value=0.0,
-                    step=1.0,
-                    value=default_value,
-                    key=key,
-                )
-                targets[key] = float(value)
-                st.session_state["kpi_targets"][key] = float(value)
             else:
-                targets[key] = None
-                st.session_state["kpi_targets"][key] = None
+                charts = _render_charts(filtered_df, column_map)
+                if not charts:
+                    st.markdown(muted("No chart-ready data available yet."), unsafe_allow_html=True)
+        with side:
+            _render_insights_panel(filtered_df, column_map)
+            _render_export_panel(filtered_df, export_available)
 
-    return targets
-
-
-def _build_chart(
-    dataset: pd.DataFrame,
-    week_order: Iterable[str],
-    metrics: list[WeeklyMetric],
-    targets: dict[str, float | None],
-    *,
-    y_title: str,
-) -> go.Figure:
-    fig = go.Figure()
-    for metric in metrics:
-        if metric.name not in dataset.columns:
-            continue
-        fig.add_trace(
-            go.Scatter(
-                x=dataset["week_label"],
-                y=dataset[metric.name],
-                mode="lines+markers",
-                name=metric.label,
-                hovertemplate=f"Week %{{x}}<br>{metric.label}: %{{y}}<extra></extra>",
-            )
-        )
-        if metric.target_key and targets.get(metric.target_key) is not None:
-            target_value = float(targets[metric.target_key] or 0)
-            fig.add_trace(
-                go.Scatter(
-                    x=dataset["week_label"],
-                    y=[target_value] * len(dataset),
-                    mode="lines",
-                    name=f"{metric.label} target",
-                    line=dict(dash="dash"),
-                    hovertemplate=f"Week %{{x}}<br>{metric.label} target: {target_value}<extra></extra>",
-                )
-            )
-
-    fig.update_layout(
-        height=360,
-        margin=dict(l=20, r=20, t=20, b=20),
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
-    )
-    fig.update_xaxes(
-        title=None,
-        type="category",
-        categoryorder="array",
-        categoryarray=list(week_order),
-    )
-    fig.update_yaxes(title=y_title, rangemode="tozero")
-    return fig
+    footer("Action-to-Money Tracker • Insight first, action second.")
 
 
-def _min_date(
-    actions_df: pd.DataFrame,
-    analyses_df: pd.DataFrame,
-    *,
-    warnings: list[str],
-) -> date | None:
-    dates: list[date] = []
-    for df, name in [(actions_df, "actions"), (analyses_df, "analyses")]:
-        if "created_at" not in df.columns:
-            warnings.append(f"{name.title()} created_at column missing; timeline start may be incomplete.")
-            continue
-        series = pd.to_datetime(df["created_at"], errors="coerce").dt.date
-        series = series.dropna()
-        if not series.empty:
-            dates.append(series.min())
-    if not dates:
-        return None
-    return min(dates)
-
-
-def _max_end_date(actions_df: pd.DataFrame, analyses_df: pd.DataFrame) -> date | None:
-    today = date.today()
-    dates: list[date] = [today]
-    for df in [actions_df, analyses_df]:
-        if "closed_at" in df.columns:
-            series = pd.to_datetime(df["closed_at"], errors="coerce").dt.date
-            series = series.dropna()
-            if not series.empty:
-                dates.append(series.max())
-    return max(dates) if dates else None
-
-
-def _build_week_index(start_date: date, end_date: date) -> pd.DataFrame:
-    start_monday = start_date - timedelta(days=start_date.weekday())
-    end_monday = end_date - timedelta(days=end_date.weekday())
-    week_starts = pd.date_range(start=start_monday, end=end_monday, freq="W-MON").date
-    if len(week_starts) == 0:
-        return pd.DataFrame()
-    df = pd.DataFrame({"week_start_date": week_starts})
-    iso = pd.to_datetime(df["week_start_date"]).dt.isocalendar()
-    df["iso_year"] = iso["year"].astype(int)
-    df["iso_week"] = iso["week"].astype(int)
-    df["week_label"] = "CW" + df["iso_week"].astype(str)
-    return df
-
-
-def _week_start_date(year: int | None, week: int | None) -> date | None:
-    if not year or not week:
-        return None
-    try:
-        return date.fromisocalendar(int(year), int(week), 1)
-    except ValueError:
-        return None
-
-
-def _empty_weekly_series(all_weeks: pd.DataFrame, value_name: str) -> pd.DataFrame:
-    if all_weeks.empty:
-        return pd.DataFrame(columns=["iso_year", "iso_week", value_name])
-    df = all_weeks[["iso_year", "iso_week"]].copy()
-    df[value_name] = 0
-    return df
-
-
-def _normalized_status(series: pd.Series | None) -> pd.Series | None:
-    if series is None:
-        return None
-    return series.astype(str).str.strip().str.lower()
+def _find_action_columns(columns: Iterable[str]) -> dict[str, str | None]:
+    return {
+        "project": _find_column(columns, ["project_or_family", "project", "family"]),
+        "champion": _find_column(columns, ["champion", "owner", "responsible"]),
+        "status": _find_column(columns, ["status", "state"]),
+        "created_at": _find_column(columns, ["created_at", "created", "date"]),
+        "closed_at": _find_column(columns, ["closed_at", "closed", "done_at"]),
+        "due_date": _find_column(columns, ["target_date", "due_date", "due"]),
+        "title": _find_column(columns, ["title", "action_title", "name"]),
+        "id": _find_column(columns, ["id", "action_id"]),
+    }
 
 
 def _find_column(columns: Iterable[str], candidates: list[str]) -> str | None:
@@ -566,13 +110,419 @@ def _find_column(columns: Iterable[str], candidates: list[str]) -> str | None:
     return None
 
 
+def _initialize_filter_state(actions_df: pd.DataFrame, column_map: dict[str, str | None]) -> None:
+    project_col = column_map.get("project")
+    champion_col = column_map.get("champion")
+    status_col = column_map.get("status")
+
+    if FILTER_KEYS["project"] not in st.session_state:
+        st.session_state[FILTER_KEYS["project"]] = "All"
+    if FILTER_KEYS["champion"] not in st.session_state:
+        st.session_state[FILTER_KEYS["champion"]] = "All"
+    if FILTER_KEYS["status"] not in st.session_state:
+        st.session_state[FILTER_KEYS["status"]] = []
+    if FILTER_KEYS["search"] not in st.session_state:
+        st.session_state[FILTER_KEYS["search"]] = ""
+    if FILTER_KEYS["date_from"] not in st.session_state:
+        st.session_state[FILTER_KEYS["date_from"]] = None
+    if FILTER_KEYS["date_to"] not in st.session_state:
+        st.session_state[FILTER_KEYS["date_to"]] = None
+
+    if project_col and project_col in actions_df.columns:
+        options = actions_df[project_col].dropna().astype(str).tolist()
+        if st.session_state[FILTER_KEYS["project"]] not in ["All"] + options:
+            st.session_state[FILTER_KEYS["project"]] = "All"
+
+    if champion_col and champion_col in actions_df.columns:
+        options = actions_df[champion_col].dropna().astype(str).tolist()
+        if st.session_state[FILTER_KEYS["champion"]] not in ["All"] + options:
+            st.session_state[FILTER_KEYS["champion"]] = "All"
+
+    if status_col and status_col in actions_df.columns:
+        if not isinstance(st.session_state[FILTER_KEYS["status"]], list):
+            st.session_state[FILTER_KEYS["status"]] = []
+
+
+def _apply_filters(actions_df: pd.DataFrame, column_map: dict[str, str | None]) -> pd.DataFrame:
+    filtered = actions_df.copy()
+
+    project_col = column_map.get("project")
+    champion_col = column_map.get("champion")
+    status_col = column_map.get("status")
+    title_col = column_map.get("title")
+    id_col = column_map.get("id")
+
+    selected_project = st.session_state.get(FILTER_KEYS["project"], "All")
+    selected_champion = st.session_state.get(FILTER_KEYS["champion"], "All")
+    selected_status = st.session_state.get(FILTER_KEYS["status"], [])
+    search_text = st.session_state.get(FILTER_KEYS["search"], "")
+
+    if selected_project != "All" and project_col:
+        filtered = filtered[filtered[project_col] == selected_project]
+
+    if selected_champion != "All" and champion_col:
+        filtered = filtered[filtered[champion_col] == selected_champion]
+
+    if selected_status and status_col:
+        filtered = filtered[filtered[status_col].isin(selected_status)]
+
+    if search_text and (title_col or id_col):
+        search_lower = search_text.strip().lower()
+        matches = pd.Series([False] * len(filtered), index=filtered.index)
+        if id_col:
+            matches = matches | filtered[id_col].astype(str).str.contains(search_lower, case=False, na=False)
+        if title_col:
+            matches = matches | filtered[title_col].astype(str).str.contains(search_lower, case=False, na=False)
+        filtered = filtered[matches]
+
+    date_col = _choose_date_column(column_map)
+    if date_col and (FILTER_KEYS["date_from"] in st.session_state or FILTER_KEYS["date_to"] in st.session_state):
+        date_from = st.session_state.get(FILTER_KEYS["date_from"])
+        date_to = st.session_state.get(FILTER_KEYS["date_to"])
+        date_series = pd.to_datetime(filtered[date_col], errors="coerce").dt.date
+        if date_from:
+            filtered = filtered[date_series >= date_from]
+        if date_to:
+            filtered = filtered[date_series <= date_to]
+
+    return filtered
+
+
+def _append_days_late(actions_df: pd.DataFrame) -> None:
+    id_col = "id" if "id" in actions_df.columns else None
+    if not id_col:
+        return
+    action_ids = [int(value) for value in actions_df[id_col].dropna().tolist() if str(value).isdigit()]
+    if not action_ids:
+        return
+    days_late_map = get_actions_days_late(action_ids)
+    actions_df["days_late"] = actions_df[id_col].map(lambda action_id: days_late_map.get(int(action_id), 0))
+
+
+def _render_kpi_row(actions_df: pd.DataFrame, column_map: dict[str, str | None]) -> None:
+    if actions_df.empty:
+        kpi_row([])
+        return
+
+    status_col = column_map.get("status")
+    closed_col = column_map.get("closed_at")
+
+    items: list[tuple[str, str | int | float]] = []
+    items.append(("Total actions", int(len(actions_df))))
+
+    if status_col:
+        status_values = _normalize_status(actions_df[status_col])
+        items.append(("Open actions", int((status_values != "closed").sum())))
+    if "days_late" in actions_df.columns:
+        items.append(("Overdue actions", int((actions_df["days_late"] > 0).sum())))
+    if "days_late" in actions_df.columns and closed_col:
+        if status_col:
+            closed_mask = _normalize_status(actions_df[status_col]) == "closed"
+        else:
+            closed_mask = actions_df[closed_col].notna()
+        closed_count = int(closed_mask.sum())
+        if closed_count:
+            on_time_rate = (actions_df.loc[closed_mask, "days_late"] <= 0).sum() / closed_count
+            items.append(("On-time close rate", f"{on_time_rate * 100:.0f}%"))
+
+    kpi_row(items)
+
+
+def _render_filters(actions_df: pd.DataFrame, column_map: dict[str, str | None]) -> None:
+    project_col = column_map.get("project")
+    champion_col = column_map.get("champion")
+    status_col = column_map.get("status")
+    title_col = column_map.get("title")
+    id_col = column_map.get("id")
+
+    date_col = _choose_date_column(column_map)
+
+    with st.expander("🔍 Filters", expanded=True):
+        filter_cols = st.columns(4)
+        if project_col:
+            project_options = sorted(actions_df[project_col].dropna().astype(str).unique().tolist())
+            with filter_cols[0]:
+                st.selectbox("Project", options=["All"] + project_options, key=FILTER_KEYS["project"])
+        if champion_col:
+            champion_options = sorted(actions_df[champion_col].dropna().astype(str).unique().tolist())
+            with filter_cols[1]:
+                st.selectbox("Champion", options=["All"] + champion_options, key=FILTER_KEYS["champion"])
+        if status_col:
+            status_options = sorted(actions_df[status_col].dropna().astype(str).unique().tolist())
+            with filter_cols[2]:
+                st.multiselect("Status", options=status_options, key=FILTER_KEYS["status"])
+        if title_col or id_col:
+            with filter_cols[3]:
+                st.text_input(
+                    "Search (ID or title)",
+                    placeholder="e.g. 42 or coating defect",
+                    key=FILTER_KEYS["search"],
+                )
+
+        if date_col:
+            date_label = {
+                "created_at": "Created",
+                "closed_at": "Closed",
+                "due_date": "Due",
+            }.get(_normalize_date_key(column_map, date_col), "Date")
+            date_cols = st.columns(2)
+            with date_cols[0]:
+                st.date_input(f"{date_label} from", value=None, key=FILTER_KEYS["date_from"])
+            with date_cols[1]:
+                st.date_input(f"{date_label} to", value=None, key=FILTER_KEYS["date_to"])
+
+
+def _normalize_date_key(column_map: dict[str, str | None], date_col: str) -> str:
+    for key, value in column_map.items():
+        if value == date_col:
+            return key
+    return "date"
+
+
+def _choose_date_column(column_map: dict[str, str | None]) -> str | None:
+    return column_map.get("created_at") or column_map.get("due_date") or column_map.get("closed_at")
+
+
+def _normalize_status(series: pd.Series) -> pd.Series:
+    return series.astype(str).str.strip().str.lower()
+
+
+def _render_charts(actions_df: pd.DataFrame, column_map: dict[str, str | None]) -> dict[str, go.Figure]:
+    charts: dict[str, go.Figure] = {}
+    project_col = column_map.get("project")
+    champion_col = column_map.get("champion")
+    status_col = column_map.get("status")
+    created_col = column_map.get("created_at")
+    closed_col = column_map.get("closed_at")
+
+    if project_col and "days_late" in actions_df.columns:
+        overdue = actions_df[actions_df["days_late"] > 0]
+        if not overdue.empty:
+            grouped = overdue.groupby(project_col).size().sort_values(ascending=False)
+            fig = go.Figure(
+                data=[
+                    go.Bar(
+                        x=grouped.index.astype(str),
+                        y=grouped.values,
+                        marker_color="#D97706",
+                    )
+                ]
+            )
+            fig.update_layout(
+                height=320,
+                margin=dict(l=20, r=20, t=10, b=20),
+                xaxis_title="Project",
+                yaxis_title="Overdue actions",
+            )
+            with card_section("Overdue actions by project", "Where are actions slipping the most?"):
+                st.plotly_chart(fig, use_container_width=True)
+            charts["Overdue actions by project"] = fig
+
+    if created_col and closed_col:
+        fig = _build_created_closed_chart(actions_df, created_col, closed_col)
+        if fig is not None:
+            with card_section("Actions created vs closed over time", "Are we closing as fast as we open?"):
+                st.plotly_chart(fig, use_container_width=True)
+            charts["Actions created vs closed over time"] = fig
+
+    if champion_col and status_col:
+        open_mask = _normalize_status(actions_df[status_col]) != "closed"
+        open_df = actions_df[open_mask]
+        if not open_df.empty:
+            grouped = open_df.groupby(champion_col).size().sort_values(ascending=False)
+            fig = go.Figure(
+                data=[
+                    go.Bar(
+                        x=grouped.index.astype(str),
+                        y=grouped.values,
+                        marker_color="#1F2937",
+                    )
+                ]
+            )
+            fig.update_layout(
+                height=320,
+                margin=dict(l=20, r=20, t=10, b=20),
+                xaxis_title="Champion",
+                yaxis_title="Open actions",
+            )
+            with card_section("Champion workload (open actions)", "Who is carrying the open workload?"):
+                st.plotly_chart(fig, use_container_width=True)
+            charts["Champion workload (open actions)"] = fig
+
+    return charts
+
+
+def _build_created_closed_chart(
+    actions_df: pd.DataFrame,
+    created_col: str,
+    closed_col: str,
+) -> go.Figure | None:
+    created_series = pd.to_datetime(actions_df[created_col], errors="coerce").dropna()
+    closed_series = pd.to_datetime(actions_df[closed_col], errors="coerce").dropna()
+    if created_series.empty and closed_series.empty:
+        return None
+
+    min_date = min(
+        filter(
+            pd.notna,
+            [
+                created_series.min() if not created_series.empty else pd.NaT,
+                closed_series.min() if not closed_series.empty else pd.NaT,
+            ],
+        )
+    )
+    max_date = max(
+        filter(
+            pd.notna,
+            [
+                created_series.max() if not created_series.empty else pd.NaT,
+                closed_series.max() if not closed_series.empty else pd.NaT,
+            ],
+        )
+    )
+    if pd.isna(min_date) or pd.isna(max_date):
+        return None
+
+    timeline = pd.date_range(start=min_date, end=max_date, freq="W-MON")
+    if timeline.empty:
+        return None
+
+    created_counts = created_series.dt.to_period("W").dt.start_time.value_counts().sort_index()
+    closed_counts = closed_series.dt.to_period("W").dt.start_time.value_counts().sort_index()
+
+    summary = pd.DataFrame({"week": timeline})
+    summary["created"] = summary["week"].map(created_counts).fillna(0).astype(int)
+    summary["closed"] = summary["week"].map(closed_counts).fillna(0).astype(int)
+    summary["label"] = summary["week"].dt.strftime("%Y-%m-%d")
+
+    fig = go.Figure()
+    fig.add_trace(
+        go.Scatter(
+            x=summary["label"],
+            y=summary["created"],
+            mode="lines+markers",
+            name="Created",
+            line=dict(color="#2563EB"),
+        )
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=summary["label"],
+            y=summary["closed"],
+            mode="lines+markers",
+            name="Closed",
+            line=dict(color="#16A34A"),
+        )
+    )
+    fig.update_layout(
+        height=320,
+        margin=dict(l=20, r=20, t=10, b=20),
+        xaxis_title="Week",
+        yaxis_title="Actions",
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
+    )
+    fig.update_yaxes(rangemode="tozero")
+    return fig
+
+
+def _render_insights_panel(actions_df: pd.DataFrame, column_map: dict[str, str | None]) -> None:
+    insights = _build_insights(actions_df, column_map)
+    if insights:
+        with card_section("Insight", "Signals pulled from current filters."):
+            st.markdown("\n\n".join(insights))
+
+    legend_items = "".join(
+        [
+            f"<li>{pill('Open')} Open action</li>",
+            f"<li>{pill('Closed')} Closed action</li>",
+            f"<li>{pill('Overdue')} Overdue action</li>",
+        ]
+    )
+    st.markdown(card(f"<h4>Legend</h4><ul class='ds-list'>{legend_items}</ul>"), unsafe_allow_html=True)
+
+    breakdown_html = _build_breakdown_table(actions_df, column_map)
+    if breakdown_html:
+        st.markdown(card(breakdown_html), unsafe_allow_html=True)
+
+    notes = """<h4>Notes / Interpretation</h4>
+    <ul class='ds-list'>
+        <li>Trends are directional; validate root causes before actioning.</li>
+        <li>Use overdue clusters to prioritize coaching or unblockers.</li>
+    </ul>
+    """
+    st.markdown(card(notes), unsafe_allow_html=True)
+
+
+def _build_insights(actions_df: pd.DataFrame, column_map: dict[str, str | None]) -> list[str]:
+    if actions_df.empty:
+        return []
+
+    insights: list[str] = []
+    project_col = column_map.get("project")
+    champion_col = column_map.get("champion")
+    status_col = column_map.get("status")
+
+    if project_col and "days_late" in actions_df.columns:
+        overdue = actions_df[actions_df["days_late"] > 0]
+        if not overdue.empty:
+            grouped = overdue[project_col].fillna("Unassigned").astype(str).value_counts()
+            top_project = grouped.index[0]
+            share = grouped.iloc[0] / grouped.sum() * 100
+            insights.append(f"⚠ {share:.0f}% of overdue actions are in {top_project}.")
+
+    if champion_col and status_col:
+        open_df = actions_df[_normalize_status(actions_df[status_col]) != "closed"]
+        if not open_df.empty:
+            grouped = open_df[champion_col].fillna("Unassigned").astype(str).value_counts()
+            top_champion = grouped.index[0]
+            insights.append(f"Top open-action champion: {top_champion} ({grouped.iloc[0]} actions).")
+
+    return insights[:2]
+
+
+def _build_breakdown_table(actions_df: pd.DataFrame, column_map: dict[str, str | None]) -> str | None:
+    project_col = column_map.get("project")
+    if not project_col or "days_late" not in actions_df.columns:
+        return None
+
+    overdue = actions_df[actions_df["days_late"] > 0]
+    if overdue.empty:
+        return None
+
+    grouped = overdue.groupby(project_col).size().sort_values(ascending=False).head(5)
+    rows = "".join(
+        f"<tr><td>{project}</td><td>{count}</td></tr>" for project, count in grouped.items()
+    )
+    return (
+        "<h4>Top overdue projects</h4>"
+        "<table class='ds-table'><thead><tr><th>Project</th><th>Overdue</th></tr></thead>"
+        f"<tbody>{rows}</tbody></table>"
+    )
+
+
+def _render_export_panel(actions_df: pd.DataFrame, export_available: bool) -> None:
+    if not export_available:
+        return
+
+    with st.expander("⬇️ Export", expanded=st.session_state.get("analysis_export_open", False)):
+        if actions_df.empty:
+            st.caption("No data available to export.")
+            return
+
+        export_df = actions_df.copy()
+        st.download_button(
+            "Download filtered actions (CSV)",
+            export_df.to_csv(index=False),
+            file_name="analysis_actions_filtered.csv",
+            mime="text/csv",
+        )
+
+        if not _png_export_available():
+            st.caption("Chart PNG export unavailable (install kaleido to enable).")
+
+
 def _png_export_available() -> bool:
     return importlib.util.find_spec("kaleido") is not None
 
 
-__all__ = [
-    "render_kpi_dashboard",
-    "to_week_index",
-    "build_weekly_series",
-    "build_dashboard_dataset",
-]
+__all__ = ["render_kpi_dashboard"]
