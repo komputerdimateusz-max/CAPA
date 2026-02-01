@@ -37,6 +37,145 @@ from atm_tracker.ui.styles import card, inject_global_styles, muted, pill
 
 
 VIEW_OPTIONS = ["Analyses list", "Add analysis", "Analysis details"]
+ADD_TEMPLATE_KEYS = {
+    "5WHY": [
+        "a5_problem",
+        "a5_why1",
+        "a5_why2",
+        "a5_why3",
+        "a5_why4",
+        "a5_why5",
+        "a5_root_cause",
+        "a5_solution",
+    ],
+    "8D": [
+        "a8_d1_team",
+        "a8_d2_problem",
+        "a8_d3_ica",
+        "a8_d4_root_cause",
+        "a8_d5_ca",
+        "a8_d6_verify",
+        "a8_d7_pa",
+        "a8_d8_lessons",
+    ],
+    "A3": [
+        "aa3_plan_problem",
+        "aa3_plan_analysis",
+        "aa3_plan_target",
+        "aa3_plan_root",
+        "aa3_do",
+        "aa3_check",
+        "aa3_act",
+    ],
+}
+
+
+def _clear_add_template_keys(template_type: str) -> None:
+    for key in ADD_TEMPLATE_KEYS.get(template_type, []):
+        st.session_state.pop(key, None)
+
+
+def _on_add_analysis_type_change() -> None:
+    new_type = st.session_state.get("analysis_type_select", ANALYSIS_TYPES[0])
+    previous_type = st.session_state.get("analysis_type_selected")
+    if previous_type and previous_type != new_type:
+        _clear_add_template_keys(previous_type)
+    st.session_state["analysis_type_selected"] = new_type
+    st.session_state["analysis_type_changed"] = new_type
+    st.rerun()
+
+
+def _render_add_analysis_fields(analysis_type: str) -> dict[str, str]:
+    values: dict[str, str] = {}
+    if analysis_type == "5WHY":
+        values["problem_statement"] = st.text_area(
+            "Problem statement",
+            value=str(st.session_state.get("a5_problem", "")),
+            height=100,
+            key="a5_problem",
+        )
+        for idx, field in enumerate(WHY_FIELDS[1:6], start=1):
+            key = f"a5_why{idx}"
+            values[field] = st.text_area(
+                f"Why {idx}",
+                value=str(st.session_state.get(key, "")),
+                height=80,
+                key=key,
+            )
+        values["root_cause"] = st.text_area(
+            "Root cause",
+            value=str(st.session_state.get("a5_root_cause", "")),
+            height=100,
+            key="a5_root_cause",
+        )
+        values["solution"] = st.text_area(
+            "Solution",
+            value=str(st.session_state.get("a5_solution", "")),
+            height=100,
+            key="a5_solution",
+        )
+        return values
+
+    if analysis_type == "8D":
+        section("8D sections")
+        labels = [
+            ("a8_d1_team", "d1_team", "D1 Team"),
+            ("a8_d2_problem", "d2_problem_description", "D2 Problem description"),
+            ("a8_d3_ica", "d3_interim_containment_actions", "D3 Interim containment actions"),
+            ("a8_d4_root_cause", "d4_root_cause", "D4 Root cause (Ishikawa + 5Why)"),
+            ("a8_d5_ca", "d5_corrective_actions", "D5 Corrective actions"),
+            ("a8_d6_verify", "d6_verification_effectiveness", "D6 Verification / Effectiveness"),
+            ("a8_d7_pa", "d7_preventive_actions", "D7 Preventive actions"),
+            ("a8_d8_lessons", "d8_closure_lessons_learned", "D8 Closure & Lessons learned"),
+        ]
+        for widget_key, field, label in labels:
+            values[field] = st.text_area(
+                label,
+                value=str(st.session_state.get(widget_key, "")),
+                height=120,
+                key=widget_key,
+            )
+        return values
+
+    if analysis_type == "A3":
+        section("Plan")
+        plan_labels = [
+            ("aa3_plan_problem", "a3_plan_problem", "Problem"),
+            ("aa3_plan_analysis", "a3_plan_analysis", "Analysis"),
+            ("aa3_plan_target", "a3_plan_target", "Target"),
+            ("aa3_plan_root", "a3_plan_root_cause", "Root cause"),
+        ]
+        for widget_key, field, label in plan_labels:
+            values[field] = st.text_area(
+                label,
+                value=str(st.session_state.get(widget_key, "")),
+                height=100,
+                key=widget_key,
+            )
+        section("Do")
+        values["a3_do_actions_description"] = st.text_area(
+            "Actions description",
+            value=str(st.session_state.get("aa3_do", "")),
+            height=120,
+            key="aa3_do",
+        )
+        section("Check")
+        values["a3_check_results_verification"] = st.text_area(
+            "Results / Verification",
+            value=str(st.session_state.get("aa3_check", "")),
+            height=120,
+            key="aa3_check",
+        )
+        section("Act")
+        values["a3_act_standardization_lessons"] = st.text_area(
+            "Standardization / Lessons learned",
+            value=str(st.session_state.get("aa3_act", "")),
+            height=120,
+            key="aa3_act",
+        )
+        return values
+
+    return {field: "" for field in WHY_FIELDS + EIGHT_D_FIELDS + A3_FIELDS}
 
 
 def render_analyses_module() -> None:
@@ -176,8 +315,20 @@ def _render_add() -> None:
     with main_grid("wide") as (main,):
         with main:
             section("New analysis")
+            type_choice = st.selectbox(
+                "Type *",
+                ANALYSIS_TYPES,
+                key="analysis_type_select",
+                on_change=_on_add_analysis_type_change,
+            )
+            if "analysis_type_selected" not in st.session_state:
+                st.session_state["analysis_type_selected"] = type_choice
+            analysis_type = st.session_state.get("analysis_type_selected", type_choice)
+            changed_to = st.session_state.pop("analysis_type_changed", None)
+            if changed_to:
+                st.toast(f"Template changed to: {changed_to}")
+
             with st.form("add_analysis", clear_on_submit=True):
-                analysis_type = st.selectbox("Type *", ANALYSIS_TYPES)
                 title = st.text_input("Title *", placeholder="e.g. Coating defect root cause")
                 description = st.text_area(
                     "Description",
@@ -187,7 +338,7 @@ def _render_add() -> None:
                 champion = st.selectbox("Champion", champion_options, index=0)
                 status = st.selectbox("Status", ANALYSIS_STATUSES, index=0)
 
-                detail_values = _render_analysis_fields(analysis_type, {}, "add")
+                detail_values = _render_add_analysis_fields(analysis_type)
                 submitted = st.form_submit_button("Save analysis")
 
     if not submitted:
