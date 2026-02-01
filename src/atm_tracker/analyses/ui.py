@@ -33,7 +33,7 @@ from atm_tracker.analyses.repo import (
 from atm_tracker.champions.repo import list_champions
 from atm_tracker.projects.repo import list_projects
 from atm_tracker.ui.layout import footer, kpi_row, main_grid, page_header, section
-from atm_tracker.ui.styles import inject_global_styles, muted, pill
+from atm_tracker.ui.styles import card, inject_global_styles, muted, pill
 
 
 VIEW_OPTIONS = {
