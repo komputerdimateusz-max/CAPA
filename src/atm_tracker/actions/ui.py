@@ -31,6 +31,7 @@ from atm_tracker.analyses.repo import list_linked_analysis_ids
 from atm_tracker.champions.repo import list_champions
 from atm_tracker.projects.repo import list_projects
 from atm_tracker.ui.layout import footer, kpi_row, main_grid, page_header, section
+from atm_tracker.ui.shared_tables import render_table_card
 from atm_tracker.ui.styles import card, inject_global_styles, muted, pill
 
 DEFAULT_ACTION_PROGRESS_SUMMARY = {
@@ -455,7 +456,7 @@ def _render_list() -> None:
                     return "Open"
                 return status_value or "Open"
 
-            rows_html = []
+            rows = []
             for _, row in filtered_df.iterrows():
                 row_cells = []
                 action_id = row.get("id")
@@ -463,26 +464,16 @@ def _render_list() -> None:
                     if column == "title":
                         label = row.get("title") or f"Action #{int(action_id)}"
                         link = f"?view=details&action_id={int(action_id)}"
-                        row_cells.append(
-                            f"<td><a class='ds-link' href='{link}'>{html.escape(str(label))}</a></td>"
-                        )
+                        row_cells.append(f"<a class='ds-link' href='{link}'>{html.escape(str(label))}</a>")
                     elif column == "status":
                         label = status_label(row.get("status"), int(row.get("days_late", 0)))
-                        row_cells.append(f"<td>{pill(label)}</td>")
+                        row_cells.append(pill(label))
                     else:
-                        row_cells.append(f"<td>{format_value(row.get(column))}</td>")
-                rows_html.append(f"<tr>{''.join(row_cells)}</tr>")
+                        row_cells.append(format_value(row.get(column)))
+                rows.append(row_cells)
 
-            header_html = "".join([f"<th>{column_labels[col]}</th>" for col in table_columns])
-            table_html = f"""
-            <table class="ds-table">
-                <thead><tr>{header_html}</tr></thead>
-                <tbody>
-                    {''.join(rows_html)}
-                </tbody>
-            </table>
-            """
-            st.markdown(card(table_html), unsafe_allow_html=True)
+            headers = [column_labels[col] for col in table_columns]
+            render_table_card(headers, rows)
 
             export_df = filtered_df.copy()
             if "title" in filtered_df.columns:
