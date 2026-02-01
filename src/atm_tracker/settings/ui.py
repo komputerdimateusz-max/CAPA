@@ -45,11 +45,9 @@ def render_global_settings() -> None:
                 st.rerun()
 
     st.markdown("### Champions")
-    search_text = st.text_input("Search champion", key="champion_search")
-    search_query = search_text.strip()
     champions = list_champions(
         include_inactive=True,
-        search=search_query or None,
+        search=None,
         limit=DEFAULT_CHAMPION_LIMIT,
     )
 
@@ -126,11 +124,9 @@ def render_global_settings() -> None:
                 st.success(f"Project added ✅ (id={new_id})")
                 st.rerun()
 
-    project_search = st.text_input("Search project", key="project_search")
-    project_query = project_search.strip()
     projects = list_projects(
         include_inactive=True,
-        search=project_query or None,
+        search=None,
         limit=DEFAULT_PROJECT_LIMIT,
     )
 
