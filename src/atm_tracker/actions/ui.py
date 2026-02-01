@@ -12,6 +12,7 @@ from atm_tracker.actions.repo import (
     MAX_TEAM_MEMBERS,
     TASK_STATUSES,
     add_task,
+    get_actions_days_late,
     get_actions_progress_map,
     get_action,
     get_action_progress_summaries,
@@ -268,6 +269,7 @@ def _render_list() -> None:
     action_ids = df["id"].tolist()
     team_sizes = get_action_team_sizes(action_ids)
     progress_map = get_actions_progress_map([int(action_id) for action_id in action_ids])
+    days_late_map = get_actions_days_late([int(action_id) for action_id in action_ids])
     if "id" in df.columns:
         df["team_size"] = df["id"].map(lambda action_id: team_sizes.get(int(action_id), 0))
         progress_summaries = get_action_progress_summaries(
@@ -281,6 +283,7 @@ def _render_list() -> None:
         )
         df["progress"] = df["id"].map(lambda action_id: progress_map.get(int(action_id), 0))
         df["progress"] = df["progress"].map(lambda value: f"{int(value)}%")
+        df["days_late"] = df["id"].map(lambda action_id: days_late_map.get(int(action_id), 0))
 
     if df.empty:
         st.info("No actions found.")

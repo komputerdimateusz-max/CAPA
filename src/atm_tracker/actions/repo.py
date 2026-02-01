@@ -463,6 +463,66 @@ def get_actions_progress_map(action_ids: list[int]) -> dict[int, int]:
     return progress_map
 
 
+def get_actions_days_late(action_ids: list[int]) -> dict[int, int]:
+    if not action_ids:
+        return {}
+
+    placeholders = ",".join(["?"] * len(action_ids))
+    con = connect()
+    cur = con.cursor()
+    cur.execute(
+        f"""
+        SELECT a.id,
+               a.status,
+               a.target_date,
+               COUNT(t.id) as task_count,
+               SUM(
+                   CASE
+                       WHEN t.status != 'DONE'
+                            AND t.target_date IS NOT NULL
+                            AND date(t.target_date) < date('now')
+                       THEN CAST(julianday(date('now')) - julianday(date(t.target_date)) AS int)
+                       ELSE 0
+                   END
+               ) as overdue_days_sum,
+               CASE
+                   WHEN a.status != 'CLOSED'
+                        AND a.target_date IS NOT NULL
+                        AND date(a.target_date) < date('now')
+                   THEN CAST(julianday(date('now')) - julianday(date(a.target_date)) AS int)
+                   ELSE 0
+               END as action_overdue_days
+        FROM actions a
+        LEFT JOIN action_tasks t
+            ON a.id = t.action_id AND t.deleted = 0
+        WHERE a.id IN ({placeholders})
+        GROUP BY a.id, a.status, a.target_date;
+        """,
+        tuple(action_ids),
+    )
+    rows = cur.fetchall()
+    con.close()
+
+    days_late_map: dict[int, int] = {}
+    for row in rows:
+        action_id = int(row[0])
+        status = str(row[1] or "")
+        task_count = int(row[3] or 0)
+        overdue_days_sum = int(row[4] or 0)
+        action_overdue_days = int(row[5] or 0)
+
+        if status == "CLOSED":
+            days_late = 0
+        elif task_count > 0:
+            days_late = max(overdue_days_sum, 0)
+        else:
+            days_late = max(action_overdue_days, 0)
+
+        days_late_map[action_id] = days_late
+
+    return days_late_map
+
+
 def get_action_progress_summaries(action_ids: list[int]) -> dict[int, dict[str, Any]]:
     if not action_ids:
         return {}
