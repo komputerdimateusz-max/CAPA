@@ -42,6 +42,7 @@ VIEW_OPTIONS = {
     "details": "Analysis details",
 }
 VIEW_ORDER = list(VIEW_OPTIONS.keys())
+VIEW_LABELS = ["Analyses list", "Add analysis"]
 ADD_TEMPLATE_KEYS = {
     "5WHY": [
         "a5_problem",
@@ -93,9 +94,9 @@ def _apply_analysis_details_query_params() -> None:
     if analysis_value:
         st.session_state["selected_analysis_id"] = analysis_value
         if view_value in (None, "", "details"):
-            st.session_state["analyses_view_override"] = "details"
+            st.session_state["analyses_route"] = "details"
         elif view_value in {"list", "add"}:
-            st.session_state["analyses_view_override"] = view_value
+            st.session_state["analyses_route"] = view_value
 
 
 def _clear_add_template_keys(template_type: str) -> None:
@@ -210,14 +211,20 @@ def render_analyses_module() -> None:
     init_db()
     inject_global_styles()
 
+    if "analyses_route" not in st.session_state:
+        st.session_state["analyses_route"] = "list"
+    if "selected_analysis_id" not in st.session_state:
+        st.session_state["selected_analysis_id"] = None
+
     _apply_analysis_details_query_params()
 
-    if "analyses_view" not in st.session_state or st.session_state["analyses_view"] not in VIEW_OPTIONS:
-        st.session_state["analyses_view"] = "list"
-    if "analyses_view_override" in st.session_state:
-        st.session_state["analyses_view"] = st.session_state.pop("analyses_view_override")
+    selected_view = st.session_state.get("analyses_view_select")
+    if selected_view == "Add analysis":
+        st.session_state["analyses_route"] = "add"
+    elif selected_view == "Analyses list" and st.session_state["analyses_route"] != "details":
+        st.session_state["analyses_route"] = "list"
 
-    current_view = st.session_state.get("analyses_view", "list")
+    current_view = st.session_state.get("analyses_route", "list")
 
     if current_view == "add":
         _render_add()
@@ -228,11 +235,13 @@ def render_analyses_module() -> None:
 
 
 def _render_view_selector() -> None:
+    route = st.session_state.get("analyses_route", "list")
+    default_idx = 1 if route == "add" else 0
     st.selectbox(
         "View",
-        options=VIEW_ORDER,
-        format_func=lambda value: VIEW_OPTIONS.get(value, value),
-        key="analyses_view",
+        options=VIEW_LABELS,
+        index=default_idx,
+        key="analyses_view_select",
     )
 
 
@@ -367,7 +376,7 @@ def _render_list() -> None:
 
             def open_analysis_details(analysis_id: str) -> None:
                 st.session_state["selected_analysis_id"] = analysis_id
-                st.session_state["analyses_view"] = "details"
+                st.session_state["analyses_route"] = "details"
                 st.rerun()
 
             header_cols = st.columns(len(table_columns))
@@ -498,7 +507,7 @@ def _render_details() -> None:
     if analysis is None:
         st.warning("Selected analysis not found.")
         st.session_state.pop("selected_analysis_id", None)
-        st.session_state["analyses_view_override"] = "list"
+        st.session_state["analyses_route"] = "list"
         st.rerun()
         return
 
@@ -597,7 +606,7 @@ def _render_details() -> None:
             st.markdown(card(f"<ul class='ds-list'>{''.join(summary_items)}</ul>"), unsafe_allow_html=True)
 
             section("Actions")
-            st.button("Back to list", on_click=_queue_analyses_list, use_container_width=True)
+            st.button("← Back to list", on_click=_queue_analyses_list, use_container_width=True)
             if status != "Closed":
                 if st.button("Close analysis", use_container_width=True):
                     close_analysis(str(selection), date.today())
@@ -821,11 +830,12 @@ def _render_project_input(projects_df: pd.DataFrame) -> str:
 
 
 def _queue_add_analysis() -> None:
-    st.session_state["analyses_view_override"] = "add"
+    st.session_state["analyses_route"] = "add"
 
 
 def _queue_analyses_list() -> None:
-    st.session_state["analyses_view_override"] = "list"
+    st.session_state["analyses_route"] = "list"
+    st.session_state["selected_analysis_id"] = None
 
 
 def _safe_index(options: list[object], value: object) -> int:
