@@ -282,7 +282,50 @@ def _render_list() -> None:
         df["progress"] = df["id"].map(lambda action_id: progress_map.get(int(action_id), 0))
         df["progress"] = df["progress"].map(lambda value: f"{int(value)}%")
 
-    st.dataframe(df, use_container_width=True, hide_index=True)
+    if df.empty:
+        st.info("No actions found.")
+        return
+
+    st.markdown(
+        """
+        <style>
+        div[data-testid="stButton"] > button {
+            background: none;
+            border: none;
+            padding: 0;
+            color: #0068c9;
+            text-decoration: underline;
+            font-weight: 600;
+        }
+        div[data-testid="stButton"] > button:hover {
+            color: #034c8c;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    columns = list(df.columns)
+    labels = {name: name.replace("_", " ").title() for name in columns}
+    header_cols = st.columns(len(columns))
+    for col, name in zip(header_cols, columns, strict=True):
+        col.markdown(f"**{labels.get(name, name)}**")
+
+    for _, row in df.iterrows():
+        row_cols = st.columns(len(columns))
+        for col, name in zip(row_cols, columns, strict=True):
+            value = row.get(name, "")
+            if name == "title":
+                action_id = int(row["id"])
+                label = str(value or f"Action #{action_id}")
+                col.button(
+                    label,
+                    key=f"action_title_{action_id}",
+                    on_click=_queue_action_details,
+                    args=(action_id,),
+                )
+            else:
+                col.write(value)
 
 
 def _render_action_details() -> None:
