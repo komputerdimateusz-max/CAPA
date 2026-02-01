@@ -452,8 +452,26 @@ def _sort_summary(summary: pd.DataFrame) -> pd.DataFrame:
     return summary
 
 
-def _render_data_table(df: pd.DataFrame, *, height: int | None = None) -> None:
-    st.dataframe(df, use_container_width=True, hide_index=True, height=height)
+def _normalize_table_height(height: int | float | str | None) -> int | str | None:
+    if height is None:
+        return None
+    if isinstance(height, float):
+        height = int(height)
+    if isinstance(height, int):
+        return height if height > 0 else None
+    if isinstance(height, str):
+        if height in {"stretch", "content"}:
+            return height
+    raise ValueError("Height must be an int or one of {'stretch', 'content'}.")
+
+
+def _render_data_table(df: pd.DataFrame, *, height: int | float | str | None = None) -> None:
+    normalized_height = _normalize_table_height(height)
+    common = {"use_container_width": True, "hide_index": True}
+    if normalized_height is None:
+        st.dataframe(df, **common)
+    else:
+        st.dataframe(df, height=normalized_height, **common)
 
 
 def _render_action_table(df: pd.DataFrame, column_map: dict[str, str | None]) -> None:
