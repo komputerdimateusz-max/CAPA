@@ -7,6 +7,8 @@ import altair as alt
 import pandas as pd
 import streamlit as st
 
+from atm_tracker.ui.styles import inject_global_styles, muted
+
 ALL_CHAMPIONS_LABEL = "All champions"
 
 
@@ -155,7 +157,12 @@ def _render_on_time_chart(metrics: dict[str, int | float | str]) -> None:
 
 def main() -> None:
     st.set_page_config(page_title="🏆 Champions", layout="wide")
-    st.title("🏆 Champions")
+    inject_global_styles()
+    st.markdown("## 🏆 Champions")
+    st.markdown(
+        muted("Champion ranking and action outcome signals across the portfolio."),
+        unsafe_allow_html=True,
+    )
 
     df = _load_actions_csv()
     if df.empty:
@@ -182,16 +189,16 @@ def main() -> None:
     metrics = _build_metrics(filtered_df, column_map)
     _render_metrics(metrics)
 
-    st.subheader("Champion ranking")
+    st.markdown("### Champion ranking")
     _render_ranking_chart(filtered_df, champion_col)
 
     if champion_selection != ALL_CHAMPIONS_LABEL:
-        st.subheader("On-time vs overdue")
+        st.markdown("### On-time vs overdue")
         _render_on_time_chart(metrics)
-        st.subheader("Action details")
+        st.markdown("### Action details")
         st.dataframe(filtered_df)
     else:
-        st.subheader("Champion summary")
+        st.markdown("### Champion summary")
         summary = filtered_df.groupby(champion_col, dropna=False).size().reset_index(name="total_actions")
         summary = summary.sort_values(by="total_actions", ascending=False)
         st.dataframe(summary)
