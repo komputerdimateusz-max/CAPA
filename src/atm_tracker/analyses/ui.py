@@ -33,11 +33,15 @@ from atm_tracker.analyses.repo import (
 from atm_tracker.champions.repo import list_champions
 from atm_tracker.projects.repo import list_projects
 from atm_tracker.ui.layout import footer, kpi_row, main_grid, page_header, section
-from atm_tracker.ui.shared_tables import render_table_card
-from atm_tracker.ui.styles import card, inject_global_styles, muted, pill
+from atm_tracker.ui.styles import inject_global_styles, muted, pill
 
 
-VIEW_OPTIONS = ["Analyses list", "Add analysis", "Analysis details"]
+VIEW_OPTIONS = {
+    "list": "Analyses list",
+    "add": "Add analysis",
+    "details": "Analysis details",
+}
+VIEW_ORDER = list(VIEW_OPTIONS.keys())
 ADD_TEMPLATE_KEYS = {
     "5WHY": [
         "a5_problem",
@@ -73,7 +77,7 @@ ADD_TEMPLATE_KEYS = {
 
 def _apply_analysis_details_query_params() -> None:
     params = st.query_params
-    view_param = params.get("view")
+    view_param = params.get("analysis_view") or params.get("view")
     analysis_param = params.get("analysis_id")
 
     if isinstance(view_param, list):
@@ -89,7 +93,9 @@ def _apply_analysis_details_query_params() -> None:
     if analysis_value:
         st.session_state["selected_analysis_id"] = analysis_value
         if view_value in (None, "", "details"):
-            st.session_state["analyses_view_override"] = "Analysis details"
+            st.session_state["analyses_view_override"] = "details"
+        elif view_value in {"list", "add"}:
+            st.session_state["analyses_view_override"] = view_value
 
 
 def _clear_add_template_keys(template_type: str) -> None:
@@ -206,23 +212,28 @@ def render_analyses_module() -> None:
 
     _apply_analysis_details_query_params()
 
-    if "analyses_view" not in st.session_state:
-        st.session_state["analyses_view"] = VIEW_OPTIONS[0]
+    if "analyses_view" not in st.session_state or st.session_state["analyses_view"] not in VIEW_OPTIONS:
+        st.session_state["analyses_view"] = "list"
     if "analyses_view_override" in st.session_state:
         st.session_state["analyses_view"] = st.session_state.pop("analyses_view_override")
 
-    current_view = st.session_state.get("analyses_view", VIEW_OPTIONS[0])
+    current_view = st.session_state.get("analyses_view", "list")
 
-    if current_view == "Add analysis":
+    if current_view == "add":
         _render_add()
-    elif current_view == "Analysis details":
+    elif current_view == "details":
         _render_details()
     else:
         _render_list()
 
 
 def _render_view_selector() -> None:
-    st.selectbox("View", options=VIEW_OPTIONS, key="analyses_view")
+    st.selectbox(
+        "View",
+        options=VIEW_ORDER,
+        format_func=lambda value: VIEW_OPTIONS.get(value, value),
+        key="analyses_view",
+    )
 
 
 def _analysis_summary_label(row: pd.Series) -> str:
@@ -352,28 +363,35 @@ def _render_list() -> None:
                     return "—"
                 if isinstance(value, date):
                     return value.strftime("%Y-%m-%d")
-                return html.escape(str(value))
+                return str(value)
 
-            rows: list[list[str]] = []
-            for _, row in display_df.iterrows():
-                row_cells: list[str] = []
-                analysis_id = row.get("analysis_id")
-                for column in table_columns:
+            def open_analysis_details(analysis_id: str) -> None:
+                st.session_state["selected_analysis_id"] = analysis_id
+                st.session_state["analyses_view"] = "details"
+                st.rerun()
+
+            header_cols = st.columns(len(table_columns))
+            for col, header in zip(header_cols, [column_labels[col] for col in table_columns]):
+                col.markdown(f"**{header}**")
+
+            for row_idx, row in display_df.iterrows():
+                row_cols = st.columns(len(table_columns))
+                analysis_id = str(row.get("analysis_id") or "")
+                for column, col in zip(table_columns, row_cols):
                     if column in {"analysis_id", "title"} and analysis_id:
                         title_value = row.get("title") or f"Analysis {analysis_id}"
-                        label = (
-                            title_value if column == "title" else f"{analysis_id}"
-                        )
-                        link = f"?view=details&analysis_id={analysis_id}"
-                        row_cells.append(f"<a class='ds-link' href='{link}'>{html.escape(str(label))}</a>")
+                        label = title_value if column == "title" else analysis_id
+                        if col.button(
+                            str(label),
+                            key=f"analysis_{column}_{analysis_id}_{row_idx}",
+                            type="tertiary",
+                        ):
+                            open_analysis_details(analysis_id)
                     elif column == "status":
-                        row_cells.append(pill(str(row.get("status") or "Open")))
+                        col.markdown(pill(str(row.get("status") or "Open")), unsafe_allow_html=True)
                     else:
-                        row_cells.append(format_value(row.get(column)))
-                rows.append(row_cells)
+                        col.write(format_value(row.get(column)))
 
-            headers = [column_labels[col] for col in table_columns]
-            render_table_card(headers, rows)
             st.caption(f"Showing {len(filtered)} of {len(analyses_df)} analyses")
 
     footer("Action-to-Money Tracker • Structured analysis before ROI.")
@@ -480,7 +498,7 @@ def _render_details() -> None:
     if analysis is None:
         st.warning("Selected analysis not found.")
         st.session_state.pop("selected_analysis_id", None)
-        st.session_state["analyses_view_override"] = "Analyses list"
+        st.session_state["analyses_view_override"] = "list"
         st.rerun()
         return
 
@@ -803,11 +821,11 @@ def _render_project_input(projects_df: pd.DataFrame) -> str:
 
 
 def _queue_add_analysis() -> None:
-    st.session_state["analyses_view_override"] = "Add analysis"
+    st.session_state["analyses_view_override"] = "add"
 
 
 def _queue_analyses_list() -> None:
-    st.session_state["analyses_view_override"] = "Analyses list"
+    st.session_state["analyses_view_override"] = "list"
 
 
 def _safe_index(options: list[object], value: object) -> int:
