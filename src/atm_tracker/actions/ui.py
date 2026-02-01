@@ -29,6 +29,7 @@ from atm_tracker.actions.repo import (
 )
 from atm_tracker.champions.repo import list_champions
 from atm_tracker.projects.repo import list_projects
+from atm_tracker.ui.styles import card, inject_global_styles, muted, pill
 
 DEFAULT_ACTION_PROGRESS_SUMMARY = {
     "progress_percent": 0,
@@ -67,8 +68,9 @@ def _apply_action_details_query_params() -> None:
 
 def render_actions_module() -> None:
     init_db()
+    inject_global_styles()
 
-    st.title("➕ CAPA Actions — Input Module")
+    st.title("📋 CAPA Actions — Input Module")
     st.caption("Fast action capture with validation. No ROI yet — we build clean foundations.")
 
     _apply_action_details_query_params()
@@ -215,28 +217,6 @@ def _build_action_label(
     return f"{label} — {int(progress)}%"
 
 
-def _progress_color(
-    progress_percent: Optional[int],
-    has_overdue_subtasks: Optional[bool],
-    is_action_overdue: Optional[bool],
-) -> str:
-    try:
-        progress_value = int(progress_percent)
-    except (TypeError, ValueError):
-        progress_value = 0
-
-    overdue_subtasks = has_overdue_subtasks if isinstance(has_overdue_subtasks, bool) else False
-    overdue_action = is_action_overdue if isinstance(is_action_overdue, bool) else False
-
-    if progress_value > 80:
-        return "green"
-    if 40 <= progress_value <= 80:
-        return "yellow"
-    if not overdue_subtasks and not overdue_action:
-        return "yellow"
-    return "red"
-
-
 def _format_progress_percent(progress_percent: int) -> str:
     try:
         value = int(progress_percent)
@@ -250,33 +230,28 @@ def _render_action_header(
     action_id: int,
     title: str,
     progress_percent: int,
-    progress_color: str,
 ) -> None:
     safe_title = str(title or "")
     safe_progress = progress_percent if isinstance(progress_percent, int) else 0
-    safe_color = progress_color or "yellow"
     percent_label = _format_progress_percent(safe_progress)
 
     title_text = safe_title if safe_title else f"Action #{int(action_id)}"
     col_title, col_progress = st.columns([4, 1])
     with col_title:
-        st.subheader(title_text)
+        st.markdown(f"### {title_text}")
     with col_progress:
-        st.markdown(
-            f"<div style='text-align:right;'>"
-            f"<span style='padding:6px 12px; border-radius:999px; "
-            f"background-color:{safe_color}; color:black; font-weight:600;'>"
-            f"{percent_label}</span></div>",
-            unsafe_allow_html=True,
-        )
+        st.metric("Progress", percent_label)
 
 
 def _render_list() -> None:
     header_col, action_col = st.columns([3, 1])
     with header_col:
-        st.title("📋 Action List")
-        st.caption(
-            "Overview of active and closed actions with key KPIs. Click an action title to open Action Details."
+        st.markdown("## 📋 Action List")
+        st.markdown(
+            muted(
+                "Overview of active and closed actions with key KPIs. Click an action title to open Action Details."
+            ),
+            unsafe_allow_html=True,
         )
     with action_col:
         if st.button("Refresh", use_container_width=True):
@@ -375,8 +350,18 @@ def _render_list() -> None:
         kpi_cols[2].metric("Avg days late", f"{avg_days_late:.1f}")
         kpi_cols[3].metric("On-time close rate", f"{on_time_close_rate:.0f}%")
 
+    if df.empty:
+        st.markdown(muted("📭 No actions available."), unsafe_allow_html=True)
+        st.caption("Showing 0 of 0 actions")
+        return
+
     if filtered_df.empty:
-        st.info("No actions match the current filters.")
+        st.markdown(
+            muted("📭 No actions match current filters. Try adjusting filters or date range."),
+            unsafe_allow_html=True,
+        )
+        st.caption(f"Showing 0 of {total_actions} actions")
+        return
 
     if "days_late" in filtered_df.columns or "target_date" in filtered_df.columns:
         sort_columns: list[str] = []
@@ -390,55 +375,7 @@ def _render_list() -> None:
         if sort_columns:
             filtered_df = filtered_df.sort_values(by=sort_columns, ascending=sort_ascending)
 
-    st.markdown(
-        """
-        <style>
-        .action-card {
-            border: 1px solid #e6e9ef;
-            border-radius: 12px;
-            padding: 16px;
-            box-shadow: 0 2px 6px rgba(16, 24, 40, 0.06);
-            background: #ffffff;
-        }
-        .action-table {
-            width: 100%;
-            border-collapse: collapse;
-        }
-        .action-table th {
-            text-align: left;
-            font-size: 0.85rem;
-            color: #667085;
-            padding-bottom: 8px;
-        }
-        .action-table td {
-            padding: 10px 0;
-            border-top: 1px solid #f0f2f5;
-            vertical-align: top;
-        }
-        .status-pill {
-            display: inline-block;
-            padding: 4px 10px;
-            border-radius: 999px;
-            font-size: 0.75rem;
-            font-weight: 600;
-            text-transform: uppercase;
-        }
-        .status-neutral { background: #f2f4f7; color: #344054; }
-        .status-amber { background: #fef0c7; color: #92400e; }
-        .status-green { background: #d1fadf; color: #027a48; }
-        .status-red { background: #fee4e2; color: #b42318; }
-        .action-link {
-            color: #175cd3;
-            font-weight: 600;
-            text-decoration: none;
-        }
-        .action-link:hover {
-            text-decoration: underline;
-        }
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
+    st.markdown("### Actions")
 
     table_columns = []
     column_labels = {
@@ -461,17 +398,17 @@ def _render_list() -> None:
             return value.strftime("%Y-%m-%d")
         return html.escape(str(value))
 
-    def status_badge(status_value: str, days_late_value: int) -> tuple[str, str]:
+    def status_label(status_value: str, days_late_value: int) -> str:
         status_normalized = str(status_value or "").strip().lower()
         if days_late_value > 0 and status_normalized != "closed":
-            return "Overdue", "status-red"
+            return "Overdue"
         if status_normalized in {"in_progress", "ongoing"}:
-            return "In progress", "status-amber"
+            return "In progress"
         if status_normalized == "closed":
-            return "Closed", "status-green"
+            return "Closed"
         if status_normalized == "open":
-            return "Open", "status-neutral"
-        return status_value or "—", "status-neutral"
+            return "Open"
+        return status_value or "Open"
 
     rows_html = []
     for _, row in filtered_df.iterrows():
@@ -482,29 +419,25 @@ def _render_list() -> None:
                 label = row.get("title") or f"Action #{int(action_id)}"
                 link = f"?view=details&action_id={int(action_id)}"
                 row_cells.append(
-                    f"<td><a class='action-link' href='{link}'>{html.escape(str(label))}</a></td>"
+                    f"<td><a class='ds-link' href='{link}'>{html.escape(str(label))}</a></td>"
                 )
             elif column == "status":
-                label, badge_class = status_badge(row.get("status"), int(row.get("days_late", 0)))
-                row_cells.append(
-                    f"<td><span class='status-pill {badge_class}'>{html.escape(str(label))}</span></td>"
-                )
+                label = status_label(row.get("status"), int(row.get("days_late", 0)))
+                row_cells.append(f"<td>{pill(label)}</td>")
             else:
                 row_cells.append(f"<td>{format_value(row.get(column))}</td>")
         rows_html.append(f"<tr>{''.join(row_cells)}</tr>")
 
     header_html = "".join([f"<th>{column_labels[col]}</th>" for col in table_columns])
     table_html = f"""
-    <div class="action-card">
-        <table class="action-table">
-            <thead><tr>{header_html}</tr></thead>
-            <tbody>
-                {''.join(rows_html)}
-            </tbody>
-        </table>
-    </div>
+    <table class="ds-table">
+        <thead><tr>{header_html}</tr></thead>
+        <tbody>
+            {''.join(rows_html)}
+        </tbody>
+    </table>
     """
-    st.markdown(table_html, unsafe_allow_html=True)
+    st.markdown(card(table_html), unsafe_allow_html=True)
 
     export_df = filtered_df.copy()
     if "title" in filtered_df.columns:
@@ -522,11 +455,16 @@ def _render_list() -> None:
 
 
 def _render_action_details() -> None:
+    st.markdown("## 🧾 Action Details")
+    st.markdown(
+        muted("Review status, dates, tasks, and team ownership for a selected action."),
+        unsafe_allow_html=True,
+    )
     actions_df = list_actions()
     if st.session_state.pop("flash_action_deleted", False):
         st.info("Action deleted")
     if actions_df.empty:
-        st.info("No actions available.")
+        st.markdown(muted("📭 No actions available."), unsafe_allow_html=True)
         st.session_state.pop("selected_action_id", None)
         return
 
@@ -564,7 +502,7 @@ def _render_action_details() -> None:
 
     if not selected_action_id:
         st.session_state.pop("selected_action_id", None)
-        st.info("Select an action to view details.")
+        st.markdown(muted("Select an action to view details."), unsafe_allow_html=True)
         return
 
     st.session_state["selected_action_id"] = int(selected_action_id)
@@ -578,12 +516,15 @@ def _render_action_details() -> None:
         st.rerun()
         return
 
-    st.button("Back to list", on_click=_queue_actions_list)
-    if st.button("Delete action (soft)"):
-        soft_delete_action(int(action_id))
-        st.session_state.pop("selected_action_id", None)
-        st.session_state["flash_action_deleted"] = True
-        st.rerun()
+    action_button_col, action_button_col2 = st.columns(2)
+    with action_button_col:
+        st.button("Back to list", on_click=_queue_actions_list, use_container_width=True)
+    with action_button_col2:
+        if st.button("Delete action (soft)", use_container_width=True):
+            soft_delete_action(int(action_id))
+            st.session_state.pop("selected_action_id", None)
+            st.session_state["flash_action_deleted"] = True
+            st.rerun()
 
     title = action.get("title", "")
     progress_summary = progress_summaries.get(
@@ -591,12 +532,7 @@ def _render_action_details() -> None:
         DEFAULT_ACTION_PROGRESS_SUMMARY,
     )
     progress_percent = int(progress_summary.get("progress_percent", 0))
-    progress_color = _progress_color(
-        progress_percent,
-        bool(progress_summary.get("has_overdue_subtasks", False)),
-        bool(progress_summary.get("is_action_overdue", False)),
-    )
-    _render_action_header(int(action_id), str(title or ""), progress_percent, progress_color)
+    _render_action_header(int(action_id), str(title or ""), progress_percent)
 
     tasks_total = int(progress_summary.get("total", 0))
     tasks_done = int(progress_summary.get("done", 0))
@@ -614,23 +550,23 @@ def _render_action_details() -> None:
     updated_at = action.get("updated_at")
     description = action.get("description", "")
 
-    st.markdown(
-        "\n".join(
-            [
-                f"- **Tasks:** {tasks_total} total • {tasks_done} done • {tasks_open} open",
-                f"- **Status:** {status or '(unknown)'}",
-                f"- **Champion (responsible):** {champion or '(unassigned)'}",
-                f"- **Team members:** {', '.join(team_names) if team_names else '(none)'}",
-                "- **Key dates:**",
-                f"  - Created at: {created_at or '(not set)'}",
-                f"  - Target date: {target_date or '(not set)'}",
-                f"  - Closed at: {closed_at or '(not set)'}",
-                f"  - Status updated: {updated_at or '(not set)'}",
-            ]
-        )
-    )
-    st.markdown("**Description:**")
-    st.write(description or "(none)")
+    details_items = [
+        f"<li><strong>Tasks:</strong> {tasks_total} total • {tasks_done} done • {tasks_open} open</li>",
+        f"<li><strong>Status:</strong> {pill(status or 'Open')}</li>",
+        f"<li><strong>Champion (responsible):</strong> {html.escape(champion or '(unassigned)')}</li>",
+        f"<li><strong>Team members:</strong> {html.escape(', '.join(team_names)) if team_names else '(none)'}</li>",
+        "<li><strong>Key dates:</strong>",
+        "<ul class='ds-list'>"
+        f"<li>Created at: {html.escape(str(created_at or '(not set)'))}</li>"
+        f"<li>Target date: {html.escape(str(target_date or '(not set)'))}</li>"
+        f"<li>Closed at: {html.escape(str(closed_at or '(not set)'))}</li>"
+        f"<li>Status updated: {html.escape(str(updated_at or '(not set)'))}</li>"
+        "</ul></li>",
+    ]
+    details_html = f"<ul class='ds-list'>{''.join(details_items)}</ul>"
+    st.markdown(card(details_html), unsafe_allow_html=True)
+    st.markdown("### Description")
+    st.markdown(card(html.escape(description or "(none)")), unsafe_allow_html=True)
 
     st.divider()
     _render_tasks_section(
@@ -645,7 +581,7 @@ def _render_tasks_section(
     team_ids: list[int],
     champion_options: dict[int, str],
 ) -> None:
-    st.subheader("Tasks / Sub-actions")
+    st.markdown("### Tasks / Sub-actions")
 
     champions_active = list_champions(active_only=True)
     active_ids = [int(row["id"]) for _, row in champions_active.iterrows()] if not champions_active.empty else []
