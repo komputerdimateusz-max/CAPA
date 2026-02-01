@@ -1,10 +1,24 @@
 from __future__ import annotations
 
 import sqlite3
+from pathlib import Path
 
 import pandas as pd
 
 from atm_tracker.actions.db import connect
+
+DATA_DIR = Path.cwd() / "data"
+CHAMPION_SCORE_LOG_FILE = DATA_DIR / "champion_score_log.csv"
+
+SCORE_LOG_COLUMNS = [
+    "champion",
+    "item_type",
+    "item_id",
+    "rule_code",
+    "points",
+    "as_of_date",
+    "details",
+]
 
 
 def _normalize_spaces(value: str) -> str:
@@ -157,3 +171,48 @@ def soft_delete_champion(champion_id: int) -> None:
     )
     con.commit()
     con.close()
+
+
+def actions() -> pd.DataFrame:
+    from atm_tracker.actions.repo import list_actions
+
+    return list_actions()
+
+
+def analyses() -> pd.DataFrame:
+    from atm_tracker.analyses.repo import list_analyses
+
+    return list_analyses()
+
+
+def analysis_actions() -> pd.DataFrame:
+    from atm_tracker.analyses.repo import list_analysis_actions
+
+    return list_analysis_actions()
+
+
+def save_champion_score_log(df: pd.DataFrame) -> None:
+    DATA_DIR.mkdir(exist_ok=True)
+    if df.empty:
+        pd.DataFrame(columns=SCORE_LOG_COLUMNS).to_csv(CHAMPION_SCORE_LOG_FILE, index=False)
+        return
+    df = df.copy()
+    for col in SCORE_LOG_COLUMNS:
+        if col not in df.columns:
+            df[col] = ""
+    df = df[SCORE_LOG_COLUMNS]
+    df.to_csv(CHAMPION_SCORE_LOG_FILE, index=False)
+
+
+__all__ = [
+    "actions",
+    "analysis_actions",
+    "analyses",
+    "add_champion",
+    "get_champion",
+    "list_champions",
+    "save_champion_score_log",
+    "set_champion_active",
+    "soft_delete_champion",
+    "update_champion",
+]

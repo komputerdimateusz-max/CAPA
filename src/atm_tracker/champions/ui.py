@@ -9,7 +9,8 @@ import streamlit as st
 from atm_tracker.actions.db import init_db
 from atm_tracker.actions.repo import list_actions, list_all_tasks
 from atm_tracker.analyses.repo import list_analyses, list_analysis_actions
-from atm_tracker.champions.repo import list_champions
+from atm_tracker.champions.repo import list_champions, save_champion_score_log
+from atm_tracker.scoring.champion_scoring import compute_ranking, compute_score_log
 from atm_tracker.ui.layout import footer, kpi_row, main_grid, page_header, section
 from atm_tracker.ui.styles import inject_global_styles, muted
 
@@ -269,6 +270,28 @@ def _build_subtask_metrics(
     return metrics, warnings
 
 
+def _format_rate(value: float | None) -> str:
+    if value is None:
+        return "N/A"
+    return f"{value:.0%}"
+
+
+def _build_action_on_time_rate(df: pd.DataFrame, column_map: dict[str, str | None]) -> float | None:
+    status_col = column_map.get("status")
+    due_col = column_map.get("due_date")
+    closed_col = column_map.get("closed_at")
+    if not status_col or not due_col or not closed_col or df.empty:
+        return None
+    status_values = _normalize_status(df[status_col])
+    closed_mask = status_values == "closed"
+    closed_with_due = closed_mask & df[due_col].notna() & df[closed_col].notna()
+    total_closed = int(closed_with_due.sum())
+    if total_closed == 0:
+        return None
+    on_time = int((closed_with_due & (df[closed_col] <= df[due_col])).sum())
+    return on_time / total_closed
+
+
 def _build_analysis_metrics(
     analyses_df: pd.DataFrame,
     links_df: pd.DataFrame,
@@ -467,6 +490,10 @@ def render_champions_dashboard() -> None:
         subtasks_available = False
         subtask_load_warning = "Sub-tasks source not available; showing actions-only metrics."
 
+    score_log_df = compute_score_log(actions_df, analyses_df, date.today())
+    save_champion_score_log(score_log_df)
+    ranking_df = compute_ranking(score_log_df, actions_df, analyses_df)
+
     if "champion_filter" not in st.session_state:
         st.session_state["champion_filter"] = ALL_CHAMPIONS_LABEL
 
@@ -508,10 +535,17 @@ def render_champions_dashboard() -> None:
 
     actions_df[champion_col] = actions_df[champion_col].fillna("Unassigned")
 
+    champion_options_set = set()
     if not champions_df.empty and "name_display" in champions_df.columns:
-        champion_options = sorted(champions_df["name_display"].dropna().unique().tolist())
-    else:
-        champion_options = sorted(actions_df[champion_col].dropna().unique().tolist())
+        champion_options_set.update(champions_df["name_display"].dropna().unique().tolist())
+    if not actions_df.empty and champion_col:
+        champion_options_set.update(actions_df[champion_col].dropna().unique().tolist())
+    if not analyses_df.empty and "champion" in analyses_df.columns:
+        champion_options_set.update(analyses_df["champion"].dropna().unique().tolist())
+    if not ranking_df.empty and "champion" in ranking_df.columns:
+        champion_options_set.update(ranking_df["champion"].dropna().unique().tolist())
+
+    champion_options = sorted(champion_options_set)
 
     if st.session_state["champion_filter"] not in [ALL_CHAMPIONS_LABEL] + champion_options:
         st.session_state["champion_filter"] = ALL_CHAMPIONS_LABEL
@@ -629,42 +663,75 @@ def render_champions_dashboard() -> None:
                 unsafe_allow_html=True,
             )
 
-            section("Champion ranking")
-            summary, summary_warnings = _build_champion_summary(actions_df, column_map)
-            subtask_summary = pd.DataFrame()
-            subtask_summary_warnings: list[str] = []
-            if subtasks_available and not subtasks_df.empty:
-                subtask_summary, subtask_summary_warnings = _build_subtask_summary(subtasks_df, subtask_column_map)
-            for warning in summary_warnings:
-                st.warning(warning)
-            for warning in subtask_summary_warnings:
-                st.warning(warning)
-
-            if summary.empty:
-                footer("Action-to-Money Tracker • Champion performance needs clean action data.")
-                return
-
-            if not subtask_summary.empty:
-                summary = summary.merge(subtask_summary, on="champion", how="outer")
-            count_columns = [
-                "total_actions",
-                "open_actions",
-                "closed_actions",
-                "overdue_actions",
-                "on_time_actions",
-                "total_subtasks",
-                "open_subtasks",
-                "closed_subtasks",
-                "overdue_subtasks",
-                "on_time_subtasks",
-            ]
-            for col in count_columns:
-                if col in summary.columns:
-                    summary[col] = summary[col].fillna(0)
-            summary = _sort_summary(summary)
-            st.dataframe(summary, use_container_width=True)
+            section("Champion scoring (v1.0)")
+            st.markdown(
+                muted("Scores include action points, analysis points, and aging penalties with SLA-by-type."),
+                unsafe_allow_html=True,
+            )
+            if ranking_df.empty:
+                st.warning("No champion score data available yet.")
+            else:
+                st.dataframe(ranking_df, use_container_width=True)
 
             if champion_selection != ALL_CHAMPIONS_LABEL:
+                section("Champion scoring details")
+                champion_score_log = score_log_df[score_log_df["champion"] == champion_selection].copy()
+                champion_total_score = int(champion_score_log["points"].sum()) if not champion_score_log.empty else 0
+                champion_actions = filtered_df.copy()
+                action_on_time_rate = _build_action_on_time_rate(champion_actions, column_map)
+                champion_analyses = analyses_df.copy()
+                if "champion" in champion_analyses.columns:
+                    champion_analyses = champion_analyses[champion_analyses["champion"] == champion_selection].copy()
+                analyses_open = 0
+                analyses_closed = 0
+                if not champion_analyses.empty and "status" in champion_analyses.columns:
+                    status_values = champion_analyses["status"].astype(str).str.lower().str.strip()
+                    analyses_closed = int((status_values == "closed").sum())
+                    analyses_open = int((status_values != "closed").sum())
+
+                score_kpis = st.columns(4)
+                score_kpis[0].metric("Total score", champion_total_score)
+                score_kpis[1].metric("Action on-time rate", _format_rate(action_on_time_rate))
+                score_kpis[2].metric("Analyses closed", analyses_closed)
+                score_kpis[3].metric("Analyses open", analyses_open)
+
+                if champion_score_log.empty:
+                    st.info("No score events recorded yet for this champion.")
+                else:
+                    st.dataframe(
+                        champion_score_log[
+                            [
+                                "as_of_date",
+                                "item_type",
+                                "item_id",
+                                "rule_code",
+                                "points",
+                                "details",
+                            ]
+                        ],
+                        use_container_width=True,
+                    )
+
+                section("Champion analyses and linked actions")
+                if champion_analyses.empty:
+                    st.info("No analyses found for this champion.")
+                else:
+                    st.dataframe(champion_analyses, use_container_width=True)
+
+                linked_actions = pd.DataFrame()
+                if not champion_analyses.empty and not analysis_links_df.empty:
+                    analysis_ids = champion_analyses["analysis_id"].astype(str).tolist()
+                    linked = analysis_links_df[analysis_links_df["analysis_id"].astype(str).isin(analysis_ids)].copy()
+                    action_id_col = _find_column(actions_df.columns, ["id", "action_id", "actionid"])
+                    if action_id_col and not linked.empty:
+                        linked_ids = linked["action_id"].astype(str).tolist()
+                        linked_actions = actions_df[actions_df[action_id_col].astype(str).isin(linked_ids)].copy()
+
+                if linked_actions.empty:
+                    st.info("No linked actions found for this champion's analyses.")
+                else:
+                    _render_action_table(linked_actions, column_map)
+
                 section("Action details")
                 _render_action_table(filtered_df, column_map)
     footer("Action-to-Money Tracker • Champion performance needs clean action data.")
