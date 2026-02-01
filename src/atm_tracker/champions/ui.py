@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 from datetime import date
+import html
 from typing import Iterable
+from urllib.parse import quote_plus
 
 import pandas as pd
 import streamlit as st
@@ -12,6 +14,7 @@ from atm_tracker.analyses.repo import list_analyses, list_analysis_actions
 from atm_tracker.champions.repo import list_champions, save_champion_score_log
 from atm_tracker.scoring.champion_scoring import compute_ranking, compute_score_log
 from atm_tracker.ui.layout import footer, page_header, section
+from atm_tracker.ui.shared_tables import render_table_card
 from atm_tracker.ui.styles import inject_global_styles, muted
 
 ALL_CHAMPIONS_LABEL = "All champions"
@@ -474,6 +477,46 @@ def _render_data_table(df: pd.DataFrame, *, height: int | float | str | None = N
         st.dataframe(df, height=normalized_height, **common)
 
 
+def _build_champion_nav_link(champion: str) -> str:
+    return f"?nav=actions&champion={quote_plus(champion)}"
+
+
+def _format_table_value(value: object) -> str:
+    if value is None or (isinstance(value, float) and pd.isna(value)):
+        return "—"
+    return html.escape(str(value))
+
+
+def _render_ranking_table(df: pd.DataFrame) -> None:
+    column_labels = {
+        "champion": "Champion",
+        "total_score": "Total score",
+        "actions_total": "Actions",
+        "actions_closed": "Actions closed",
+        "actions_late_count": "Actions late",
+        "analyses_open": "Analyses open",
+        "analyses_closed": "Analyses closed",
+        "closed_5why": "Closed 5Why",
+        "closed_a3": "Closed A3",
+        "closed_8d": "Closed 8D",
+    }
+    table_columns = [col for col in column_labels if col in df.columns]
+    rows: list[list[str]] = []
+    for _, row in df.iterrows():
+        row_cells: list[str] = []
+        for column in table_columns:
+            if column == "champion":
+                label = str(row.get("champion") or "Unassigned")
+                link = _build_champion_nav_link(label)
+                row_cells.append(f"<a class='ds-link' href='{link}'>{html.escape(label)}</a>")
+            else:
+                row_cells.append(_format_table_value(row.get(column)))
+        rows.append(row_cells)
+
+    headers = [column_labels[col] for col in table_columns]
+    render_table_card(headers, rows)
+
+
 def _render_action_table(df: pd.DataFrame, column_map: dict[str, str | None]) -> None:
     desired_columns = [
         _find_column(df.columns, ["id", "action_id"]),
@@ -707,7 +750,7 @@ def render_champions_dashboard() -> None:
         if ranking_df.empty:
             st.warning("No champion score data available yet.")
         else:
-            _render_data_table(ranking_df)
+            _render_ranking_table(ranking_df)
 
         if champion_selection != ALL_CHAMPIONS_LABEL:
             section("Champion scoring details")
