@@ -27,6 +27,7 @@ from atm_tracker.actions.repo import (
     soft_delete_task,
     update_task,
 )
+from atm_tracker.analyses.repo import list_linked_analysis_ids
 from atm_tracker.champions.repo import list_champions
 from atm_tracker.projects.repo import list_projects
 from atm_tracker.ui.layout import footer, kpi_row, main_grid, page_header, section
@@ -602,11 +603,14 @@ def _render_action_details() -> None:
     closed_at = action.get("closed_at")
     updated_at = action.get("updated_at")
     description = action.get("description", "")
+    linked_analysis_ids = list_linked_analysis_ids(int(action_id))
+    linked_analysis_label = ", ".join(linked_analysis_ids) if linked_analysis_ids else "(none)"
 
     details_items = [
         f"<li><strong>Tasks:</strong> {tasks_total} total • {tasks_done} done • {tasks_open} open</li>",
         f"<li><strong>Status:</strong> {pill(status or 'Open')}</li>",
         f"<li><strong>Champion (responsible):</strong> {html.escape(champion or '(unassigned)')}</li>",
+        f"<li><strong>Linked analysis:</strong> {html.escape(linked_analysis_label)}</li>",
         f"<li><strong>Team members:</strong> {html.escape(', '.join(team_names)) if team_names else '(none)'}</li>",
         "<li><strong>Key dates:</strong>",
         "<ul class='ds-list'>"

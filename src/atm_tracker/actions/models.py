@@ -16,6 +16,7 @@ class ActionCreate(BaseModel):
     project_or_family: str = Field(default="", max_length=80)
     owner: str = Field(default="", max_length=80)
     champion: str = Field(default="", max_length=80)
+    analysis_id: Optional[str] = Field(default=None, max_length=40)
 
     status: Status = "OPEN"
     created_at: date
