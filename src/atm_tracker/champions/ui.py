@@ -9,6 +9,7 @@ import streamlit as st
 from atm_tracker.actions.db import init_db
 from atm_tracker.actions.repo import list_actions
 from atm_tracker.champions.repo import list_champions
+from atm_tracker.ui.layout import footer, kpi_row, main_grid, page_header, section
 from atm_tracker.ui.styles import inject_global_styles, muted
 
 ALL_CHAMPIONS_LABEL = "All champions"
@@ -118,24 +119,6 @@ def _build_metrics(df: pd.DataFrame, column_map: dict[str, str | None]) -> tuple
     return metrics, warnings
 
 
-def _render_metrics(metrics: dict[str, object]) -> None:
-    columns = st.columns(5)
-    columns[0].metric("Total actions", _format_metric(metrics["total_actions"]))
-    columns[1].metric("Open actions", _format_metric(metrics["open_actions"]))
-    columns[2].metric("Closed actions", _format_metric(metrics["closed_actions"]))
-    columns[3].metric("Overdue actions", _format_metric(metrics["overdue_actions"]))
-
-    on_time_rate = metrics.get("on_time_rate")
-    if isinstance(on_time_rate, (float, int)):
-        on_time_display = f"{on_time_rate:.0%}"
-    else:
-        on_time_display = "N/A"
-    columns[4].metric("On-time rate", on_time_display)
-
-    if metrics.get("avg_time_to_close") is not None:
-        st.metric("Avg time to close (days)", f"{metrics['avg_time_to_close']:.1f}")
-
-
 def _build_champion_summary(
     df: pd.DataFrame,
     column_map: dict[str, str | None],
@@ -219,23 +202,52 @@ def render_champions_dashboard() -> None:
     init_db()
     inject_global_styles()
 
-    st.title("🏆 Champions")
-    st.caption("Champion ranking and action outcome signals across the portfolio.")
-    st.markdown(muted("KPIs are derived from the same actions data used in the Actions module."), unsafe_allow_html=True)
+    page_header(
+        "🏆 Champions",
+        "Champion ranking and action outcome signals across the portfolio.",
+    )
+    st.divider()
 
     actions_df = list_actions()
     champions_df = list_champions(active_only=True)
 
+    if "champion_filter" not in st.session_state:
+        st.session_state["champion_filter"] = ALL_CHAMPIONS_LABEL
+
     if actions_df.empty:
-        st.warning("No actions found; add actions to see champion metrics.")
+        kpi_row([])
+        st.divider()
+        with main_grid("split") as (main, side):
+            with side:
+                with st.expander("🔍 Filters", expanded=True):
+                    st.selectbox(
+                        "Champion",
+                        [ALL_CHAMPIONS_LABEL],
+                        key="champion_filter",
+                    )
+            with main:
+                st.warning("No actions found; add actions to see champion metrics.")
+        footer("Action-to-Money Tracker • Champion performance needs clean action data.")
         return
 
     column_map = _prepare_actions(actions_df)
     champion_col = column_map.get("champion")
 
     if not champion_col:
-        st.warning("Champion/owner column missing; unable to build rankings.")
-        st.dataframe(actions_df)
+        kpi_row([])
+        st.divider()
+        with main_grid("split") as (main, side):
+            with side:
+                with st.expander("🔍 Filters", expanded=True):
+                    st.selectbox(
+                        "Champion",
+                        [ALL_CHAMPIONS_LABEL],
+                        key="champion_filter",
+                    )
+            with main:
+                st.warning("Champion/owner column missing; unable to build rankings.")
+                st.dataframe(actions_df, use_container_width=True)
+        footer("Action-to-Money Tracker • Champion performance needs clean action data.")
         return
 
     actions_df[champion_col] = actions_df[champion_col].fillna("Unassigned")
@@ -245,7 +257,10 @@ def render_champions_dashboard() -> None:
     else:
         champion_options = sorted(actions_df[champion_col].dropna().unique().tolist())
 
-    champion_selection = st.selectbox("Champion", [ALL_CHAMPIONS_LABEL] + champion_options)
+    if st.session_state["champion_filter"] not in [ALL_CHAMPIONS_LABEL] + champion_options:
+        st.session_state["champion_filter"] = ALL_CHAMPIONS_LABEL
+
+    champion_selection = st.session_state["champion_filter"]
 
     if champion_selection != ALL_CHAMPIONS_LABEL:
         filtered_df = actions_df[actions_df[champion_col] == champion_selection].copy()
@@ -253,25 +268,57 @@ def render_champions_dashboard() -> None:
         filtered_df = actions_df.copy()
 
     metrics, metric_warnings = _build_metrics(filtered_df, column_map)
-    for warning in metric_warnings:
-        st.warning(warning)
 
-    _render_metrics(metrics)
+    on_time_rate = metrics.get("on_time_rate")
+    on_time_display = f"{on_time_rate:.0%}" if isinstance(on_time_rate, (float, int)) else "N/A"
 
-    st.markdown("### Champion ranking")
-    summary, summary_warnings = _build_champion_summary(actions_df, column_map)
-    for warning in summary_warnings:
-        st.warning(warning)
+    kpi_row(
+        [
+            ("Total actions", _format_metric(metrics["total_actions"])),
+            ("Open actions", _format_metric(metrics["open_actions"])),
+            ("Closed actions", _format_metric(metrics["closed_actions"])),
+            ("Overdue actions", _format_metric(metrics["overdue_actions"])),
+            ("On-time rate", on_time_display),
+        ]
+    )
+    st.divider()
 
-    if summary.empty:
-        return
+    with main_grid("split") as (main, side):
+        with side:
+            with st.expander("🔍 Filters", expanded=True):
+                st.selectbox(
+                    "Champion",
+                    [ALL_CHAMPIONS_LABEL] + champion_options,
+                    key="champion_filter",
+                )
+            if metrics.get("avg_time_to_close") is not None:
+                section("Cycle time")
+                st.metric("Avg time to close (days)", f"{metrics['avg_time_to_close']:.1f}")
+        with main:
+            for warning in metric_warnings:
+                st.warning(warning)
 
-    summary = _sort_summary(summary)
-    st.dataframe(summary, use_container_width=True)
+            st.markdown(
+                muted("KPIs are derived from the same actions data used in the Actions module."),
+                unsafe_allow_html=True,
+            )
 
-    if champion_selection != ALL_CHAMPIONS_LABEL:
-        st.markdown("### Action details")
-        _render_action_table(filtered_df, column_map)
+            section("Champion ranking")
+            summary, summary_warnings = _build_champion_summary(actions_df, column_map)
+            for warning in summary_warnings:
+                st.warning(warning)
+
+            if summary.empty:
+                footer("Action-to-Money Tracker • Champion performance needs clean action data.")
+                return
+
+            summary = _sort_summary(summary)
+            st.dataframe(summary, use_container_width=True)
+
+            if champion_selection != ALL_CHAMPIONS_LABEL:
+                section("Action details")
+                _render_action_table(filtered_df, column_map)
+    footer("Action-to-Money Tracker • Champion performance needs clean action data.")
 
 
 __all__ = ["render_champions_dashboard"]

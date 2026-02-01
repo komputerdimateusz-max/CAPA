@@ -29,6 +29,7 @@ from atm_tracker.actions.repo import (
 )
 from atm_tracker.champions.repo import list_champions
 from atm_tracker.projects.repo import list_projects
+from atm_tracker.ui.layout import footer, kpi_row, main_grid, page_header, section
 from atm_tracker.ui.styles import card, inject_global_styles, muted, pill
 
 DEFAULT_ACTION_PROGRESS_SUMMARY = {
@@ -39,6 +40,8 @@ DEFAULT_ACTION_PROGRESS_SUMMARY = {
     "done": 0,
     "open": 0,
 }
+
+VIEW_OPTIONS = ["Add action", "Actions list", "Action details"]
 
 
 def _apply_action_details_query_params() -> None:
@@ -70,19 +73,14 @@ def render_actions_module() -> None:
     init_db()
     inject_global_styles()
 
-    st.title("📋 CAPA Actions — Input Module")
-    st.caption("Fast action capture with validation. No ROI yet — we build clean foundations.")
-
     _apply_action_details_query_params()
 
     if "actions_view" not in st.session_state:
-        st.session_state["actions_view"] = "Add action"
+        st.session_state["actions_view"] = VIEW_OPTIONS[0]
     if "actions_view_override" in st.session_state:
         st.session_state["actions_view"] = st.session_state.pop("actions_view_override")
 
-    view_options = ["Add action", "Actions list", "Action details"]
-
-    current_view = st.radio("View", view_options, horizontal=True, key="actions_view")
+    current_view = st.session_state.get("actions_view", VIEW_OPTIONS[0])
 
     if current_view == "Add action":
         _render_add()
@@ -96,41 +94,62 @@ def render_actions_module() -> None:
             st.info("Please select another action or go back to list.")
 
 
+def _render_view_selector() -> None:
+    st.selectbox("View", options=VIEW_OPTIONS, key="actions_view")
+
+
 def _render_add() -> None:
-    st.subheader("New action")
+    page_header(
+        "➕ Add action",
+        "Fast action capture with validation. No ROI yet — we build clean foundations.",
+        actions=_render_view_selector,
+    )
+    st.divider()
+    kpi_row([])
+    st.divider()
 
     champions_df = list_champions(active_only=True)
     champion_options = _build_champion_options(champions_df)
     projects_df = list_projects(include_inactive=False)
     team_selection: list[int] = []
 
-    with st.form("add_action", clear_on_submit=True):
-        col1, col2 = st.columns(2)
+    with main_grid("wide") as (main,):
+        with main:
+            section("New action")
+            with st.form("add_action", clear_on_submit=True):
+                col1, col2 = st.columns(2)
 
-        with col1:
-            title = st.text_input("Title *", placeholder="e.g. Reduce scratch defects on L1")
-            line = st.text_input("Line *", placeholder="e.g. L1")
-            project = _render_project_input(projects_df)
-            champion = _render_champion_input(champions_df)
-            team_selection = _render_team_input(champions_df, champion_options, selected_ids=team_selection)
-            tags = st.text_input("Tags (comma-separated)", placeholder="scrap, coating, poka-yoke")
+                with col1:
+                    title = st.text_input("Title *", placeholder="e.g. Reduce scratch defects on L1")
+                    line = st.text_input("Line *", placeholder="e.g. L1")
+                    project = _render_project_input(projects_df)
+                    champion = _render_champion_input(champions_df)
+                    team_selection = _render_team_input(
+                        champions_df, champion_options, selected_ids=team_selection
+                    )
+                    tags = st.text_input("Tags (comma-separated)", placeholder="scrap, coating, poka-yoke")
 
-        with col2:
-            status = st.selectbox("Status", ["OPEN", "IN_PROGRESS", "CLOSED"], index=0)
-            created_at = st.date_input("Created at *", value=date.today())
-            target_date = st.date_input("Target Date", value=None)
-            closed_at = st.date_input("Closed at", value=None)
+                with col2:
+                    status = st.selectbox("Status", ["OPEN", "IN_PROGRESS", "CLOSED"], index=0)
+                    created_at = st.date_input("Created at *", value=date.today())
+                    target_date = st.date_input("Target Date", value=None)
+                    closed_at = st.date_input("Closed at", value=None)
 
-            st.markdown("**Action cost (MVP)**")
-            cost_internal_hours = st.number_input("Internal hours", min_value=0.0, value=0.0, step=0.5)
-            cost_external_eur = st.number_input("External cost (€)", min_value=0.0, value=0.0, step=10.0)
-            cost_material_eur = st.number_input("Material cost (€)", min_value=0.0, value=0.0, step=10.0)
+                    st.markdown("**Action cost (MVP)**")
+                    cost_internal_hours = st.number_input("Internal hours", min_value=0.0, value=0.0, step=0.5)
+                    cost_external_eur = st.number_input("External cost (€)", min_value=0.0, value=0.0, step=10.0)
+                    cost_material_eur = st.number_input("Material cost (€)", min_value=0.0, value=0.0, step=10.0)
 
-        description = st.text_area("Description", height=120, placeholder="Context, root cause, what we changed, expected effect...")
+                description = st.text_area(
+                    "Description",
+                    height=120,
+                    placeholder="Context, root cause, what we changed, expected effect...",
+                )
 
-        submitted = st.form_submit_button("Save action")
+                submitted = st.form_submit_button("Save action")
 
     if not submitted:
+        footer("Action-to-Money Tracker • Build the baseline before ROI.")
         return
 
     try:
@@ -161,6 +180,7 @@ def _render_add() -> None:
     new_id = insert_action(a)
     set_action_team(new_id, team_selection)
     st.success(f"Saved ✅ (id={new_id})")
+    footer("Action-to-Money Tracker • Build the baseline before ROI.")
 
 
 def _render_champion_input(champions_df) -> str:
@@ -217,48 +237,22 @@ def _build_action_label(
     return f"{label} — {int(progress)}%"
 
 
-def _format_progress_percent(progress_percent: int) -> str:
-    try:
-        value = int(progress_percent)
-    except (TypeError, ValueError):
-        value = 0
-    value = max(0, min(100, value))
-    return f"{value:03d}%"
-
-
-def _render_action_header(
-    action_id: int,
-    title: str,
-    progress_percent: int,
-) -> None:
-    safe_title = str(title or "")
-    safe_progress = progress_percent if isinstance(progress_percent, int) else 0
-    percent_label = _format_progress_percent(safe_progress)
-
-    title_text = safe_title if safe_title else f"Action #{int(action_id)}"
-    col_title, col_progress = st.columns([4, 1])
-    with col_title:
-        st.markdown(f"### {title_text}")
-    with col_progress:
-        st.metric("Progress", percent_label)
-
-
 def _render_list() -> None:
-    header_col, action_col = st.columns([3, 1])
-    with header_col:
-        st.markdown("## 📋 Action List")
-        st.markdown(
-            muted(
-                "Overview of active and closed actions with key KPIs. Click an action title to open Action Details."
-            ),
-            unsafe_allow_html=True,
-        )
-    with action_col:
+    export_container: Optional[st.delta_generator.DeltaGenerator] = None
+
+    def _actions() -> None:
+        nonlocal export_container
+        _render_view_selector()
         if st.button("Refresh", use_container_width=True):
             st.rerun()
         export_container = st.container()
 
-    kpi_container = st.container()
+    page_header(
+        "📋 Action List",
+        "Overview of active and closed actions with key KPIs. Click an action title to open Action Details.",
+        actions=_actions,
+    )
+    st.divider()
 
     df = list_actions()
     total_actions = len(df)
@@ -278,26 +272,38 @@ def _render_list() -> None:
         ]
     )
 
-    with st.expander("Filters", expanded=True):
-        filter_col1, filter_col2, filter_col3, filter_col4 = st.columns(4)
-        with filter_col1:
-            selected_statuses = st.multiselect(
-                "Status",
-                options=status_options,
-                default=status_options,
-            )
-        with filter_col2:
-            selected_champion = st.selectbox("Champion", options=["All"] + champion_options)
-        with filter_col3:
-            selected_project = st.selectbox("Project", options=["All"] + project_options)
-        with filter_col4:
-            search_text = st.text_input("Search (ID or title)", placeholder="e.g. 42 or reduce defects")
+    if "actions_filter_statuses" not in st.session_state:
+        st.session_state["actions_filter_statuses"] = status_options
+    if "actions_filter_champion" not in st.session_state:
+        st.session_state["actions_filter_champion"] = "All"
+    if "actions_filter_project" not in st.session_state:
+        st.session_state["actions_filter_project"] = "All"
+    if "actions_filter_search" not in st.session_state:
+        st.session_state["actions_filter_search"] = ""
+    if "actions_filter_due_from" not in st.session_state:
+        st.session_state["actions_filter_due_from"] = None
+    if "actions_filter_due_to" not in st.session_state:
+        st.session_state["actions_filter_due_to"] = None
 
-        date_col1, date_col2 = st.columns(2)
-        with date_col1:
-            due_date_from = st.date_input("Due date from", value=None)
-        with date_col2:
-            due_date_to = st.date_input("Due date to", value=None)
+    selected_statuses = [
+        status
+        for status in st.session_state.get("actions_filter_statuses", status_options)
+        if status in status_options
+    ]
+    if not selected_statuses:
+        selected_statuses = status_options
+
+    selected_champion = st.session_state.get("actions_filter_champion", "All")
+    if selected_champion not in ["All"] + champion_options:
+        selected_champion = "All"
+
+    selected_project = st.session_state.get("actions_filter_project", "All")
+    if selected_project not in ["All"] + project_options:
+        selected_project = "All"
+
+    search_text = st.session_state.get("actions_filter_search", "")
+    due_date_from = st.session_state.get("actions_filter_due_from")
+    due_date_to = st.session_state.get("actions_filter_due_to")
 
     filtered_df = df.copy()
 
@@ -324,7 +330,6 @@ def _render_list() -> None:
             filtered_df = filtered_df[due_series >= due_date_from]
         if due_date_to:
             filtered_df = filtered_df[due_series <= due_date_to]
-
     action_ids = [int(action_id) for action_id in filtered_df.get("id", pd.Series([])).tolist()]
     days_late_map = get_actions_days_late(action_ids)
     if "id" in filtered_df.columns:
@@ -342,141 +347,174 @@ def _render_list() -> None:
     closed_count = int(closed_mask.sum())
     on_time_closed = int(((filtered_df.get("days_late", pd.Series([])) <= 0) & closed_mask).sum())
     on_time_close_rate = (on_time_closed / closed_count * 100) if closed_count else 0.0
+    kpi_row(
+        [
+            ("Open actions", f"{open_actions}"),
+            ("Overdue actions", f"{overdue_actions}"),
+            ("Avg days late", f"{avg_days_late:.1f}"),
+            ("On-time close rate", f"{on_time_close_rate:.0f}%"),
+        ]
+    )
+    st.divider()
 
-    with kpi_container:
-        kpi_cols = st.columns(4)
-        kpi_cols[0].metric("Open actions", f"{open_actions}")
-        kpi_cols[1].metric("Overdue actions", f"{overdue_actions}")
-        kpi_cols[2].metric("Avg days late", f"{avg_days_late:.1f}")
-        kpi_cols[3].metric("On-time close rate", f"{on_time_close_rate:.0f}%")
+    with main_grid("wide") as (main,):
+        with main:
+            with st.expander("🔍 Filters", expanded=True):
+                filter_col1, filter_col2, filter_col3, filter_col4 = st.columns(4)
+                with filter_col1:
+                    st.multiselect(
+                        "Status",
+                        options=status_options,
+                        key="actions_filter_statuses",
+                    )
+                with filter_col2:
+                    st.selectbox(
+                        "Champion",
+                        options=["All"] + champion_options,
+                        key="actions_filter_champion",
+                    )
+                with filter_col3:
+                    st.selectbox(
+                        "Project",
+                        options=["All"] + project_options,
+                        key="actions_filter_project",
+                    )
+                with filter_col4:
+                    st.text_input(
+                        "Search (ID or title)",
+                        placeholder="e.g. 42 or reduce defects",
+                        key="actions_filter_search",
+                    )
 
-    if df.empty:
-        st.markdown(muted("📭 No actions available."), unsafe_allow_html=True)
-        st.caption("Showing 0 of 0 actions")
-        return
+                date_col1, date_col2 = st.columns(2)
+                with date_col1:
+                    st.date_input("Due date from", value=None, key="actions_filter_due_from")
+                with date_col2:
+                    st.date_input("Due date to", value=None, key="actions_filter_due_to")
 
-    if filtered_df.empty:
-        st.markdown(
-            muted("📭 No actions match current filters. Try adjusting filters or date range."),
-            unsafe_allow_html=True,
-        )
-        st.caption(f"Showing 0 of {total_actions} actions")
-        return
+            if df.empty:
+                st.markdown(muted("📭 No actions available."), unsafe_allow_html=True)
+                st.caption("Showing 0 of 0 actions")
+                footer("Action-to-Money Tracker • Keep actions traceable and on time.")
+                return
 
-    if "days_late" in filtered_df.columns or "target_date" in filtered_df.columns:
-        sort_columns: list[str] = []
-        sort_ascending: list[bool] = []
-        if "days_late" in filtered_df.columns:
-            sort_columns.append("days_late")
-            sort_ascending.append(False)
-        if "target_date" in filtered_df.columns:
-            sort_columns.append("target_date")
-            sort_ascending.append(True)
-        if sort_columns:
-            filtered_df = filtered_df.sort_values(by=sort_columns, ascending=sort_ascending)
-
-    st.markdown("### Actions")
-
-    table_columns = []
-    column_labels = {
-        "title": "Title",
-        "status": "Status",
-        "champion": "Champion",
-        "project_or_family": "Project",
-        "target_date": "Due date",
-        "closed_at": "Closed at",
-        "days_late": "Days late",
-    }
-    for key in column_labels:
-        if key in filtered_df.columns:
-            table_columns.append(key)
-
-    def format_value(value: object) -> str:
-        if value is None or (isinstance(value, float) and pd.isna(value)):
-            return "—"
-        if isinstance(value, date):
-            return value.strftime("%Y-%m-%d")
-        return html.escape(str(value))
-
-    def status_label(status_value: str, days_late_value: int) -> str:
-        status_normalized = str(status_value or "").strip().lower()
-        if days_late_value > 0 and status_normalized != "closed":
-            return "Overdue"
-        if status_normalized in {"in_progress", "ongoing"}:
-            return "In progress"
-        if status_normalized == "closed":
-            return "Closed"
-        if status_normalized == "open":
-            return "Open"
-        return status_value or "Open"
-
-    rows_html = []
-    for _, row in filtered_df.iterrows():
-        row_cells = []
-        action_id = row.get("id")
-        for column in table_columns:
-            if column == "title":
-                label = row.get("title") or f"Action #{int(action_id)}"
-                link = f"?view=details&action_id={int(action_id)}"
-                row_cells.append(
-                    f"<td><a class='ds-link' href='{link}'>{html.escape(str(label))}</a></td>"
+            if filtered_df.empty:
+                st.markdown(
+                    muted("📭 No actions match current filters. Try adjusting filters or date range."),
+                    unsafe_allow_html=True,
                 )
-            elif column == "status":
-                label = status_label(row.get("status"), int(row.get("days_late", 0)))
-                row_cells.append(f"<td>{pill(label)}</td>")
-            else:
-                row_cells.append(f"<td>{format_value(row.get(column))}</td>")
-        rows_html.append(f"<tr>{''.join(row_cells)}</tr>")
+                st.caption(f"Showing 0 of {total_actions} actions")
+                footer("Action-to-Money Tracker • Keep actions traceable and on time.")
+                return
 
-    header_html = "".join([f"<th>{column_labels[col]}</th>" for col in table_columns])
-    table_html = f"""
-    <table class="ds-table">
-        <thead><tr>{header_html}</tr></thead>
-        <tbody>
-            {''.join(rows_html)}
-        </tbody>
-    </table>
-    """
-    st.markdown(card(table_html), unsafe_allow_html=True)
+            if "days_late" in filtered_df.columns or "target_date" in filtered_df.columns:
+                sort_columns: list[str] = []
+                sort_ascending: list[bool] = []
+                if "days_late" in filtered_df.columns:
+                    sort_columns.append("days_late")
+                    sort_ascending.append(False)
+                if "target_date" in filtered_df.columns:
+                    sort_columns.append("target_date")
+                    sort_ascending.append(True)
+                if sort_columns:
+                    filtered_df = filtered_df.sort_values(by=sort_columns, ascending=sort_ascending)
 
-    export_df = filtered_df.copy()
-    if "title" in filtered_df.columns:
-        export_df = export_df.rename(columns={"title": "Title"})
-    csv_data = export_df.to_csv(index=False)
-    with export_container:
-        st.download_button(
-            "Export CSV",
-            data=csv_data,
-            file_name="actions_export.csv",
-            mime="text/csv",
-            use_container_width=True,
-        )
-    st.caption(f"Showing {len(filtered_df)} of {total_actions} actions")
+            section("Actions")
+
+            table_columns = []
+            column_labels = {
+                "title": "Title",
+                "status": "Status",
+                "champion": "Champion",
+                "project_or_family": "Project",
+                "target_date": "Due date",
+                "closed_at": "Closed at",
+                "days_late": "Days late",
+            }
+            for key in column_labels:
+                if key in filtered_df.columns:
+                    table_columns.append(key)
+
+            def format_value(value: object) -> str:
+                if value is None or (isinstance(value, float) and pd.isna(value)):
+                    return "—"
+                if isinstance(value, date):
+                    return value.strftime("%Y-%m-%d")
+                return html.escape(str(value))
+
+            def status_label(status_value: str, days_late_value: int) -> str:
+                status_normalized = str(status_value or "").strip().lower()
+                if days_late_value > 0 and status_normalized != "closed":
+                    return "Overdue"
+                if status_normalized in {"in_progress", "ongoing"}:
+                    return "In progress"
+                if status_normalized == "closed":
+                    return "Closed"
+                if status_normalized == "open":
+                    return "Open"
+                return status_value or "Open"
+
+            rows_html = []
+            for _, row in filtered_df.iterrows():
+                row_cells = []
+                action_id = row.get("id")
+                for column in table_columns:
+                    if column == "title":
+                        label = row.get("title") or f"Action #{int(action_id)}"
+                        link = f"?view=details&action_id={int(action_id)}"
+                        row_cells.append(
+                            f"<td><a class='ds-link' href='{link}'>{html.escape(str(label))}</a></td>"
+                        )
+                    elif column == "status":
+                        label = status_label(row.get("status"), int(row.get("days_late", 0)))
+                        row_cells.append(f"<td>{pill(label)}</td>")
+                    else:
+                        row_cells.append(f"<td>{format_value(row.get(column))}</td>")
+                rows_html.append(f"<tr>{''.join(row_cells)}</tr>")
+
+            header_html = "".join([f"<th>{column_labels[col]}</th>" for col in table_columns])
+            table_html = f"""
+            <table class="ds-table">
+                <thead><tr>{header_html}</tr></thead>
+                <tbody>
+                    {''.join(rows_html)}
+                </tbody>
+            </table>
+            """
+            st.markdown(card(table_html), unsafe_allow_html=True)
+
+            export_df = filtered_df.copy()
+            if "title" in filtered_df.columns:
+                export_df = export_df.rename(columns={"title": "Title"})
+            csv_data = export_df.to_csv(index=False)
+            if export_container is not None:
+                with export_container:
+                    st.download_button(
+                        "Export CSV",
+                        data=csv_data,
+                        file_name="actions_export.csv",
+                        mime="text/csv",
+                        use_container_width=True,
+                    )
+            st.caption(f"Showing {len(filtered_df)} of {total_actions} actions")
+    footer("Action-to-Money Tracker • Keep actions traceable and on time.")
 
 
 def _render_action_details() -> None:
-    st.markdown("## 🧾 Action Details")
-    st.markdown(
-        muted("Review status, dates, tasks, and team ownership for a selected action."),
-        unsafe_allow_html=True,
-    )
     actions_df = list_actions()
     if st.session_state.pop("flash_action_deleted", False):
         st.info("Action deleted")
-    if actions_df.empty:
-        st.markdown(muted("📭 No actions available."), unsafe_allow_html=True)
-        st.session_state.pop("selected_action_id", None)
-        return
 
-    action_ids = [int(row["id"]) for _, row in actions_df.iterrows()]
-    progress_map = get_actions_progress_map(action_ids)
+    action_ids = [int(row["id"]) for _, row in actions_df.iterrows()] if not actions_df.empty else []
+    progress_map = get_actions_progress_map(action_ids) if action_ids else {}
     progress_summaries: dict[int, dict] = {}
     try:
-        progress_summaries = get_action_progress_summaries(action_ids)
+        progress_summaries = get_action_progress_summaries(action_ids) if action_ids else {}
         if not isinstance(progress_summaries, dict):
             progress_summaries = {}
     except Exception:
         progress_summaries = {}
+
     action_lookup = {
         int(row["id"]): _build_action_label(
             int(row["id"]),
@@ -487,22 +525,48 @@ def _render_action_details() -> None:
         for _, row in actions_df.iterrows()
     }
     action_ids = list(action_lookup.keys())
-    current_action_id = st.session_state.get("selected_action_id")
-    options = [None] + action_ids
-    index = options.index(current_action_id) if current_action_id in action_ids else 0
-    selected_action_id = st.selectbox(
-        "Select action",
-        options=options,
-        index=index,
-        format_func=lambda action_id: "(select...)"
-        if action_id is None
-        else action_lookup.get(int(action_id), str(action_id)),
-        key="action_details_select_action",
-    )
 
-    if not selected_action_id:
+    selection_value: Optional[int] = None
+
+    def _actions() -> None:
+        nonlocal selection_value
+        _render_view_selector()
+        selection_value = st.selectbox(
+            "Action",
+            options=[None] + action_ids,
+            index=_safe_index([None] + action_ids, st.session_state.get("selected_action_id")),
+            format_func=lambda action_id: "(select...)"
+            if action_id is None
+            else action_lookup.get(int(action_id), str(action_id)),
+            key="action_details_select_action",
+        )
+
+    page_header(
+        "🧾 Action Details",
+        "Review status, dates, tasks, and team ownership for a selected action.",
+        actions=_actions,
+    )
+    st.divider()
+
+    if actions_df.empty:
+        kpi_row([])
+        st.divider()
+        with main_grid("focus") as (main, _side):
+            with main:
+                st.markdown(muted("📭 No actions available."), unsafe_allow_html=True)
+        footer("Action-to-Money Tracker • Transparency before impact.")
         st.session_state.pop("selected_action_id", None)
-        st.markdown(muted("Select an action to view details."), unsafe_allow_html=True)
+        return
+
+    selected_action_id = selection_value
+    if selected_action_id is None:
+        st.session_state.pop("selected_action_id", None)
+        kpi_row([])
+        st.divider()
+        with main_grid("focus") as (main, _side):
+            with main:
+                st.markdown(muted("Select an action to view details."), unsafe_allow_html=True)
+        footer("Action-to-Money Tracker • Transparency before impact.")
         return
 
     st.session_state["selected_action_id"] = int(selected_action_id)
@@ -516,23 +580,12 @@ def _render_action_details() -> None:
         st.rerun()
         return
 
-    action_button_col, action_button_col2 = st.columns(2)
-    with action_button_col:
-        st.button("Back to list", on_click=_queue_actions_list, use_container_width=True)
-    with action_button_col2:
-        if st.button("Delete action (soft)", use_container_width=True):
-            soft_delete_action(int(action_id))
-            st.session_state.pop("selected_action_id", None)
-            st.session_state["flash_action_deleted"] = True
-            st.rerun()
-
     title = action.get("title", "")
     progress_summary = progress_summaries.get(
         int(action_id),
         DEFAULT_ACTION_PROGRESS_SUMMARY,
     )
     progress_percent = int(progress_summary.get("progress_percent", 0))
-    _render_action_header(int(action_id), str(title or ""), progress_percent)
 
     tasks_total = int(progress_summary.get("total", 0))
     tasks_done = int(progress_summary.get("done", 0))
@@ -563,17 +616,41 @@ def _render_action_details() -> None:
         f"<li>Status updated: {html.escape(str(updated_at or '(not set)'))}</li>"
         "</ul></li>",
     ]
-    details_html = f"<ul class='ds-list'>{''.join(details_items)}</ul>"
-    st.markdown(card(details_html), unsafe_allow_html=True)
-    st.markdown("### Description")
-    st.markdown(card(html.escape(description or "(none)")), unsafe_allow_html=True)
 
-    st.divider()
-    _render_tasks_section(
-        action_id=int(action_id),
-        team_ids=team_ids,
-        champion_options=champion_options,
+    kpi_row(
+        [
+            ("Progress", f"{progress_percent}%"),
+            ("Tasks total", f"{tasks_total}"),
+            ("Tasks open", f"{tasks_open}"),
+            ("Tasks done", f"{tasks_done}"),
+        ]
     )
+    st.divider()
+
+    with main_grid("focus") as (main, side):
+        with main:
+            section("Action overview")
+            title_text = str(title or f"Action #{int(action_id)}")
+            st.markdown(f"**{html.escape(title_text)}**")
+            section("Description")
+            st.markdown(card(html.escape(description or "(none)")), unsafe_allow_html=True)
+            _render_tasks_section(
+                action_id=int(action_id),
+                team_ids=team_ids,
+                champion_options=champion_options,
+            )
+        with side:
+            section("Action summary")
+            details_html = f"<ul class='ds-list'>{''.join(details_items)}</ul>"
+            st.markdown(card(details_html), unsafe_allow_html=True)
+            section("Actions")
+            st.button("Back to list", on_click=_queue_actions_list, use_container_width=True)
+            if st.button("Delete action (soft)", use_container_width=True):
+                soft_delete_action(int(action_id))
+                st.session_state.pop("selected_action_id", None)
+                st.session_state["flash_action_deleted"] = True
+                st.rerun()
+    footer("Action-to-Money Tracker • Transparency before impact.")
 
 
 def _render_tasks_section(
@@ -581,7 +658,7 @@ def _render_tasks_section(
     team_ids: list[int],
     champion_options: dict[int, str],
 ) -> None:
-    st.markdown("### Tasks / Sub-actions")
+    section("Tasks / Sub-actions")
 
     champions_active = list_champions(active_only=True)
     active_ids = [int(row["id"]) for _, row in champions_active.iterrows()] if not champions_active.empty else []
