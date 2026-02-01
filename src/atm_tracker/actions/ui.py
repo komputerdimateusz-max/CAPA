@@ -78,13 +78,13 @@ def render_actions_module() -> None:
     if "actions_view_override" in st.session_state:
         st.session_state["actions_view"] = st.session_state.pop("actions_view_override")
 
-    view_options = ["Add action", "Actions list / edit", "Action details"]
+    view_options = ["Add action", "Actions list", "Action details"]
 
     current_view = st.radio("View", view_options, horizontal=True, key="actions_view")
 
     if current_view == "Add action":
         _render_add()
-    elif current_view == "Actions list / edit":
+    elif current_view == "Actions list":
         _render_list()
     else:
         try:
@@ -574,7 +574,7 @@ def _render_action_details() -> None:
     if action is None:
         st.warning("Selected action not found.")
         st.session_state.pop("selected_action_id", None)
-        st.session_state["actions_view_override"] = "Actions list / edit"
+        st.session_state["actions_view_override"] = "Actions list"
         st.rerun()
         return
 
@@ -808,4 +808,4 @@ def _queue_actions_list() -> None:
         del st.query_params["action_id"]
     if "view" in st.query_params:
         del st.query_params["view"]
-    st.session_state["actions_view_override"] = "Actions list / edit"
+    st.session_state["actions_view_override"] = "Actions list"
