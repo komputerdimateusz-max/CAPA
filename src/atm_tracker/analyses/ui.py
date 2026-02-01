@@ -33,6 +33,7 @@ from atm_tracker.analyses.repo import (
 from atm_tracker.champions.repo import list_champions
 from atm_tracker.projects.repo import list_projects
 from atm_tracker.ui.layout import footer, kpi_row, main_grid, page_header, section
+from atm_tracker.ui.shared_tables import render_table_card
 from atm_tracker.ui.styles import card, inject_global_styles, muted, pill
 
 
@@ -68,6 +69,27 @@ ADD_TEMPLATE_KEYS = {
         "aa3_act",
     ],
 }
+
+
+def _apply_analysis_details_query_params() -> None:
+    params = st.query_params
+    view_param = params.get("view")
+    analysis_param = params.get("analysis_id")
+
+    if isinstance(view_param, list):
+        view_value = view_param[0] if view_param else None
+    else:
+        view_value = view_param
+
+    if isinstance(analysis_param, list):
+        analysis_value = analysis_param[0] if analysis_param else None
+    else:
+        analysis_value = analysis_param
+
+    if analysis_value:
+        st.session_state["selected_analysis_id"] = analysis_value
+        if view_value in (None, "", "details"):
+            st.session_state["analyses_view_override"] = "Analysis details"
 
 
 def _clear_add_template_keys(template_type: str) -> None:
@@ -182,6 +204,8 @@ def render_analyses_module() -> None:
     init_db()
     inject_global_styles()
 
+    _apply_analysis_details_query_params()
+
     if "analyses_view" not in st.session_state:
         st.session_state["analyses_view"] = VIEW_OPTIONS[0]
     if "analyses_view_override" in st.session_state:
@@ -238,59 +262,119 @@ def _render_list() -> None:
     )
     st.divider()
 
-    with main_grid("split") as (main, side):
-        with side:
-            with st.expander("🔍 Filters", expanded=True):
-                type_options = ["All"] + (sorted(analyses_df["type"].dropna().unique().tolist()) or ANALYSIS_TYPES)
-                status_options = ["All"] + ANALYSIS_STATUSES
-                champion_options = ["All"]
-                champions_df = list_champions(active_only=False)
-                if not champions_df.empty and "name_display" in champions_df.columns:
-                    champion_options += champions_df["name_display"].dropna().tolist()
-                if not analyses_df.empty and "champion" in analyses_df.columns:
-                    champion_options += analyses_df["champion"].dropna().tolist()
-                champion_options = ["All"] + sorted({value for value in champion_options if value})
+    with main_grid("wide") as (main,):
+        with main:
+            type_options = ["All"] + (sorted(analyses_df["type"].dropna().unique().tolist()) or ANALYSIS_TYPES)
+            status_options = ["All"] + ANALYSIS_STATUSES
+            champion_options = ["All"]
+            champions_df = list_champions(active_only=False)
+            if not champions_df.empty and "name_display" in champions_df.columns:
+                champion_options += champions_df["name_display"].dropna().tolist()
+            if not analyses_df.empty and "champion" in analyses_df.columns:
+                champion_options += analyses_df["champion"].dropna().tolist()
+            champion_options = ["All"] + sorted({value for value in champion_options if value})
 
-                st.selectbox("Type", type_options, key="analysis_filter_type")
-                st.selectbox("Champion", champion_options, key="analysis_filter_champion")
-                st.selectbox("Status", status_options, key="analysis_filter_status")
+            with st.expander("🔍 Filters", expanded=True):
+                filter_col1, filter_col2, filter_col3, filter_col4 = st.columns(4)
+                with filter_col1:
+                    st.selectbox("Type", type_options, key="analysis_filter_type")
+                with filter_col2:
+                    st.selectbox("Champion", champion_options, key="analysis_filter_champion")
+                with filter_col3:
+                    st.selectbox("Status", status_options, key="analysis_filter_status")
+                with filter_col4:
+                    st.text_input(
+                        "Search (ID or title)",
+                        placeholder="e.g. A3-001 or coating defect",
+                        key="analysis_filter_search",
+                    )
                 st.button("Add analysis", on_click=_queue_add_analysis, use_container_width=True)
 
-        with main:
             filtered = analyses_df.copy()
             selected_type = st.session_state.get("analysis_filter_type", "All")
             selected_champion = st.session_state.get("analysis_filter_champion", "All")
             selected_status = st.session_state.get("analysis_filter_status", "All")
+            search_text = st.session_state.get("analysis_filter_search", "")
 
-            if selected_type and selected_type != "All":
+            if selected_type and selected_type != "All" and "type" in filtered.columns:
                 filtered = filtered[filtered["type"] == selected_type]
-            if selected_champion and selected_champion != "All":
+            if selected_champion and selected_champion != "All" and "champion" in filtered.columns:
                 filtered = filtered[filtered["champion"] == selected_champion]
-            if selected_status and selected_status != "All":
-                filtered = filtered[filtered["status"].fillna("").str.lower() == selected_status.lower()]
+            if selected_status and selected_status != "All" and "status" in filtered.columns:
+                filtered = filtered[
+                    filtered["status"].fillna("").str.lower() == selected_status.lower()
+                ]
+            if search_text:
+                search_lower = search_text.strip().lower()
+                id_matches = (
+                    filtered["analysis_id"].astype(str).str.contains(search_lower, case=False, na=False)
+                    if "analysis_id" in filtered.columns
+                    else pd.Series([], dtype=bool)
+                )
+                title_matches = (
+                    filtered.get("title", pd.Series([]))
+                    .astype(str)
+                    .str.contains(search_lower, case=False, na=False)
+                )
+                filtered = filtered[id_matches | title_matches]
+
+            if analyses_df.empty:
+                st.markdown(muted("📭 No analyses available yet."), unsafe_allow_html=True)
+                st.caption("Showing 0 of 0 analyses")
+                footer("Action-to-Money Tracker • Structured analysis before ROI.")
+                return
 
             if filtered.empty:
                 st.markdown(muted("📭 No analyses match the current filters."), unsafe_allow_html=True)
-            else:
-                display_df = filtered[
-                    ["analysis_id", "type", "title", "champion", "status"]
-                ].copy()
-                display_df["linked_actions"] = display_df["analysis_id"].map(linked_counts).fillna(0).astype(int)
-                st.dataframe(display_df, use_container_width=True)
+                st.caption(f"Showing 0 of {len(analyses_df)} analyses")
+                footer("Action-to-Money Tracker • Structured analysis before ROI.")
+                return
 
-            if not analyses_df.empty:
-                analysis_lookup = {
-                    row["analysis_id"]: _analysis_summary_label(row) for _, row in analyses_df.iterrows()
-                }
-                selected = st.selectbox(
-                    "Open analysis",
-                    options=[None] + list(analysis_lookup.keys()),
-                    format_func=lambda value: "(select...)" if value is None else analysis_lookup.get(value, value),
-                )
-                if selected:
-                    st.session_state["selected_analysis_id"] = selected
-                    st.session_state["analyses_view_override"] = "Analysis details"
-                    st.rerun()
+            section("Analyses")
+
+            display_df = filtered[
+                ["analysis_id", "type", "title", "champion", "status"]
+            ].copy()
+            display_df["linked_actions"] = display_df["analysis_id"].map(linked_counts).fillna(0).astype(int)
+
+            column_labels = {
+                "analysis_id": "Analysis ID",
+                "title": "Title",
+                "type": "Type",
+                "champion": "Champion",
+                "status": "Status",
+                "linked_actions": "Linked actions",
+            }
+            table_columns = [key for key in column_labels if key in display_df.columns]
+
+            def format_value(value: object) -> str:
+                if value is None or (isinstance(value, float) and pd.isna(value)):
+                    return "—"
+                if isinstance(value, date):
+                    return value.strftime("%Y-%m-%d")
+                return html.escape(str(value))
+
+            rows: list[list[str]] = []
+            for _, row in display_df.iterrows():
+                row_cells: list[str] = []
+                analysis_id = row.get("analysis_id")
+                for column in table_columns:
+                    if column in {"analysis_id", "title"} and analysis_id:
+                        title_value = row.get("title") or f"Analysis {analysis_id}"
+                        label = (
+                            title_value if column == "title" else f"{analysis_id}"
+                        )
+                        link = f"?view=details&analysis_id={analysis_id}"
+                        row_cells.append(f"<a class='ds-link' href='{link}'>{html.escape(str(label))}</a>")
+                    elif column == "status":
+                        row_cells.append(pill(str(row.get("status") or "Open")))
+                    else:
+                        row_cells.append(format_value(row.get(column)))
+                rows.append(row_cells)
+
+            headers = [column_labels[col] for col in table_columns]
+            render_table_card(headers, rows)
+            st.caption(f"Showing {len(filtered)} of {len(analyses_df)} analyses")
 
     footer("Action-to-Money Tracker • Structured analysis before ROI.")
 
