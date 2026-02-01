@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 from datetime import date
+import html
 from typing import Optional
 
 import streamlit as st
+import pandas as pd
 from pydantic import ValidationError
 
 from atm_tracker.actions.db import init_db
@@ -17,7 +19,6 @@ from atm_tracker.actions.repo import (
     get_action,
     get_action_progress_summaries,
     get_action_team,
-    get_action_team_sizes,
     insert_action,
     list_actions,
     list_tasks,
@@ -39,11 +40,38 @@ DEFAULT_ACTION_PROGRESS_SUMMARY = {
 }
 
 
+def _apply_action_details_query_params() -> None:
+    params = st.query_params
+    view_param = params.get("view")
+    action_param = params.get("action_id")
+
+    if isinstance(view_param, list):
+        view_value = view_param[0] if view_param else None
+    else:
+        view_value = view_param
+
+    if isinstance(action_param, list):
+        action_value = action_param[0] if action_param else None
+    else:
+        action_value = action_param
+
+    if action_value:
+        try:
+            action_id = int(action_value)
+        except (TypeError, ValueError):
+            return
+        if view_value in (None, "", "details"):
+            st.session_state["selected_action_id"] = action_id
+            st.session_state["actions_view_override"] = "Action details"
+
+
 def render_actions_module() -> None:
     init_db()
 
     st.title("➕ CAPA Actions — Input Module")
     st.caption("Fast action capture with validation. No ROI yet — we build clean foundations.")
+
+    _apply_action_details_query_params()
 
     if "actions_view" not in st.session_state:
         st.session_state["actions_view"] = "Add action"
@@ -244,91 +272,253 @@ def _render_action_header(
 
 
 def _render_list() -> None:
-    st.subheader("Actions list")
+    header_col, action_col = st.columns([3, 1])
+    with header_col:
+        st.title("📋 Action List")
+        st.caption(
+            "Overview of active and closed actions with key KPIs. Click an action title to open Action Details."
+        )
+    with action_col:
+        if st.button("Refresh", use_container_width=True):
+            st.rerun()
+        export_container = st.container()
 
-    c1, c2, c3, c4 = st.columns(4)
-    with c1:
-        status = st.selectbox("Filter: status", ["(all)", "OPEN", "IN_PROGRESS", "CLOSED"])
-    with c2:
-        line = st.text_input("Filter: line", placeholder="e.g. L1")
-    with c3:
-        project = st.text_input("Filter: project/family", placeholder="e.g. ProjectX")
-    with c4:
-        search = st.text_input("Search", placeholder="title/desc/champion")
+    kpi_container = st.container()
 
-    df = list_actions(
-        status=None if status == "(all)" else status,
-        line=line.strip() or None,
-        project_or_family=project.strip() or None,
-        search=search.strip() or None,
-    )
+    df = list_actions()
+    total_actions = len(df)
 
     if "owner" in df.columns:
         df = df.drop(columns=["owner"])
 
-    action_ids = df["id"].tolist()
-    team_sizes = get_action_team_sizes(action_ids)
-    progress_map = get_actions_progress_map([int(action_id) for action_id in action_ids])
-    days_late_map = get_actions_days_late([int(action_id) for action_id in action_ids])
-    if "id" in df.columns:
-        df["team_size"] = df["id"].map(lambda action_id: team_sizes.get(int(action_id), 0))
-        progress_summaries = get_action_progress_summaries(
-            [int(action_id) for action_id in action_ids]
-        )
-        df["tasks_total"] = df["id"].map(
-            lambda action_id: progress_summaries.get(int(action_id), {}).get("total", 0)
-        )
-        df["tasks_done"] = df["id"].map(
-            lambda action_id: progress_summaries.get(int(action_id), {}).get("done", 0)
-        )
-        df["progress"] = df["id"].map(lambda action_id: progress_map.get(int(action_id), 0))
-        df["progress"] = df["progress"].map(lambda value: f"{int(value)}%")
-        df["days_late"] = df["id"].map(lambda action_id: days_late_map.get(int(action_id), 0))
+    status_options = sorted([value for value in df.get("status", pd.Series([])).dropna().unique()])
+    champion_options = sorted(
+        [value for value in df.get("champion", pd.Series([])).dropna().unique() if str(value).strip()]
+    )
+    project_options = sorted(
+        [
+            value
+            for value in df.get("project_or_family", pd.Series([])).dropna().unique()
+            if str(value).strip()
+        ]
+    )
 
-    if df.empty:
-        st.info("No actions found.")
-        return
+    with st.expander("Filters", expanded=True):
+        filter_col1, filter_col2, filter_col3, filter_col4 = st.columns(4)
+        with filter_col1:
+            selected_statuses = st.multiselect(
+                "Status",
+                options=status_options,
+                default=status_options,
+            )
+        with filter_col2:
+            selected_champion = st.selectbox("Champion", options=["All"] + champion_options)
+        with filter_col3:
+            selected_project = st.selectbox("Project", options=["All"] + project_options)
+        with filter_col4:
+            search_text = st.text_input("Search (ID or title)", placeholder="e.g. 42 or reduce defects")
+
+        date_col1, date_col2 = st.columns(2)
+        with date_col1:
+            due_date_from = st.date_input("Due date from", value=None)
+        with date_col2:
+            due_date_to = st.date_input("Due date to", value=None)
+
+    filtered_df = df.copy()
+
+    if selected_statuses and "status" in filtered_df.columns:
+        filtered_df = filtered_df[filtered_df["status"].isin(selected_statuses)]
+
+    if selected_champion != "All" and "champion" in filtered_df.columns:
+        filtered_df = filtered_df[filtered_df["champion"] == selected_champion]
+
+    if selected_project != "All" and "project_or_family" in filtered_df.columns:
+        filtered_df = filtered_df[filtered_df["project_or_family"] == selected_project]
+
+    if search_text:
+        search_lower = search_text.strip().lower()
+        id_matches = filtered_df["id"].astype(str).str.contains(search_lower, case=False, na=False)
+        title_matches = filtered_df.get("title", pd.Series([])).astype(str).str.contains(
+            search_lower, case=False, na=False
+        )
+        filtered_df = filtered_df[id_matches | title_matches]
+
+    if "target_date" in filtered_df.columns and (due_date_from or due_date_to):
+        due_series = pd.to_datetime(filtered_df["target_date"], errors="coerce").dt.date
+        if due_date_from:
+            filtered_df = filtered_df[due_series >= due_date_from]
+        if due_date_to:
+            filtered_df = filtered_df[due_series <= due_date_to]
+
+    action_ids = [int(action_id) for action_id in filtered_df.get("id", pd.Series([])).tolist()]
+    days_late_map = get_actions_days_late(action_ids)
+    if "id" in filtered_df.columns:
+        filtered_df = filtered_df.copy()
+        filtered_df["days_late"] = filtered_df["id"].map(
+            lambda action_id: days_late_map.get(int(action_id), 0)
+        )
+
+    status_lower = filtered_df.get("status", pd.Series([])).astype(str).str.lower()
+    open_actions = int((status_lower != "closed").sum()) if not filtered_df.empty else 0
+    overdue_actions = int((filtered_df.get("days_late", pd.Series([])) > 0).sum())
+    late_days = filtered_df.get("days_late", pd.Series([]))
+    avg_days_late = float(late_days[late_days > 0].mean()) if (late_days > 0).any() else 0.0
+    closed_mask = status_lower == "closed"
+    closed_count = int(closed_mask.sum())
+    on_time_closed = int(((filtered_df.get("days_late", pd.Series([])) <= 0) & closed_mask).sum())
+    on_time_close_rate = (on_time_closed / closed_count * 100) if closed_count else 0.0
+
+    with kpi_container:
+        kpi_cols = st.columns(4)
+        kpi_cols[0].metric("Open actions", f"{open_actions}")
+        kpi_cols[1].metric("Overdue actions", f"{overdue_actions}")
+        kpi_cols[2].metric("Avg days late", f"{avg_days_late:.1f}")
+        kpi_cols[3].metric("On-time close rate", f"{on_time_close_rate:.0f}%")
+
+    if filtered_df.empty:
+        st.info("No actions match the current filters.")
+
+    if "days_late" in filtered_df.columns or "target_date" in filtered_df.columns:
+        sort_columns: list[str] = []
+        sort_ascending: list[bool] = []
+        if "days_late" in filtered_df.columns:
+            sort_columns.append("days_late")
+            sort_ascending.append(False)
+        if "target_date" in filtered_df.columns:
+            sort_columns.append("target_date")
+            sort_ascending.append(True)
+        if sort_columns:
+            filtered_df = filtered_df.sort_values(by=sort_columns, ascending=sort_ascending)
 
     st.markdown(
         """
         <style>
-        div[data-testid="stButton"] > button {
-            background: none;
-            border: none;
-            padding: 0;
-            color: #0068c9;
-            text-decoration: underline;
-            font-weight: 600;
+        .action-card {
+            border: 1px solid #e6e9ef;
+            border-radius: 12px;
+            padding: 16px;
+            box-shadow: 0 2px 6px rgba(16, 24, 40, 0.06);
+            background: #ffffff;
         }
-        div[data-testid="stButton"] > button:hover {
-            color: #034c8c;
+        .action-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        .action-table th {
+            text-align: left;
+            font-size: 0.85rem;
+            color: #667085;
+            padding-bottom: 8px;
+        }
+        .action-table td {
+            padding: 10px 0;
+            border-top: 1px solid #f0f2f5;
+            vertical-align: top;
+        }
+        .status-pill {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 999px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+        .status-neutral { background: #f2f4f7; color: #344054; }
+        .status-amber { background: #fef0c7; color: #92400e; }
+        .status-green { background: #d1fadf; color: #027a48; }
+        .status-red { background: #fee4e2; color: #b42318; }
+        .action-link {
+            color: #175cd3;
+            font-weight: 600;
+            text-decoration: none;
+        }
+        .action-link:hover {
+            text-decoration: underline;
         }
         </style>
         """,
         unsafe_allow_html=True,
     )
 
-    columns = list(df.columns)
-    labels = {name: name.replace("_", " ").title() for name in columns}
-    header_cols = st.columns(len(columns))
-    for col, name in zip(header_cols, columns, strict=True):
-        col.markdown(f"**{labels.get(name, name)}**")
+    table_columns = []
+    column_labels = {
+        "title": "Title",
+        "status": "Status",
+        "champion": "Champion",
+        "project_or_family": "Project",
+        "target_date": "Due date",
+        "closed_at": "Closed at",
+        "days_late": "Days late",
+    }
+    for key in column_labels:
+        if key in filtered_df.columns:
+            table_columns.append(key)
 
-    for _, row in df.iterrows():
-        row_cols = st.columns(len(columns))
-        for col, name in zip(row_cols, columns, strict=True):
-            value = row.get(name, "")
-            if name == "title":
-                action_id = int(row["id"])
-                label = str(value or f"Action #{action_id}")
-                col.button(
-                    label,
-                    key=f"action_title_{action_id}",
-                    on_click=_queue_action_details,
-                    args=(action_id,),
+    def format_value(value: object) -> str:
+        if value is None or (isinstance(value, float) and pd.isna(value)):
+            return "—"
+        if isinstance(value, date):
+            return value.strftime("%Y-%m-%d")
+        return html.escape(str(value))
+
+    def status_badge(status_value: str, days_late_value: int) -> tuple[str, str]:
+        status_normalized = str(status_value or "").strip().lower()
+        if days_late_value > 0 and status_normalized != "closed":
+            return "Overdue", "status-red"
+        if status_normalized in {"in_progress", "ongoing"}:
+            return "In progress", "status-amber"
+        if status_normalized == "closed":
+            return "Closed", "status-green"
+        if status_normalized == "open":
+            return "Open", "status-neutral"
+        return status_value or "—", "status-neutral"
+
+    rows_html = []
+    for _, row in filtered_df.iterrows():
+        row_cells = []
+        action_id = row.get("id")
+        for column in table_columns:
+            if column == "title":
+                label = row.get("title") or f"Action #{int(action_id)}"
+                link = f"?view=details&action_id={int(action_id)}"
+                row_cells.append(
+                    f"<td><a class='action-link' href='{link}'>{html.escape(str(label))}</a></td>"
+                )
+            elif column == "status":
+                label, badge_class = status_badge(row.get("status"), int(row.get("days_late", 0)))
+                row_cells.append(
+                    f"<td><span class='status-pill {badge_class}'>{html.escape(str(label))}</span></td>"
                 )
             else:
-                col.write(value)
+                row_cells.append(f"<td>{format_value(row.get(column))}</td>")
+        rows_html.append(f"<tr>{''.join(row_cells)}</tr>")
+
+    header_html = "".join([f"<th>{column_labels[col]}</th>" for col in table_columns])
+    table_html = f"""
+    <div class="action-card">
+        <table class="action-table">
+            <thead><tr>{header_html}</tr></thead>
+            <tbody>
+                {''.join(rows_html)}
+            </tbody>
+        </table>
+    </div>
+    """
+    st.markdown(table_html, unsafe_allow_html=True)
+
+    export_df = filtered_df.copy()
+    if "title" in filtered_df.columns:
+        export_df = export_df.rename(columns={"title": "Title"})
+    csv_data = export_df.to_csv(index=False)
+    with export_container:
+        st.download_button(
+            "Export CSV",
+            data=csv_data,
+            file_name="actions_export.csv",
+            mime="text/csv",
+            use_container_width=True,
+        )
+    st.caption(f"Showing {len(filtered_df)} of {total_actions} actions")
 
 
 def _render_action_details() -> None:
@@ -614,4 +804,8 @@ def _queue_action_details(action_id: int) -> None:
 
 
 def _queue_actions_list() -> None:
+    if "action_id" in st.query_params:
+        del st.query_params["action_id"]
+    if "view" in st.query_params:
+        del st.query_params["view"]
     st.session_state["actions_view_override"] = "Actions list / edit"
