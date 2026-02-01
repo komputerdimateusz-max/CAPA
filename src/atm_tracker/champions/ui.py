@@ -7,7 +7,7 @@ import pandas as pd
 import streamlit as st
 
 from atm_tracker.actions.db import init_db
-from atm_tracker.actions.repo import list_actions
+from atm_tracker.actions.repo import list_actions, list_all_tasks
 from atm_tracker.champions.repo import list_champions
 from atm_tracker.ui.layout import footer, kpi_row, main_grid, page_header, section
 from atm_tracker.ui.styles import inject_global_styles, muted
@@ -47,6 +47,10 @@ def _prepare_actions(df: pd.DataFrame) -> dict[str, str | None]:
 
 def _normalize_status(series: pd.Series) -> pd.Series:
     return series.astype(str).str.strip().str.lower()
+
+
+def _is_closed(series: pd.Series, closed_values: set[str]) -> pd.Series:
+    return _normalize_status(series).isin(closed_values)
 
 
 def _format_metric(value: float | int | str | None) -> str | int | float:
@@ -119,6 +123,151 @@ def _build_metrics(df: pd.DataFrame, column_map: dict[str, str | None]) -> tuple
     return metrics, warnings
 
 
+def _prepare_subtasks(
+    tasks_df: pd.DataFrame,
+    actions_df: pd.DataFrame,
+    action_column_map: dict[str, str | None],
+    champions_df: pd.DataFrame,
+) -> tuple[pd.DataFrame, dict[str, str | None], list[str]]:
+    warnings: list[str] = []
+    column_map = {
+        "action_id": _find_column(tasks_df.columns, ["action_id", "action", "actionid", "parent_id"]),
+        "champion": _find_column(
+            tasks_df.columns,
+            [
+                "assignee_champion_id",
+                "assignee_champion",
+                "assignee",
+                "champion",
+                "owner",
+                "responsible",
+            ],
+        ),
+        "status": _find_column(tasks_df.columns, ["status", "state"]),
+        "due_date": _find_column(tasks_df.columns, ["target_date", "due_date", "due", "targetdate"]),
+        "closed_at": _find_column(tasks_df.columns, ["done_at", "closed_at", "closed_date", "done_date"]),
+        "created_at": _find_column(tasks_df.columns, ["created_at", "created_date", "created", "date"]),
+    }
+
+    for key in ("due_date", "closed_at", "created_at"):
+        col = column_map[key]
+        if col:
+            tasks_df[col] = pd.to_datetime(tasks_df[col], errors="coerce")
+
+    champion_col = column_map.get("champion")
+    resolved_col: str | None = None
+    if champion_col:
+        resolved_col = "champion_resolved"
+        if champion_col.endswith("_id"):
+            name_col = None
+            if not champions_df.empty:
+                if "name_display" in champions_df.columns:
+                    name_col = "name_display"
+                elif "name" in champions_df.columns:
+                    name_col = "name"
+            if name_col and "id" in champions_df.columns:
+                id_map = champions_df.set_index("id")[name_col].to_dict()
+                tasks_df[resolved_col] = tasks_df[champion_col].map(id_map)
+            else:
+                tasks_df[resolved_col] = tasks_df[champion_col]
+        else:
+            tasks_df[resolved_col] = tasks_df[champion_col]
+
+    action_id_col = column_map.get("action_id")
+    actions_id_col = _find_column(actions_df.columns, ["id", "action_id", "actionid"])
+    action_champion_col = action_column_map.get("champion")
+
+    if action_id_col and actions_id_col and action_champion_col:
+        actions_lookup = actions_df[[actions_id_col, action_champion_col]].rename(
+            columns={actions_id_col: action_id_col, action_champion_col: "action_champion"},
+        )
+        tasks_df = tasks_df.merge(actions_lookup, on=action_id_col, how="left")
+        if resolved_col:
+            tasks_df[resolved_col] = tasks_df[resolved_col].fillna("")
+            tasks_df["action_champion"] = tasks_df["action_champion"].fillna("")
+            tasks_df[resolved_col] = tasks_df[resolved_col].where(
+                tasks_df[resolved_col].astype(str).str.strip() != "",
+                tasks_df["action_champion"],
+            )
+        else:
+            resolved_col = "action_champion"
+    elif not champion_col:
+        warnings.append("Sub-task champion/owner column missing; using parent action champions when available.")
+
+    if not action_id_col:
+        warnings.append("Sub-task action_id column missing; unable to inherit champions from actions.")
+
+    if resolved_col:
+        tasks_df[resolved_col] = tasks_df[resolved_col].fillna("Unassigned")
+
+    column_map["champion"] = resolved_col
+    return tasks_df, column_map, warnings
+
+
+def _build_subtask_metrics(
+    df: pd.DataFrame, column_map: dict[str, str | None]
+) -> tuple[dict[str, object], list[str]]:
+    warnings: list[str] = []
+
+    status_col = column_map.get("status")
+    due_col = column_map.get("due_date")
+    closed_col = column_map.get("closed_at")
+    created_col = column_map.get("created_at")
+    closed_values = {"done", "closed"}
+
+    total_subtasks = len(df)
+
+    open_subtasks: int | None
+    closed_subtasks: int | None
+    overdue_subtasks: int | None
+    on_time_subtasks: int | None
+    subtask_on_time_rate: float | None
+    avg_subtask_time_to_close: float | None
+
+    if status_col:
+        closed_mask = _is_closed(df[status_col], closed_values)
+        open_subtasks = int((~closed_mask).sum())
+        closed_subtasks = int(closed_mask.sum())
+    else:
+        warnings.append("Sub-task status column missing; open/closed KPIs unavailable.")
+        open_subtasks = None
+        closed_subtasks = None
+
+    if status_col and due_col:
+        closed_mask = _is_closed(df[status_col], closed_values)
+        overdue_subtasks = int(((~closed_mask) & (df[due_col] < pd.Timestamp(date.today()))).sum())
+    else:
+        warnings.append("Sub-task status or due date column missing; overdue KPI unavailable.")
+        overdue_subtasks = None
+
+    if status_col and due_col and closed_col:
+        closed_mask = _is_closed(df[status_col], closed_values)
+        on_time_subtasks = int((closed_mask & (df[closed_col] <= df[due_col])).sum())
+        closed_count = int(closed_mask.sum())
+        subtask_on_time_rate = (on_time_subtasks / closed_count) if closed_count > 0 else 0.0
+    else:
+        warnings.append("Sub-task status, due date, or closed date column missing; on-time KPI unavailable.")
+        on_time_subtasks = None
+        subtask_on_time_rate = None
+
+    if created_col and closed_col:
+        time_to_close = (df[closed_col] - df[created_col]).dt.days
+        avg_subtask_time_to_close = float(time_to_close.dropna().mean()) if not time_to_close.dropna().empty else 0.0
+    else:
+        avg_subtask_time_to_close = None
+
+    metrics = {
+        "total_subtasks": total_subtasks,
+        "open_subtasks": open_subtasks,
+        "closed_subtasks": closed_subtasks,
+        "overdue_subtasks": overdue_subtasks,
+        "on_time_subtasks": on_time_subtasks,
+        "subtask_on_time_rate": subtask_on_time_rate,
+        "avg_subtask_time_to_close": avg_subtask_time_to_close,
+    }
+    return metrics, warnings
+
+
 def _build_champion_summary(
     df: pd.DataFrame,
     column_map: dict[str, str | None],
@@ -133,6 +282,7 @@ def _build_champion_summary(
         return pd.DataFrame(), ["Champion/owner column missing; unable to build rankings."]
 
     summary = df.groupby(champion_col, dropna=False).size().reset_index(name="total_actions")
+    summary = summary.rename(columns={champion_col: "champion"})
 
     if status_col:
         status_values = _normalize_status(df[status_col])
@@ -164,22 +314,79 @@ def _build_champion_summary(
     return summary, warnings
 
 
+def _build_subtask_summary(
+    df: pd.DataFrame, column_map: dict[str, str | None]
+) -> tuple[pd.DataFrame, list[str]]:
+    warnings: list[str] = []
+    champion_col = column_map.get("champion")
+    status_col = column_map.get("status")
+    due_col = column_map.get("due_date")
+    closed_col = column_map.get("closed_at")
+    closed_values = {"done", "closed"}
+
+    if not champion_col:
+        return pd.DataFrame(), ["Sub-task champion/owner column missing; unable to build sub-task rankings."]
+
+    summary = df.groupby(champion_col, dropna=False).size().reset_index(name="total_subtasks")
+    summary = summary.rename(columns={champion_col: "champion"})
+
+    if status_col:
+        closed_mask = _is_closed(df[status_col], closed_values)
+        summary["open_subtasks"] = (~closed_mask).groupby(df[champion_col]).sum().values
+        summary["closed_subtasks"] = closed_mask.groupby(df[champion_col]).sum().values
+    else:
+        warnings.append("Sub-task status column missing; open/closed KPIs unavailable.")
+
+    if status_col and due_col:
+        closed_mask = _is_closed(df[status_col], closed_values)
+        summary["overdue_subtasks"] = (
+            (~closed_mask) & (df[due_col] < pd.Timestamp(date.today()))
+        ).groupby(df[champion_col]).sum().values
+    else:
+        warnings.append("Sub-task status or due date column missing; overdue KPI unavailable.")
+
+    if status_col and due_col and closed_col:
+        closed_mask = _is_closed(df[status_col], closed_values)
+        on_time = closed_mask & (df[closed_col] <= df[due_col])
+        summary["on_time_subtasks"] = on_time.groupby(df[champion_col]).sum().values
+        closed_counts = closed_mask.groupby(df[champion_col]).sum().values
+        summary["subtask_on_time_rate"] = [
+            (on_time_count / closed_count) if closed_count > 0 else 0.0
+            for on_time_count, closed_count in zip(summary["on_time_subtasks"], closed_counts)
+        ]
+    else:
+        warnings.append("Sub-task status, due date, or closed date column missing; on-time KPI unavailable.")
+
+    return summary, warnings
+
+
 def _sort_summary(summary: pd.DataFrame) -> pd.DataFrame:
-    sort_columns: list[str] = []
-    ascending: list[bool] = []
+    if summary.empty:
+        return summary
 
-    if "overdue_actions" in summary.columns:
-        sort_columns.append("overdue_actions")
-        ascending.append(True)
-    if "on_time_rate" in summary.columns:
-        sort_columns.append("on_time_rate")
-        ascending.append(False)
-    if "total_actions" in summary.columns:
-        sort_columns.append("total_actions")
-        ascending.append(False)
+    summary = summary.copy()
+    overdue_actions = summary.get("overdue_actions", pd.Series(0, index=summary.index)).fillna(0)
+    overdue_subtasks = summary.get("overdue_subtasks", pd.Series(0, index=summary.index)).fillna(0)
+    closed_actions = summary.get("closed_actions", pd.Series(0, index=summary.index)).fillna(0)
+    closed_subtasks = summary.get("closed_subtasks", pd.Series(0, index=summary.index)).fillna(0)
+    on_time_actions = summary.get("on_time_actions", pd.Series(0, index=summary.index)).fillna(0)
+    on_time_subtasks = summary.get("on_time_subtasks", pd.Series(0, index=summary.index)).fillna(0)
+    total_actions = summary.get("total_actions", pd.Series(0, index=summary.index)).fillna(0)
+    total_subtasks = summary.get("total_subtasks", pd.Series(0, index=summary.index)).fillna(0)
 
-    if sort_columns:
-        summary = summary.sort_values(by=sort_columns, ascending=ascending)
+    summary["total_overdue"] = overdue_actions + overdue_subtasks
+    summary["total_items"] = total_actions + total_subtasks
+    closed_total = closed_actions + closed_subtasks
+    summary["combined_on_time_rate"] = [
+        (on_time / closed) if closed > 0 else 0.0
+        for on_time, closed in zip(on_time_actions + on_time_subtasks, closed_total)
+    ]
+
+    summary = summary.sort_values(
+        by=["total_overdue", "combined_on_time_rate", "total_items"],
+        ascending=[True, False, False],
+    )
+    summary = summary.drop(columns=["total_overdue", "combined_on_time_rate", "total_items"], errors="ignore")
     return summary
 
 
@@ -210,6 +417,14 @@ def render_champions_dashboard() -> None:
 
     actions_df = list_actions()
     champions_df = list_champions(active_only=True)
+    subtasks_df = pd.DataFrame()
+    subtasks_available = True
+    subtask_load_warning: str | None = None
+    try:
+        subtasks_df = list_all_tasks()
+    except Exception:
+        subtasks_available = False
+        subtask_load_warning = "Sub-tasks source not available; showing actions-only metrics."
 
     if "champion_filter" not in st.session_state:
         st.session_state["champion_filter"] = ALL_CHAMPIONS_LABEL
@@ -268,9 +483,45 @@ def render_champions_dashboard() -> None:
         filtered_df = actions_df.copy()
 
     metrics, metric_warnings = _build_metrics(filtered_df, column_map)
+    subtask_metrics: dict[str, object] = {
+        "total_subtasks": None,
+        "open_subtasks": None,
+        "closed_subtasks": None,
+        "overdue_subtasks": None,
+        "on_time_subtasks": None,
+        "subtask_on_time_rate": None,
+        "avg_subtask_time_to_close": None,
+    }
+    subtask_column_map: dict[str, str | None] = {}
+    subtask_warnings: list[str] = []
+    filtered_subtasks = pd.DataFrame()
+
+    if subtasks_available:
+        subtasks_df, subtask_column_map, prep_warnings = _prepare_subtasks(
+            subtasks_df,
+            actions_df,
+            column_map,
+            champions_df,
+        )
+        subtask_warnings.extend(prep_warnings)
+        subtask_champion_col = subtask_column_map.get("champion")
+        if subtask_champion_col:
+            subtasks_df[subtask_champion_col] = subtasks_df[subtask_champion_col].fillna("Unassigned")
+            if champion_selection != ALL_CHAMPIONS_LABEL:
+                filtered_subtasks = subtasks_df[subtasks_df[subtask_champion_col] == champion_selection].copy()
+            else:
+                filtered_subtasks = subtasks_df.copy()
+        else:
+            filtered_subtasks = subtasks_df.copy()
+        subtask_metrics, subtask_metric_warnings = _build_subtask_metrics(filtered_subtasks, subtask_column_map)
+        subtask_warnings.extend(subtask_metric_warnings)
 
     on_time_rate = metrics.get("on_time_rate")
     on_time_display = f"{on_time_rate:.0%}" if isinstance(on_time_rate, (float, int)) else "N/A"
+    subtask_on_time_rate = subtask_metrics.get("subtask_on_time_rate")
+    subtask_on_time_display = (
+        f"{subtask_on_time_rate:.0%}" if isinstance(subtask_on_time_rate, (float, int)) else "N/A"
+    )
 
     kpi_row(
         [
@@ -279,6 +530,16 @@ def render_champions_dashboard() -> None:
             ("Closed actions", _format_metric(metrics["closed_actions"])),
             ("Overdue actions", _format_metric(metrics["overdue_actions"])),
             ("On-time rate", on_time_display),
+        ]
+    )
+    st.markdown(muted("Sub-task KPIs"), unsafe_allow_html=True)
+    kpi_row(
+        [
+            ("Total sub-tasks", _format_metric(subtask_metrics["total_subtasks"])),
+            ("Open sub-tasks", _format_metric(subtask_metrics["open_subtasks"])),
+            ("Closed sub-tasks", _format_metric(subtask_metrics["closed_subtasks"])),
+            ("Overdue sub-tasks", _format_metric(subtask_metrics["overdue_subtasks"])),
+            ("On-time rate", subtask_on_time_display),
         ]
     )
     st.divider()
@@ -294,24 +555,57 @@ def render_champions_dashboard() -> None:
             if metrics.get("avg_time_to_close") is not None:
                 section("Cycle time")
                 st.metric("Avg time to close (days)", f"{metrics['avg_time_to_close']:.1f}")
+            if subtask_metrics.get("avg_subtask_time_to_close") is not None:
+                section("Sub-task cycle time")
+                st.metric(
+                    "Avg sub-task time to close (days)",
+                    f"{subtask_metrics['avg_subtask_time_to_close']:.1f}",
+                )
         with main:
+            if subtask_load_warning:
+                st.warning(subtask_load_warning)
             for warning in metric_warnings:
+                st.warning(warning)
+            for warning in subtask_warnings:
                 st.warning(warning)
 
             st.markdown(
-                muted("KPIs are derived from the same actions data used in the Actions module."),
+                muted("KPIs are derived from the actions and sub-task data used in the Actions module."),
                 unsafe_allow_html=True,
             )
 
             section("Champion ranking")
             summary, summary_warnings = _build_champion_summary(actions_df, column_map)
+            subtask_summary = pd.DataFrame()
+            subtask_summary_warnings: list[str] = []
+            if subtasks_available and not subtasks_df.empty:
+                subtask_summary, subtask_summary_warnings = _build_subtask_summary(subtasks_df, subtask_column_map)
             for warning in summary_warnings:
+                st.warning(warning)
+            for warning in subtask_summary_warnings:
                 st.warning(warning)
 
             if summary.empty:
                 footer("Action-to-Money Tracker • Champion performance needs clean action data.")
                 return
 
+            if not subtask_summary.empty:
+                summary = summary.merge(subtask_summary, on="champion", how="outer")
+            count_columns = [
+                "total_actions",
+                "open_actions",
+                "closed_actions",
+                "overdue_actions",
+                "on_time_actions",
+                "total_subtasks",
+                "open_subtasks",
+                "closed_subtasks",
+                "overdue_subtasks",
+                "on_time_subtasks",
+            ]
+            for col in count_columns:
+                if col in summary.columns:
+                    summary[col] = summary[col].fillna(0)
             summary = _sort_summary(summary)
             st.dataframe(summary, use_container_width=True)
 
