@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 import html
 from typing import Optional
 
@@ -31,6 +31,7 @@ from atm_tracker.analyses.repo import list_linked_analysis_ids
 from atm_tracker.champions.repo import list_champions
 from atm_tracker.projects.repo import list_projects
 from atm_tracker.ui.layout import footer, kpi_row, main_grid, page_header, section
+from atm_tracker.ui.components import chip_single_select, chip_toggle_group
 from atm_tracker.ui.shared_tables import render_table_card
 from atm_tracker.ui.styles import card, inject_global_styles, muted, pill
 
@@ -44,6 +45,40 @@ DEFAULT_ACTION_PROGRESS_SUMMARY = {
 }
 
 VIEW_OPTIONS = ["Add action", "Actions list", "Action details"]
+
+ADD_ACTION_TEMPLATES = [
+    {
+        "label": "Containment (24h)",
+        "title_prefix": "[Containment] ",
+        "due_days": 1,
+        "status": "OPEN",
+    },
+    {
+        "label": "Root cause analysis task",
+        "title_prefix": "[RCA] ",
+        "due_days": 7,
+        "status": None,
+    },
+    {
+        "label": "Update SOP / Training",
+        "title_prefix": "[SOP] ",
+        "due_days": 14,
+        "status": None,
+    },
+    {
+        "label": "Maintenance intervention",
+        "title_prefix": "[Maintenance] ",
+        "due_days": 3,
+        "status": None,
+    },
+]
+
+WIZARD_STEPS = {
+    1: "1. Basics",
+    2: "2. Dates & Status",
+    3: "3. Tags & Context",
+    4: "4. Review",
+}
 
 
 def _apply_action_details_query_params() -> None:
@@ -100,10 +135,128 @@ def _render_view_selector() -> None:
     st.selectbox("View", options=VIEW_OPTIONS, key="actions_view")
 
 
+def _init_add_action_state(champions_df: pd.DataFrame, projects_df: pd.DataFrame) -> None:
+    defaults = {
+        "add_action_title": "",
+        "add_action_line": "",
+        "add_action_description": "",
+        "add_action_status": "OPEN",
+        "add_action_created_at": date.today(),
+        "add_action_target_date": None,
+        "add_action_closed_at": None,
+        "add_action_cost_internal_hours": 0.0,
+        "add_action_cost_external_eur": 0.0,
+        "add_action_cost_material_eur": 0.0,
+        "add_action_tags": [],
+        "add_action_team_ids": [],
+    }
+
+    for key, value in defaults.items():
+        if key not in st.session_state:
+            st.session_state[key] = value
+
+    if "add_action_step" not in st.session_state:
+        st.session_state["add_action_step"] = 1
+    if "add_action_step_selector" not in st.session_state:
+        st.session_state["add_action_step_selector"] = WIZARD_STEPS[1]
+
+    if champions_df.empty:
+        if "add_action_champion_text" not in st.session_state:
+            st.session_state["add_action_champion_text"] = ""
+    else:
+        if "add_action_champion_select" not in st.session_state:
+            st.session_state["add_action_champion_select"] = "(none)"
+        if "add_action_champion_other" not in st.session_state:
+            st.session_state["add_action_champion_other"] = ""
+
+    if projects_df.empty:
+        if "add_action_project_text" not in st.session_state:
+            st.session_state["add_action_project_text"] = ""
+    else:
+        if "add_action_project_select" not in st.session_state:
+            st.session_state["add_action_project_select"] = "(none)"
+
+
+def _set_add_action_step(step: int) -> None:
+    clamped = max(1, min(4, step))
+    st.session_state["add_action_step"] = clamped
+    st.session_state["add_action_step_selector"] = WIZARD_STEPS[clamped]
+
+
+def _apply_add_action_template(template: dict) -> None:
+    prefix = template.get("title_prefix", "")
+    due_days = template.get("due_days")
+    status = template.get("status")
+
+    title = st.session_state.get("add_action_title", "").strip()
+    if prefix:
+        if not title:
+            st.session_state["add_action_title"] = prefix
+        elif not title.startswith(prefix):
+            st.session_state["add_action_title"] = f"{prefix}{title}"
+
+    if due_days is not None:
+        st.session_state["add_action_target_date"] = date.today() + timedelta(days=int(due_days))
+
+    if status:
+        st.session_state["add_action_status"] = status
+
+    _set_add_action_step(2)
+
+
+def _clear_add_action_state() -> None:
+    keys = [
+        "add_action_title",
+        "add_action_line",
+        "add_action_description",
+        "add_action_status",
+        "add_action_created_at",
+        "add_action_target_date",
+        "add_action_closed_at",
+        "add_action_cost_internal_hours",
+        "add_action_cost_external_eur",
+        "add_action_cost_material_eur",
+        "add_action_tags",
+        "add_action_team_ids",
+        "add_action_champion_text",
+        "add_action_champion_select",
+        "add_action_champion_other",
+        "add_action_project_text",
+        "add_action_project_select",
+        "add_action_step",
+        "add_action_step_selector",
+        "add_action_created_id",
+    ]
+    for key in keys:
+        st.session_state.pop(key, None)
+
+
+def _get_add_action_champion(champions_df: pd.DataFrame) -> str:
+    if champions_df.empty:
+        return st.session_state.get("add_action_champion_text", "")
+
+    selection = st.session_state.get("add_action_champion_select", "(none)")
+    if selection == "Other (type manually)":
+        return st.session_state.get("add_action_champion_other", "")
+    if selection == "(none)":
+        return ""
+    return selection
+
+
+def _get_add_action_project(projects_df: pd.DataFrame) -> str:
+    if projects_df.empty:
+        return st.session_state.get("add_action_project_text", "")
+
+    selection = st.session_state.get("add_action_project_select", "(none)")
+    if selection == "(none)":
+        return ""
+    return selection
+
+
 def _render_add() -> None:
     page_header(
-        "➕ Add action",
-        "Fast action capture with validation. No ROI yet — we build clean foundations.",
+        "➕ Add Action",
+        "Create a corrective action using quick templates or a guided wizard.",
         actions=_render_view_selector,
     )
     st.divider()
@@ -113,96 +266,236 @@ def _render_add() -> None:
     champions_df = list_champions(active_only=True)
     champion_options = _build_champion_options(champions_df)
     projects_df = list_projects(include_inactive=False)
-    team_selection: list[int] = []
+    _init_add_action_state(champions_df, projects_df)
 
     with main_grid("wide") as (main,):
         with main:
-            section("New action")
-            with st.form("add_action", clear_on_submit=True):
-                col1, col2 = st.columns(2)
+            section("Quick templates")
+            template_cols = st.columns(len(ADD_ACTION_TEMPLATES))
+            for col, template in zip(template_cols, ADD_ACTION_TEMPLATES):
+                if col.button(template["label"], key=f"add_action_template_{template['label']}"):
+                    _apply_add_action_template(template)
+                    st.rerun()
 
-                with col1:
-                    title = st.text_input("Title *", placeholder="e.g. Reduce scratch defects on L1")
-                    line = st.text_input("Line *", placeholder="e.g. L1")
-                    project = _render_project_input(projects_df)
-                    champion = _render_champion_input(champions_df)
-                    team_selection = _render_team_input(
-                        champions_df, champion_options, selected_ids=team_selection
-                    )
-                    tags = st.text_input("Tags (comma-separated)", placeholder="scrap, coating, poka-yoke")
+            st.divider()
+            section("Action wizard")
+            step_label = st.radio(
+                "Step",
+                options=list(WIZARD_STEPS.values()),
+                index=max(0, st.session_state.get("add_action_step", 1) - 1),
+                horizontal=True,
+                key="add_action_step_selector",
+            )
+            step_value = [step for step, label in WIZARD_STEPS.items() if label == step_label][0]
+            st.session_state["add_action_step"] = step_value
 
-                with col2:
-                    status = st.selectbox("Status", ["OPEN", "IN_PROGRESS", "CLOSED"], index=0)
-                    created_at = st.date_input("Created at *", value=date.today())
-                    target_date = st.date_input("Target Date", value=None)
-                    closed_at = st.date_input("Closed at", value=None)
+            st.divider()
+            current_step = st.session_state.get("add_action_step", 1)
+            team_selection: list[int] = st.session_state.get("add_action_team_ids", [])
 
-                    st.markdown("**Action cost (MVP)**")
-                    cost_internal_hours = st.number_input("Internal hours", min_value=0.0, value=0.0, step=0.5)
-                    cost_external_eur = st.number_input("External cost (€)", min_value=0.0, value=0.0, step=10.0)
-                    cost_material_eur = st.number_input("Material cost (€)", min_value=0.0, value=0.0, step=10.0)
-
-                description = st.text_area(
-                    "Description",
+            if current_step == 1:
+                title = st.text_input(
+                    "Title *",
+                    placeholder="e.g. Reduce scratch defects on L1",
+                    key="add_action_title",
+                )
+                line = st.text_input("Line *", placeholder="e.g. L1", key="add_action_line")
+                project = _render_project_input(projects_df, key_prefix="add_action")
+                champion = _render_champion_input(champions_df, key_prefix="add_action")
+                team_selection = _render_team_input(
+                    champions_df,
+                    champion_options,
+                    selected_ids=team_selection,
+                    key="add_action_team_ids",
+                )
+                st.text_area(
+                    "Minimal description",
                     height=120,
                     placeholder="Context, root cause, what we changed, expected effect...",
+                    key="add_action_description",
                 )
 
-                submitted = st.form_submit_button("Save action")
+            elif current_step == 2:
+                status = chip_single_select(
+                    "Status",
+                    ["OPEN", "IN_PROGRESS", "CLOSED"],
+                    "add_action_status",
+                    columns=3,
+                    format_func=lambda value: value.replace("_", " ").title(),
+                )
+                created_at = st.date_input("Created at *", key="add_action_created_at")
+                target_date = st.date_input("Target/Due date *", value=None, key="add_action_target_date")
 
-    if not submitted:
-        footer("Action-to-Money Tracker • Build the baseline before ROI.")
-        return
+                if status != "CLOSED":
+                    if st.session_state.get("add_action_closed_at") is not None:
+                        st.session_state["add_action_closed_at"] = None
+                else:
+                    if st.session_state.get("add_action_closed_at") is None:
+                        st.session_state["add_action_closed_at"] = date.today()
+                    st.date_input("Closed at *", key="add_action_closed_at")
 
-    try:
-        if len(team_selection) > MAX_TEAM_MEMBERS:
-            st.error(f"Team members cannot exceed {MAX_TEAM_MEMBERS}.")
-            return
-        a = ActionCreate(
-            title=title.strip(),
-            description=description.strip(),
-            line=line.strip(),
-            project_or_family=_normalize_name(project),
-            owner="",
-            champion=_normalize_name(champion),
-            status=status,
-            created_at=created_at,
-            target_date=target_date,
-            closed_at=closed_at,
-            cost_internal_hours=cost_internal_hours,
-            cost_external_eur=cost_external_eur,
-            cost_material_eur=cost_material_eur,
-            tags=tags.strip(),
-        )
-    except ValidationError as e:
-        st.error("Validation error — fix inputs:")
-        st.code(str(e))
-        return
+                st.markdown("**Action cost (MVP)**")
+                st.number_input(
+                    "Internal hours",
+                    min_value=0.0,
+                    step=0.5,
+                    key="add_action_cost_internal_hours",
+                )
+                st.number_input(
+                    "External cost (€)",
+                    min_value=0.0,
+                    step=10.0,
+                    key="add_action_cost_external_eur",
+                )
+                st.number_input(
+                    "Material cost (€)",
+                    min_value=0.0,
+                    step=10.0,
+                    key="add_action_cost_material_eur",
+                )
 
-    new_id = insert_action(a)
-    set_action_team(new_id, team_selection)
-    st.success(f"Saved ✅ (id={new_id})")
+            elif current_step == 3:
+                chip_toggle_group(
+                    "Tags",
+                    ["Scrap", "Safety", "Customer", "Audit", "Downtime", "Quality", "Cost"],
+                    "add_action_tags",
+                    columns=4,
+                )
+                st.caption("Tap chips to toggle tags. Tags are stored as comma-separated values.")
+
+            else:
+                champion = _get_add_action_champion(champions_df)
+                project = _get_add_action_project(projects_df)
+                status = st.session_state.get("add_action_status", "OPEN")
+                created_at = st.session_state.get("add_action_created_at")
+                target_date = st.session_state.get("add_action_target_date")
+                closed_at = st.session_state.get("add_action_closed_at")
+                title = st.session_state.get("add_action_title", "")
+                line = st.session_state.get("add_action_line", "")
+                description = st.session_state.get("add_action_description", "")
+                tags = st.session_state.get("add_action_tags", [])
+
+                summary_items = [
+                    f"<li><strong>Title:</strong> {html.escape(title or '(missing)')}</li>",
+                    f"<li><strong>Line:</strong> {html.escape(line or '(missing)')}</li>",
+                    f"<li><strong>Project:</strong> {html.escape(project or '(none)')}</li>",
+                    f"<li><strong>Champion:</strong> {html.escape(champion or '(none)')}</li>",
+                    f"<li><strong>Status:</strong> {pill(status)}</li>",
+                    f"<li><strong>Created:</strong> {html.escape(str(created_at or '(missing)'))}</li>",
+                    f"<li><strong>Due:</strong> {html.escape(str(target_date or '(missing)'))}</li>",
+                    f"<li><strong>Closed:</strong> {html.escape(str(closed_at or '(not closed)'))}</li>",
+                    f"<li><strong>Tags:</strong> {html.escape(', '.join(tags) or '(none)')}</li>",
+                    f"<li><strong>Description:</strong> {html.escape(description or '(none)')}</li>",
+                ]
+                st.markdown(card(f"<ul class='ds-list'>{''.join(summary_items)}</ul>"), unsafe_allow_html=True)
+
+                if st.button("✅ Create action", type="primary", use_container_width=True):
+                    validation_errors = []
+                    if not title.strip():
+                        validation_errors.append("Title is required.")
+                    if not line.strip():
+                        validation_errors.append("Line is required.")
+                    if not target_date:
+                        validation_errors.append("Target/Due date is required.")
+                    if status == "CLOSED" and not closed_at:
+                        validation_errors.append("Closed at is required when status is Closed.")
+                    if len(team_selection) > MAX_TEAM_MEMBERS:
+                        validation_errors.append(f"Team members cannot exceed {MAX_TEAM_MEMBERS}.")
+
+                    if validation_errors:
+                        for error in validation_errors:
+                            st.error(error)
+                        footer("Action-to-Money Tracker • Build the baseline before ROI.")
+                        return
+
+                    try:
+                        a = ActionCreate(
+                            title=title.strip(),
+                            description=description.strip(),
+                            line=line.strip(),
+                            project_or_family=_normalize_name(project),
+                            owner="",
+                            champion=_normalize_name(champion),
+                            status=status,
+                            created_at=created_at,
+                            target_date=target_date,
+                            closed_at=closed_at,
+                            cost_internal_hours=st.session_state.get("add_action_cost_internal_hours", 0.0),
+                            cost_external_eur=st.session_state.get("add_action_cost_external_eur", 0.0),
+                            cost_material_eur=st.session_state.get("add_action_cost_material_eur", 0.0),
+                            tags=", ".join(tags),
+                        )
+                    except ValidationError as exc:
+                        st.error("Validation error — fix inputs:")
+                        st.code(str(exc))
+                        footer("Action-to-Money Tracker • Build the baseline before ROI.")
+                        return
+
+                    new_id = insert_action(a)
+                    set_action_team(new_id, team_selection)
+                    st.session_state["add_action_created_id"] = int(new_id)
+                    st.success(f"Saved ✅ (id={new_id})")
+
+                created_id = st.session_state.get("add_action_created_id")
+                if created_id:
+                    if st.button("Open action details", use_container_width=True):
+                        _queue_action_details(int(created_id))
+                        st.rerun()
+                    if st.button("Create another action", use_container_width=True):
+                        _clear_add_action_state()
+                        st.rerun()
+
+            nav_col1, nav_col2, nav_col3 = st.columns([1, 2, 1])
+            with nav_col1:
+                if st.button(
+                    "⬅️ Back",
+                    disabled=current_step == 1,
+                    use_container_width=True,
+                    key="add_action_back",
+                ):
+                    _set_add_action_step(current_step - 1)
+                    st.rerun()
+            with nav_col2:
+                st.markdown(muted(f"Step {current_step} of 4"), unsafe_allow_html=True)
+            with nav_col3:
+                if st.button(
+                    "Next ➡️",
+                    disabled=current_step == 4,
+                    use_container_width=True,
+                    key="add_action_next",
+                ):
+                    _set_add_action_step(current_step + 1)
+                    st.rerun()
+
     footer("Action-to-Money Tracker • Build the baseline before ROI.")
 
 
-def _render_champion_input(champions_df) -> str:
+def _render_champion_input(champions_df, *, key_prefix: str = "add_action") -> str:
     if champions_df.empty:
-        return st.text_input("Champion", placeholder="e.g. Anna")
+        return st.text_input(
+            "Champion",
+            placeholder="e.g. Anna",
+            key=f"{key_prefix}_champion_text",
+        )
 
     options = ["(none)"] + champions_df["name_display"].tolist() + ["Other (type manually)"]
-    selection = st.selectbox("Champion", options)
+    selection = st.selectbox("Champion", options, key=f"{key_prefix}_champion_select")
 
     if selection == "Other (type manually)":
-        return st.text_input("Champion name")
+        return st.text_input("Champion name", key=f"{key_prefix}_champion_other")
     if selection == "(none)":
         return ""
     return selection
 
 
-def _render_project_input(projects_df) -> str:
+def _render_project_input(projects_df, *, key_prefix: str = "add_action") -> str:
     if projects_df.empty:
         st.info("Add projects in Global Settings.")
-        return st.text_input("Project", placeholder="e.g. ProjectX")
+        return st.text_input(
+            "Project",
+            placeholder="e.g. ProjectX",
+            key=f"{key_prefix}_project_text",
+        )
 
     options = ["(none)"] + projects_df["name"].tolist()
     labels = {}
@@ -212,7 +505,12 @@ def _render_project_input(projects_df) -> str:
         label = f"{name} ({code})" if code else name
         labels[name] = label
 
-    selection = st.selectbox("Project", options, format_func=lambda value: labels.get(value, value))
+    selection = st.selectbox(
+        "Project",
+        options,
+        format_func=lambda value: labels.get(value, value),
+        key=f"{key_prefix}_project_select",
+    )
     if selection == "(none)":
         return ""
     return selection
@@ -748,7 +1046,13 @@ def _render_tasks_section(
             st.rerun()
 
 
-def _render_team_input(champions_df, champion_options, selected_ids: list[int]) -> list[int]:
+def _render_team_input(
+    champions_df,
+    champion_options,
+    selected_ids: list[int],
+    *,
+    key: str = "add_action_team_ids",
+) -> list[int]:
     if champions_df.empty:
         st.info("Add champions in Global Settings first.")
         return []
@@ -758,6 +1062,7 @@ def _render_team_input(champions_df, champion_options, selected_ids: list[int]) 
         options=list(champion_options.keys()),
         default=selected_ids,
         format_func=champion_options.get,
+        key=key,
     )
     if len(selection) > MAX_TEAM_MEMBERS:
         st.error(f"Team members cannot exceed {MAX_TEAM_MEMBERS}.")
