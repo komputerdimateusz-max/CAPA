@@ -33,6 +33,7 @@ def init_db() -> None:
             project_or_family TEXT NOT NULL,
             owner TEXT NOT NULL,
             champion TEXT NOT NULL,
+            analysis_id TEXT,
 
             status TEXT NOT NULL,
             created_at TEXT NOT NULL,
@@ -74,6 +75,7 @@ def _migrate_actions_schema(cur: sqlite3.Cursor) -> None:
         "updated_at": "TEXT NOT NULL DEFAULT (datetime('now'))",
         "deleted": "INTEGER NOT NULL DEFAULT 0",
         "target_date": "TEXT",
+        "analysis_id": "TEXT",
     }
 
     for col, definition in required_cols.items():

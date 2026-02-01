@@ -35,10 +35,10 @@ def insert_action(a: ActionCreate) -> int:
         """
         INSERT INTO actions (
             title, description, line, project_or_family, owner, champion,
-            status, created_at, implemented_at, target_date, closed_at,
+            analysis_id, status, created_at, implemented_at, target_date, closed_at,
             cost_internal_hours, cost_external_eur, cost_material_eur,
             tags
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
         """,
         (
             a.title,
@@ -47,6 +47,7 @@ def insert_action(a: ActionCreate) -> int:
             a.project_or_family,
             owner_value,
             a.champion,
+            a.analysis_id,
             a.status,
             a.created_at.isoformat(),
             None,
@@ -149,6 +150,21 @@ def update_status(action_id: int, status: str, closed_at: Optional[date]) -> Non
         WHERE id = ?;
         """,
         (status, closed_at.isoformat() if closed_at else None, action_id),
+    )
+    con.commit()
+    con.close()
+
+
+def set_action_analysis_id(action_id: int, analysis_id: str | None) -> None:
+    con = connect()
+    cur = con.cursor()
+    cur.execute(
+        """
+        UPDATE actions
+        SET analysis_id = ?, updated_at = datetime('now')
+        WHERE id = ? AND (analysis_id IS NULL OR analysis_id = '' OR analysis_id = ?);
+        """,
+        (analysis_id, action_id, analysis_id),
     )
     con.commit()
     con.close()

@@ -8,6 +8,7 @@ import streamlit as st
 
 from atm_tracker.actions.db import init_db
 from atm_tracker.actions.repo import list_actions, list_all_tasks
+from atm_tracker.analyses.repo import list_analyses, list_analysis_actions
 from atm_tracker.champions.repo import list_champions
 from atm_tracker.ui.layout import footer, kpi_row, main_grid, page_header, section
 from atm_tracker.ui.styles import inject_global_styles, muted
@@ -268,6 +269,44 @@ def _build_subtask_metrics(
     return metrics, warnings
 
 
+def _build_analysis_metrics(
+    analyses_df: pd.DataFrame,
+    links_df: pd.DataFrame,
+    actions_df: pd.DataFrame,
+    champion_col: str,
+    champion_selection: str,
+) -> dict[str, int]:
+    if analyses_df.empty:
+        open_count = 0
+        closed_count = 0
+    else:
+        filtered = analyses_df.copy()
+        if champion_selection != ALL_CHAMPIONS_LABEL:
+            filtered = filtered[filtered["champion"] == champion_selection]
+        status_normalized = filtered["status"].fillna("").astype(str).str.lower()
+        closed_count = int((status_normalized == "closed").sum())
+        open_count = int((status_normalized != "closed").sum())
+
+    linked_action_count = 0
+    if not links_df.empty and not actions_df.empty:
+        links_df = links_df.copy()
+        links_df["action_id"] = pd.to_numeric(links_df["action_id"], errors="coerce")
+        links_df = links_df.dropna(subset=["action_id"])
+        if champion_selection != ALL_CHAMPIONS_LABEL:
+            action_ids = actions_df[actions_df[champion_col] == champion_selection]["id"].tolist()
+            linked_action_count = int(
+                links_df[links_df["action_id"].isin(action_ids)]["action_id"].nunique()
+            )
+        else:
+            linked_action_count = int(links_df["action_id"].nunique())
+
+    return {
+        "analyses_open": open_count,
+        "analyses_closed": closed_count,
+        "linked_actions": linked_action_count,
+    }
+
+
 def _build_champion_summary(
     df: pd.DataFrame,
     column_map: dict[str, str | None],
@@ -416,6 +455,8 @@ def render_champions_dashboard() -> None:
     st.divider()
 
     actions_df = list_actions()
+    analyses_df = list_analyses()
+    analysis_links_df = list_analysis_actions()
     champions_df = list_champions(active_only=True)
     subtasks_df = pd.DataFrame()
     subtasks_available = True
@@ -483,6 +524,13 @@ def render_champions_dashboard() -> None:
         filtered_df = actions_df.copy()
 
     metrics, metric_warnings = _build_metrics(filtered_df, column_map)
+    analysis_metrics = _build_analysis_metrics(
+        analyses_df,
+        analysis_links_df,
+        actions_df,
+        champion_col,
+        champion_selection,
+    )
     subtask_metrics: dict[str, object] = {
         "total_subtasks": None,
         "open_subtasks": None,
@@ -530,6 +578,13 @@ def render_champions_dashboard() -> None:
             ("Closed actions", _format_metric(metrics["closed_actions"])),
             ("Overdue actions", _format_metric(metrics["overdue_actions"])),
             ("On-time rate", on_time_display),
+        ]
+    )
+    kpi_row(
+        [
+            ("Analyses open", _format_metric(analysis_metrics["analyses_open"])),
+            ("Analyses closed", _format_metric(analysis_metrics["analyses_closed"])),
+            ("Actions linked to analyses", _format_metric(analysis_metrics["linked_actions"])),
         ]
     )
     st.markdown(muted("Sub-task KPIs"), unsafe_allow_html=True)
