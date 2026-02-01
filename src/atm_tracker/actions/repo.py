@@ -175,6 +175,18 @@ def list_tasks(action_id: int, include_deleted: bool = False) -> pd.DataFrame:
     return df
 
 
+def list_all_tasks(include_deleted: bool = False) -> pd.DataFrame:
+    con = connect()
+    q = "SELECT * FROM action_tasks"
+    if not include_deleted:
+        q += " WHERE deleted = 0"
+    q += " ORDER BY id DESC"
+    df = pd.read_sql_query(q, con)
+    con.close()
+    df = _normalize_dates(df, ["created_at", "target_date", "done_at", "updated_at"])
+    return df
+
+
 def add_task(
     action_id: int,
     title: str,
