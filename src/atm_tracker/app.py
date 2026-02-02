@@ -11,6 +11,7 @@ if str(SRC_DIR) not in sys.path:
 
 import streamlit as st  # noqa: E402
 
+from action_tracking.config import get_bool_env  # noqa: E402
 from atm_tracker.actions.ui import render_actions_module  # noqa: E402
 from atm_tracker.analyses.ui import render_analyses_module  # noqa: E402
 from atm_tracker.champions.ui import render_champions_dashboard  # noqa: E402
@@ -57,6 +58,8 @@ def main() -> None:
     _apply_nav_query_params()
 
     st.sidebar.title("Navigation")
+    mode_label = "API" if get_bool_env("USE_API", False) else "CSV"
+    st.sidebar.markdown(f"**MODE: {mode_label}**")
     if "nav_page" in st.session_state:
         selected = NAV_LOOKUP.get(str(st.session_state["nav_page"]).lower())
         if selected:

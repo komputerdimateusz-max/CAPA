@@ -11,6 +11,7 @@ import pandas as pd
 from pydantic import ValidationError
 
 from action_tracking.api_client import (
+    ApiClientError,
     api_enabled,
     delete_action as api_delete_action,
     get_action as api_get_action,
@@ -828,9 +829,10 @@ def _render_list() -> None:
     def _actions() -> None:
         nonlocal export_container
         _render_view_selector()
-        if st.button("Refresh", use_container_width=True):
-            st.rerun()
-        export_container = st.container()
+        if not use_api:
+            if st.button("Refresh", use_container_width=True):
+                st.rerun()
+            export_container = st.container()
 
     page_header(
         "📋 Action List",
@@ -841,12 +843,17 @@ def _render_list() -> None:
 
     try:
         if use_api:
-            df, total_actions = api_list_actions(limit=1000)
+            api_items, total_actions = api_list_actions(limit=1000)
+            df = pd.DataFrame(api_items)
         else:
             df = list_actions()
             total_actions = len(df)
+    except ApiClientError as exc:
+        st.error(str(exc))
+        footer("Action-to-Money Tracker • Keep actions traceable and on time.")
+        return
     except Exception as exc:
-        st.error(f"API error while loading actions: {exc}")
+        st.error(f"Error while loading actions: {exc}")
         footer("Action-to-Money Tracker • Keep actions traceable and on time.")
         return
 
@@ -899,20 +906,7 @@ def _render_list() -> None:
     due_date_to = st.session_state.get("actions_filter_due_to")
 
     if use_api:
-        try:
-            filtered_df, _filtered_total = api_list_actions(
-                status=selected_statuses,
-                champion=None if selected_champion == "All" else selected_champion,
-                project=None if selected_project == "All" else selected_project,
-                q=search_text or None,
-                due_from=due_date_from,
-                due_to=due_date_to,
-                limit=1000,
-            )
-        except Exception as exc:
-            st.error(f"API error while filtering actions: {exc}")
-            footer("Action-to-Money Tracker • Keep actions traceable and on time.")
-            return
+        filtered_df = df.copy()
     else:
         filtered_df = df.copy()
 
@@ -949,14 +943,7 @@ def _render_list() -> None:
 
     if use_api:
         try:
-            kpi_payload = api_get_actions_kpi(
-                status=selected_statuses,
-                champion=None if selected_champion == "All" else selected_champion,
-                project=None if selected_project == "All" else selected_project,
-                q=search_text or None,
-                due_from=due_date_from,
-                due_to=due_date_to,
-            )
+            kpi_payload = api_get_actions_kpi()
             late_days = filtered_df.get("days_late", pd.Series([]))
             avg_days_late = float(late_days[late_days > 0].mean()) if (late_days > 0).any() else 0.0
             kpi_row(
@@ -967,6 +954,10 @@ def _render_list() -> None:
                     ("On-time close rate", f"{kpi_payload.get('on_time_close_rate', 0):.0f}%"),
                 ]
             )
+        except ApiClientError as exc:
+            st.error(str(exc))
+            footer("Action-to-Money Tracker • Keep actions traceable and on time.")
+            return
         except Exception as exc:
             st.error(f"API error while loading KPIs: {exc}")
             footer("Action-to-Money Tracker • Keep actions traceable and on time.")
@@ -993,38 +984,39 @@ def _render_list() -> None:
 
     with main_grid("wide") as (main,):
         with main:
-            with st.expander("🔍 Filters", expanded=True):
-                filter_col1, filter_col2, filter_col3, filter_col4 = st.columns(4)
-                with filter_col1:
-                    st.multiselect(
-                        "Status",
-                        options=status_options,
-                        key="actions_filter_statuses",
-                    )
-                with filter_col2:
-                    st.selectbox(
-                        "Champion",
-                        options=["All"] + champion_options,
-                        key="actions_filter_champion",
-                    )
-                with filter_col3:
-                    st.selectbox(
-                        "Project",
-                        options=["All"] + project_options,
-                        key="actions_filter_project",
-                    )
-                with filter_col4:
-                    st.text_input(
-                        "Search (ID or title)",
-                        placeholder="e.g. 42 or reduce defects",
-                        key="actions_filter_search",
-                    )
+            if not use_api:
+                with st.expander("🔍 Filters", expanded=True):
+                    filter_col1, filter_col2, filter_col3, filter_col4 = st.columns(4)
+                    with filter_col1:
+                        st.multiselect(
+                            "Status",
+                            options=status_options,
+                            key="actions_filter_statuses",
+                        )
+                    with filter_col2:
+                        st.selectbox(
+                            "Champion",
+                            options=["All"] + champion_options,
+                            key="actions_filter_champion",
+                        )
+                    with filter_col3:
+                        st.selectbox(
+                            "Project",
+                            options=["All"] + project_options,
+                            key="actions_filter_project",
+                        )
+                    with filter_col4:
+                        st.text_input(
+                            "Search (ID or title)",
+                            placeholder="e.g. 42 or reduce defects",
+                            key="actions_filter_search",
+                        )
 
-                date_col1, date_col2 = st.columns(2)
-                with date_col1:
-                    st.date_input("Due date from", value=None, key="actions_filter_due_from")
-                with date_col2:
-                    st.date_input("Due date to", value=None, key="actions_filter_due_to")
+                    date_col1, date_col2 = st.columns(2)
+                    with date_col1:
+                        st.date_input("Due date from", value=None, key="actions_filter_due_from")
+                    with date_col2:
+                        st.date_input("Due date to", value=None, key="actions_filter_due_to")
 
             if df.empty:
                 st.markdown(muted("📭 No actions available."), unsafe_allow_html=True)
@@ -1107,19 +1099,20 @@ def _render_list() -> None:
             headers = [column_labels[col] for col in table_columns]
             render_table_card(headers, rows)
 
-            export_df = filtered_df.copy()
-            if "title" in filtered_df.columns:
-                export_df = export_df.rename(columns={"title": "Title"})
-            csv_data = export_df.to_csv(index=False)
-            if export_container is not None:
-                with export_container:
-                    st.download_button(
-                        "Export CSV",
-                        data=csv_data,
-                        file_name="actions_export.csv",
-                        mime="text/csv",
-                        use_container_width=True,
-                    )
+            if not use_api:
+                export_df = filtered_df.copy()
+                if "title" in filtered_df.columns:
+                    export_df = export_df.rename(columns={"title": "Title"})
+                csv_data = export_df.to_csv(index=False)
+                if export_container is not None:
+                    with export_container:
+                        st.download_button(
+                            "Export CSV",
+                            data=csv_data,
+                            file_name="actions_export.csv",
+                            mime="text/csv",
+                            use_container_width=True,
+                        )
             st.caption(f"Showing {len(filtered_df)} of {total_actions} actions")
     footer("Action-to-Money Tracker • Keep actions traceable and on time.")
 
@@ -1128,11 +1121,16 @@ def _render_action_details() -> None:
     use_api = api_enabled()
     try:
         if use_api:
-            actions_df, _total = api_list_actions(limit=1000)
+            api_items, _total = api_list_actions(limit=1000)
+            actions_df = pd.DataFrame(api_items)
         else:
             actions_df = list_actions()
+    except ApiClientError as exc:
+        st.error(str(exc))
+        footer("Action-to-Money Tracker • Transparency before impact.")
+        return
     except Exception as exc:
-        st.error(f"API error while loading actions: {exc}")
+        st.error(f"Error while loading actions: {exc}")
         footer("Action-to-Money Tracker • Transparency before impact.")
         return
     if st.session_state.pop("flash_action_deleted", False):
@@ -1210,6 +1208,10 @@ def _render_action_details() -> None:
     if use_api:
         try:
             action = api_get_action(int(action_id))
+        except ApiClientError as exc:
+            st.error(str(exc))
+            footer("Action-to-Money Tracker • Transparency before impact.")
+            return
         except Exception as exc:
             st.error(f"API error while loading action: {exc}")
             footer("Action-to-Money Tracker • Transparency before impact.")
@@ -1235,10 +1237,15 @@ def _render_action_details() -> None:
     tasks_total = int(progress_summary.get("total", 0))
     tasks_done = int(progress_summary.get("done", 0))
     tasks_open = tasks_total - tasks_done
-    champions_all = list_champions(active_only=False)
-    champion_options = _build_champion_options(champions_all)
-    team_ids = get_action_team(int(action_id))
-    team_names = [champion_options.get(member_id, f"ID {member_id}") for member_id in team_ids]
+    if use_api:
+        champion_options = {}
+        team_ids = []
+        team_names: list[str] = []
+    else:
+        champions_all = list_champions(active_only=False)
+        champion_options = _build_champion_options(champions_all)
+        team_ids = get_action_team(int(action_id))
+        team_names = [champion_options.get(member_id, f"ID {member_id}") for member_id in team_ids]
 
     status = action.get("status", "")
     champion = action.get("champion", "")
@@ -1312,6 +1319,9 @@ def _render_action_details() -> None:
                 if use_api:
                     try:
                         api_delete_action(int(action_id))
+                    except ApiClientError as exc:
+                        st.error(str(exc))
+                        return
                     except Exception as exc:
                         st.error(f"API error while deleting action: {exc}")
                         return

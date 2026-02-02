@@ -1,24 +1,57 @@
 from __future__ import annotations
 
-import os
-from datetime import date
+from datetime import date, datetime
 from typing import Any
 
-import pandas as pd
 import requests
 
-DEFAULT_API_BASE_URL = os.getenv("API_BASE_URL", "http://localhost:8000")
+from action_tracking.config import get_bool_env, get_env
+
+DEFAULT_API_BASE_URL = get_env("API_BASE_URL", "http://127.0.0.1:8000")
+DEFAULT_TIMEOUT_S = 5
+
+
+class ApiClientError(RuntimeError):
+    pass
 
 
 def api_enabled() -> bool:
-    return os.getenv("USE_API", "false").lower() == "true"
+    return get_bool_env("USE_API", False)
 
 
-def _request(method: str, path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
+def _request(method: str, path: str, params: dict[str, Any] | None = None) -> requests.Response:
     url = f"{DEFAULT_API_BASE_URL}{path}"
-    response = requests.request(method, url, params=params, timeout=10)
-    response.raise_for_status()
-    return response.json()
+    try:
+        response = requests.request(method, url, params=params, timeout=DEFAULT_TIMEOUT_S)
+        response.raise_for_status()
+        return response
+    except requests.RequestException as exc:
+        message = "API unavailable. Check API_BASE_URL and ensure the backend is running."
+        raise ApiClientError(message) from exc
+
+
+def _request_json(method: str, path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
+    response = _request(method, path, params=params)
+    try:
+        return response.json()
+    except ValueError as exc:
+        raise ApiClientError("API returned an invalid response.") from exc
+
+
+def _parse_date(value: Any) -> date | None:
+    if value is None:
+        return None
+    if isinstance(value, date) and not isinstance(value, datetime):
+        return value
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, str):
+        try:
+            parsed = datetime.fromisoformat(value)
+        except ValueError:
+            return None
+        return parsed.date()
+    return None
 
 
 def _normalize_action_payload(action: dict[str, Any]) -> dict[str, Any]:
@@ -50,7 +83,7 @@ def list_actions(
     sort: str | None = None,
     limit: int = 200,
     offset: int = 0,
-) -> tuple[pd.DataFrame, int]:
+) -> tuple[list[dict[str, Any]], int]:
     params: dict[str, Any] = {
         "champion": champion,
         "owner": owner,
@@ -69,27 +102,26 @@ def list_actions(
     if due_to:
         params["to"] = due_to.isoformat()
 
-    payload = _request("GET", "/api/actions", params=params)
+    payload = _request_json("GET", "/api/actions", params=params)
     items = [_normalize_action_payload(item) for item in payload.get("items", [])]
-    df = pd.DataFrame(items)
-
-    for col in ["created_at", "target_date", "closed_at"]:
-        if col in df.columns:
-            df[col] = pd.to_datetime(df[col], errors="coerce").dt.date
-            df[col] = df[col].apply(lambda value: value if pd.notna(value) else None)
-
-    return df, int(payload.get("total", len(df)))
+    for item in items:
+        item["created_at"] = _parse_date(item.get("created_at"))
+        item["target_date"] = _parse_date(item.get("target_date"))
+        item["closed_at"] = _parse_date(item.get("closed_at"))
+    return items, int(payload.get("total", len(items)))
 
 
 def get_action(action_id: int) -> dict[str, Any]:
-    payload = _request("GET", f"/api/actions/{action_id}")
-    return _normalize_action_payload(payload)
+    payload = _request_json("GET", f"/api/actions/{action_id}")
+    action = _normalize_action_payload(payload)
+    action["created_at"] = _parse_date(action.get("created_at"))
+    action["target_date"] = _parse_date(action.get("target_date"))
+    action["closed_at"] = _parse_date(action.get("closed_at"))
+    return action
 
 
 def delete_action(action_id: int) -> None:
-    url = f"{DEFAULT_API_BASE_URL}/api/actions/{action_id}"
-    response = requests.delete(url, timeout=10)
-    response.raise_for_status()
+    _request("DELETE", f"/api/actions/{action_id}")
 
 
 def get_actions_kpi(
@@ -117,4 +149,4 @@ def get_actions_kpi(
     if due_to:
         params["to"] = due_to.isoformat()
 
-    return _request("GET", "/api/kpi/actions", params=params)
+    return _request_json("GET", "/api/kpi/actions", params=params)
