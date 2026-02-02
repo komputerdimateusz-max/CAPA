@@ -9,7 +9,7 @@ from app.api import actions, kpi, projects
 from app.db.base import Base
 from app.db.session import get_engine
 from app.ui import routes as ui_routes
-from app.ui import routes_champions, routes_metrics, routes_projects
+from app.ui import routes_analyses, routes_champions, routes_metrics, routes_projects, routes_settings
 
 
 def create_app() -> FastAPI:
@@ -32,6 +32,8 @@ def create_app() -> FastAPI:
     app.include_router(routes_projects.router)
     app.include_router(routes_champions.router)
     app.include_router(routes_metrics.router)
+    app.include_router(routes_settings.router)
+    app.include_router(routes_analyses.router)
 
     static_dir = Path(__file__).resolve().parent / "static"
     app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")

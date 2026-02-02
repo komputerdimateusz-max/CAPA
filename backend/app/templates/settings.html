@@ -1,0 +1,150 @@
+{% extends "layout.html" %}
+{% block content %}
+  <section class="card">
+    <div class="card-header">
+      <h2>⚙️ Global Settings</h2>
+      <p class="muted">Manage shared reference data for actions, projects, and champions.</p>
+    </div>
+    {% include "partials/flash_message.html" %}
+
+    <div class="detail-grid">
+      <div>
+        <h3>Champions</h3>
+        <form class="form-grid" method="post" action="/ui/settings/champions">
+          <label>
+            Add champion
+            <input type="text" name="name" placeholder="e.g. Alex Martin" value="{{ form.champion_name or '' }}" />
+          </label>
+          <div class="form-actions">
+            <button class="button" type="submit">Add champion</button>
+          </div>
+        </form>
+
+        {% if champions %}
+          <table class="table">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for champion in champions %}
+                <tr>
+                  <td>{{ champion.name }}</td>
+                  <td>
+                    <a class="button secondary" href="/ui/settings?champion_id={{ champion.id }}">Edit</a>
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        {% else %}
+          <p class="muted">No champions yet. Add one above.</p>
+        {% endif %}
+
+        {% if selected_champion %}
+          <div class="card" style="margin-top:16px;">
+            <h4>Edit champion</h4>
+            <form class="form-grid" method="post" action="/ui/settings/champions/{{ selected_champion.id }}">
+              <label>
+                Name
+                <input
+                  type="text"
+                  name="name"
+                  value="{{ form.champion_name or selected_champion.name }}"
+                />
+              </label>
+              <div class="form-actions">
+                <button class="button" type="submit">Save champion</button>
+              </div>
+            </form>
+          </div>
+        {% endif %}
+      </div>
+
+      <div>
+        <h3>Projects</h3>
+        <form class="form-grid" method="post" action="/ui/settings/projects">
+          <label>
+            Project name
+            <input type="text" name="name" placeholder="e.g. Line 2 Upgrade" value="{{ form.project_name or '' }}" />
+          </label>
+          <label>
+            Status
+            <input type="text" name="status" placeholder="Open / On Hold" value="{{ form.project_status or '' }}" />
+          </label>
+          <label>
+            Due date
+            <input type="date" name="due_date" value="{{ form.project_due_date or '' }}" />
+          </label>
+          <div class="form-actions">
+            <button class="button" type="submit">Add project</button>
+          </div>
+        </form>
+
+        {% if projects %}
+          <table class="table">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Status</th>
+                <th>Due</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for project in projects %}
+                <tr>
+                  <td>{{ project.name }}</td>
+                  <td>{{ project.status or '—' }}</td>
+                  <td>{{ format_date(project.due_date) }}</td>
+                  <td>
+                    <a class="button secondary" href="/ui/settings?project_id={{ project.id }}">Edit</a>
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        {% else %}
+          <p class="muted">No projects yet. Add one above.</p>
+        {% endif %}
+
+        {% if selected_project %}
+          <div class="card" style="margin-top:16px;">
+            <h4>Edit project</h4>
+            <form class="form-grid" method="post" action="/ui/settings/projects/{{ selected_project.id }}">
+              <label>
+                Name
+                <input
+                  type="text"
+                  name="name"
+                  value="{{ form.project_name or selected_project.name }}"
+                />
+              </label>
+              <label>
+                Status
+                <input
+                  type="text"
+                  name="status"
+                  value="{{ form.project_status or selected_project.status or '' }}"
+                />
+              </label>
+              <label>
+                Due date
+                <input
+                  type="date"
+                  name="due_date"
+                  value="{{ form.project_due_date or (selected_project.due_date.isoformat() if selected_project.due_date else '') }}"
+                />
+              </label>
+              <div class="form-actions">
+                <button class="button" type="submit">Save project</button>
+              </div>
+            </form>
+          </div>
+        {% endif %}
+      </div>
+    </div>
+  </section>
+{% endblock %}

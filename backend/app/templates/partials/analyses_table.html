@@ -1,0 +1,32 @@
+<div id="analyses-table">
+  {% if analyses %}
+    <table class="table">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Type</th>
+          <th>Title</th>
+          <th>Status</th>
+          <th>Champion</th>
+          <th>Created</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for analysis in analyses %}
+          <tr>
+            <td><a href="/ui/analyses/{{ analysis.analysis_id }}">{{ analysis.analysis_id }}</a></td>
+            <td>{{ analysis.type }}</td>
+            <td>{{ analysis.title or '—' }}</td>
+            <td>{{ analysis.status or 'Open' }}</td>
+            <td>{{ analysis.champion or '—' }}</td>
+            <td>{{ format_date(analysis.created_at) }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% from "partials/pagination.html" import render_pagination %}
+    {{ render_pagination(pagination, filters, "/ui/analyses/_table", "#analyses-table", query_builder, "analyses") }}
+  {% else %}
+    <p class="muted">No analyses created yet.</p>
+  {% endif %}
+</div>

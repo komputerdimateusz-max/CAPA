@@ -1,0 +1,25 @@
+{% extends "layout.html" %}
+{% block content %}
+  <section class="card">
+    <div class="card-header">
+      <h2>🧪 Analyses</h2>
+      <div class="button-row">
+        <a class="button" href="/ui/analyses/new">New analysis</a>
+      </div>
+    </div>
+    <p class="muted">Start a structured template or review existing analyses.</p>
+
+    <div class="detail-grid">
+      {% for template in templates %}
+        <div class="card" style="padding:16px;">
+          <h4>{{ template.label }}</h4>
+          <p class="muted">{{ template.description }}</p>
+          <a class="button secondary" href="/ui/analyses/new?type={{ template.code }}">Start {{ template.label }}</a>
+        </div>
+      {% endfor %}
+    </div>
+
+    <h3 style="margin-top:24px;">Recent analyses</h3>
+    {% include "partials/analyses_table.html" %}
+  </section>
+{% endblock %}

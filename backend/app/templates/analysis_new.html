@@ -1,0 +1,46 @@
+{% extends "layout.html" %}
+{% block content %}
+  <section class="card">
+    <div class="card-header">
+      <h2>➕ New analysis</h2>
+      <div class="button-row">
+        <a class="button secondary" href="/ui/analyses">Back to list</a>
+      </div>
+    </div>
+    <p class="muted">Start a structured template. Detailed prompts will be added later.</p>
+    {% include "partials/flash_message.html" %}
+
+    <form class="form-grid" method="post" action="/ui/analyses">
+      <label>
+        Template
+        <select name="analysis_type">
+          {% for template in templates %}
+            <option value="{{ template.code }}" {% if form.analysis_type == template.code %}selected{% endif %}>
+              {{ template.label }}
+            </option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>
+        Title
+        <input type="text" name="title" value="{{ form.title or '' }}" />
+      </label>
+      <label>
+        Champion
+        <input type="text" name="champion" list="champion-list" value="{{ form.champion or '' }}" />
+        <datalist id="champion-list">
+          {% for champion in champions %}
+            <option value="{{ champion.name }}"></option>
+          {% endfor %}
+        </datalist>
+      </label>
+      <label style="grid-column: 1 / -1;">
+        Description
+        <textarea name="description" rows="4">{{ form.description or '' }}</textarea>
+      </label>
+      <div class="form-actions">
+        <button class="button" type="submit">Create analysis</button>
+      </div>
+    </form>
+  </section>
+{% endblock %}

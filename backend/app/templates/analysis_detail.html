@@ -1,0 +1,54 @@
+{% extends "layout.html" %}
+{% block content %}
+  <section class="card">
+    <div class="card-header">
+      <h2>🔍 Analysis {{ analysis.analysis_id }}</h2>
+      <div class="button-row">
+        <a class="button secondary" href="/ui/analyses">Back to list</a>
+      </div>
+    </div>
+    {% include "partials/flash_message.html" %}
+
+    <div class="detail-grid">
+      <div>
+        <span class="kpi-label">Template</span>
+        <strong>{{ analysis.type }}</strong>
+      </div>
+      <div>
+        <span class="kpi-label">Status</span>
+        <strong>{{ analysis.status or 'Open' }}</strong>
+      </div>
+      <div>
+        <span class="kpi-label">Champion</span>
+        <strong>{{ analysis.champion or '—' }}</strong>
+      </div>
+      <div>
+        <span class="kpi-label">Created</span>
+        <strong>{{ format_date(analysis.created_at) }}</strong>
+      </div>
+    </div>
+
+    <h3>{{ analysis.title or 'Untitled analysis' }}</h3>
+    <p>{{ analysis.description or 'No description yet.' }}</p>
+
+    <div class="card" style="margin-top:16px;">
+      <h4>Template sections</h4>
+      {% if analysis.type == '5WHY' %}
+        <p class="muted">Placeholder for 5 Why prompts (problem statement, why ladder, root cause).</p>
+      {% elif analysis.type == '8D' %}
+        <p class="muted">Placeholder for 8D sections (team, problem, containment, root cause, corrective actions).</p>
+      {% elif analysis.type == 'A3' %}
+        <p class="muted">Placeholder for A3 narrative (plan, do, check, act).</p>
+      {% elif analysis.type == 'ISHIKAWA' %}
+        <p class="muted">Placeholder for Ishikawa fishbone categories and notes.</p>
+      {% else %}
+        <p class="muted">Template details coming soon.</p>
+      {% endif %}
+    </div>
+
+    <div class="card" style="margin-top:16px;">
+      <h4>Linked actions</h4>
+      <p class="muted">No linked actions yet. TODO: link actions to analyses for traceability.</p>
+    </div>
+  </section>
+{% endblock %}
