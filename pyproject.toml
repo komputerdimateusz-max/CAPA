@@ -21,7 +21,8 @@ dependencies = [
   "plotly>=5.18",
   "pydantic>=2.5",
   "python-dateutil>=2.8",
-  "reportlab>=4.0"
+  "reportlab>=4.0",
+  "requests>=2.31"
 ]
 
 [project.optional-dependencies]

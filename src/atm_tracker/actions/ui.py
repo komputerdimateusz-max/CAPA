@@ -10,6 +10,13 @@ import streamlit as st
 import pandas as pd
 from pydantic import ValidationError
 
+from action_tracking.api_client import (
+    api_enabled,
+    delete_action as api_delete_action,
+    get_action as api_get_action,
+    get_actions_kpi as api_get_actions_kpi,
+    list_actions as api_list_actions,
+)
 from atm_tracker.actions.db import init_db
 from atm_tracker.actions.models import ActionCreate
 from atm_tracker.actions.repo import (
@@ -816,6 +823,7 @@ def _build_action_label(
 
 def _render_list() -> None:
     export_container: Optional[st.delta_generator.DeltaGenerator] = None
+    use_api = api_enabled()
 
     def _actions() -> None:
         nonlocal export_container
@@ -831,8 +839,16 @@ def _render_list() -> None:
     )
     st.divider()
 
-    df = list_actions()
-    total_actions = len(df)
+    try:
+        if use_api:
+            df, total_actions = api_list_actions(limit=1000)
+        else:
+            df = list_actions()
+            total_actions = len(df)
+    except Exception as exc:
+        st.error(f"API error while loading actions: {exc}")
+        footer("Action-to-Money Tracker • Keep actions traceable and on time.")
+        return
 
     if "owner" in df.columns:
         df = df.drop(columns=["owner"])
@@ -882,56 +898,97 @@ def _render_list() -> None:
     due_date_from = st.session_state.get("actions_filter_due_from")
     due_date_to = st.session_state.get("actions_filter_due_to")
 
-    filtered_df = df.copy()
+    if use_api:
+        try:
+            filtered_df, _filtered_total = api_list_actions(
+                status=selected_statuses,
+                champion=None if selected_champion == "All" else selected_champion,
+                project=None if selected_project == "All" else selected_project,
+                q=search_text or None,
+                due_from=due_date_from,
+                due_to=due_date_to,
+                limit=1000,
+            )
+        except Exception as exc:
+            st.error(f"API error while filtering actions: {exc}")
+            footer("Action-to-Money Tracker • Keep actions traceable and on time.")
+            return
+    else:
+        filtered_df = df.copy()
 
-    if selected_statuses and "status" in filtered_df.columns:
-        filtered_df = filtered_df[filtered_df["status"].isin(selected_statuses)]
+        if selected_statuses and "status" in filtered_df.columns:
+            filtered_df = filtered_df[filtered_df["status"].isin(selected_statuses)]
 
-    if selected_champion != "All" and "champion" in filtered_df.columns:
-        filtered_df = filtered_df[filtered_df["champion"] == selected_champion]
+        if selected_champion != "All" and "champion" in filtered_df.columns:
+            filtered_df = filtered_df[filtered_df["champion"] == selected_champion]
 
-    if selected_project != "All" and "project_or_family" in filtered_df.columns:
-        filtered_df = filtered_df[filtered_df["project_or_family"] == selected_project]
+        if selected_project != "All" and "project_or_family" in filtered_df.columns:
+            filtered_df = filtered_df[filtered_df["project_or_family"] == selected_project]
 
-    if search_text:
-        search_lower = search_text.strip().lower()
-        id_matches = filtered_df["id"].astype(str).str.contains(search_lower, case=False, na=False)
-        title_matches = filtered_df.get("title", pd.Series([])).astype(str).str.contains(
-            search_lower, case=False, na=False
+        if search_text:
+            search_lower = search_text.strip().lower()
+            id_matches = filtered_df["id"].astype(str).str.contains(search_lower, case=False, na=False)
+            title_matches = filtered_df.get("title", pd.Series([])).astype(str).str.contains(
+                search_lower, case=False, na=False
+            )
+            filtered_df = filtered_df[id_matches | title_matches]
+
+        if "target_date" in filtered_df.columns and (due_date_from or due_date_to):
+            due_series = pd.to_datetime(filtered_df["target_date"], errors="coerce").dt.date
+            if due_date_from:
+                filtered_df = filtered_df[due_series >= due_date_from]
+            if due_date_to:
+                filtered_df = filtered_df[due_series <= due_date_to]
+        action_ids = [int(action_id) for action_id in filtered_df.get("id", pd.Series([])).tolist()]
+        days_late_map = get_actions_days_late(action_ids)
+        if "id" in filtered_df.columns:
+            filtered_df = filtered_df.copy()
+            filtered_df["days_late"] = filtered_df["id"].map(
+                lambda action_id: days_late_map.get(int(action_id), 0)
+            )
+
+    if use_api:
+        try:
+            kpi_payload = api_get_actions_kpi(
+                status=selected_statuses,
+                champion=None if selected_champion == "All" else selected_champion,
+                project=None if selected_project == "All" else selected_project,
+                q=search_text or None,
+                due_from=due_date_from,
+                due_to=due_date_to,
+            )
+            late_days = filtered_df.get("days_late", pd.Series([]))
+            avg_days_late = float(late_days[late_days > 0].mean()) if (late_days > 0).any() else 0.0
+            kpi_row(
+                [
+                    ("Open actions", f"{kpi_payload.get('open_count', 0)}"),
+                    ("Overdue actions", f"{kpi_payload.get('overdue_count', 0)}"),
+                    ("Avg days late", f"{avg_days_late:.1f}"),
+                    ("On-time close rate", f"{kpi_payload.get('on_time_close_rate', 0):.0f}%"),
+                ]
+            )
+        except Exception as exc:
+            st.error(f"API error while loading KPIs: {exc}")
+            footer("Action-to-Money Tracker • Keep actions traceable and on time.")
+            return
+    else:
+        status_lower = filtered_df.get("status", pd.Series([])).astype(str).str.lower()
+        open_actions = int((status_lower != "closed").sum()) if not filtered_df.empty else 0
+        overdue_actions = int((filtered_df.get("days_late", pd.Series([])) > 0).sum())
+        late_days = filtered_df.get("days_late", pd.Series([]))
+        avg_days_late = float(late_days[late_days > 0].mean()) if (late_days > 0).any() else 0.0
+        closed_mask = status_lower == "closed"
+        closed_count = int(closed_mask.sum())
+        on_time_closed = int(((filtered_df.get("days_late", pd.Series([])) <= 0) & closed_mask).sum())
+        on_time_close_rate = (on_time_closed / closed_count * 100) if closed_count else 0.0
+        kpi_row(
+            [
+                ("Open actions", f"{open_actions}"),
+                ("Overdue actions", f"{overdue_actions}"),
+                ("Avg days late", f"{avg_days_late:.1f}"),
+                ("On-time close rate", f"{on_time_close_rate:.0f}%"),
+            ]
         )
-        filtered_df = filtered_df[id_matches | title_matches]
-
-    if "target_date" in filtered_df.columns and (due_date_from or due_date_to):
-        due_series = pd.to_datetime(filtered_df["target_date"], errors="coerce").dt.date
-        if due_date_from:
-            filtered_df = filtered_df[due_series >= due_date_from]
-        if due_date_to:
-            filtered_df = filtered_df[due_series <= due_date_to]
-    action_ids = [int(action_id) for action_id in filtered_df.get("id", pd.Series([])).tolist()]
-    days_late_map = get_actions_days_late(action_ids)
-    if "id" in filtered_df.columns:
-        filtered_df = filtered_df.copy()
-        filtered_df["days_late"] = filtered_df["id"].map(
-            lambda action_id: days_late_map.get(int(action_id), 0)
-        )
-
-    status_lower = filtered_df.get("status", pd.Series([])).astype(str).str.lower()
-    open_actions = int((status_lower != "closed").sum()) if not filtered_df.empty else 0
-    overdue_actions = int((filtered_df.get("days_late", pd.Series([])) > 0).sum())
-    late_days = filtered_df.get("days_late", pd.Series([]))
-    avg_days_late = float(late_days[late_days > 0].mean()) if (late_days > 0).any() else 0.0
-    closed_mask = status_lower == "closed"
-    closed_count = int(closed_mask.sum())
-    on_time_closed = int(((filtered_df.get("days_late", pd.Series([])) <= 0) & closed_mask).sum())
-    on_time_close_rate = (on_time_closed / closed_count * 100) if closed_count else 0.0
-    kpi_row(
-        [
-            ("Open actions", f"{open_actions}"),
-            ("Overdue actions", f"{overdue_actions}"),
-            ("Avg days late", f"{avg_days_late:.1f}"),
-            ("On-time close rate", f"{on_time_close_rate:.0f}%"),
-        ]
-    )
     st.divider()
 
     with main_grid("wide") as (main,):
@@ -1068,19 +1125,30 @@ def _render_list() -> None:
 
 
 def _render_action_details() -> None:
-    actions_df = list_actions()
+    use_api = api_enabled()
+    try:
+        if use_api:
+            actions_df, _total = api_list_actions(limit=1000)
+        else:
+            actions_df = list_actions()
+    except Exception as exc:
+        st.error(f"API error while loading actions: {exc}")
+        footer("Action-to-Money Tracker • Transparency before impact.")
+        return
     if st.session_state.pop("flash_action_deleted", False):
         st.info("Action deleted")
 
     action_ids = [int(row["id"]) for _, row in actions_df.iterrows()] if not actions_df.empty else []
-    progress_map = get_actions_progress_map(action_ids) if action_ids else {}
+    progress_map: dict[int, int] = {}
     progress_summaries: dict[int, dict] = {}
-    try:
-        progress_summaries = get_action_progress_summaries(action_ids) if action_ids else {}
-        if not isinstance(progress_summaries, dict):
+    if not use_api:
+        progress_map = get_actions_progress_map(action_ids) if action_ids else {}
+        try:
+            progress_summaries = get_action_progress_summaries(action_ids) if action_ids else {}
+            if not isinstance(progress_summaries, dict):
+                progress_summaries = {}
+        except Exception:
             progress_summaries = {}
-    except Exception:
-        progress_summaries = {}
 
     action_lookup = {
         int(row["id"]): _build_action_label(
@@ -1102,7 +1170,7 @@ def _render_action_details() -> None:
             "Action",
             options=[None] + action_ids,
             index=_safe_index([None] + action_ids, st.session_state.get("selected_action_id")),
-            format_func=lambda action_id: "(select...)"
+            format_func=lambda action_id: "Select action"
             if action_id is None
             else action_lookup.get(int(action_id), str(action_id)),
             key="action_details_select_action",
@@ -1139,13 +1207,23 @@ def _render_action_details() -> None:
     st.session_state["selected_action_id"] = int(selected_action_id)
     action_id = int(selected_action_id)
 
-    action = get_action(int(action_id))
+    if use_api:
+        try:
+            action = api_get_action(int(action_id))
+        except Exception as exc:
+            st.error(f"API error while loading action: {exc}")
+            footer("Action-to-Money Tracker • Transparency before impact.")
+            return
+    else:
+        action = get_action(int(action_id))
     if action is None:
         st.warning("Selected action not found.")
         st.session_state.pop("selected_action_id", None)
         st.session_state["actions_view_override"] = "Actions list"
         st.rerun()
         return
+
+    action_series = pd.Series(action) if use_api else action
 
     title = action.get("title", "")
     progress_summary = progress_summaries.get(
@@ -1169,12 +1247,12 @@ def _render_action_details() -> None:
     closed_at = action.get("closed_at")
     updated_at = action.get("updated_at")
     description = action.get("description", "")
-    analysis_column = _analysis_storage_column(action)
+    analysis_column = None if use_api else _analysis_storage_column(action_series)
     analysis_value = action.get(analysis_column, "") if analysis_column else ""
     stripped_description = description
     if analysis_column == "description":
         stripped_description, _payload = _split_analysis_block(str(description or ""))
-    linked_analysis_ids = list_linked_analysis_ids(int(action_id))
+    linked_analysis_ids = [] if use_api else list_linked_analysis_ids(int(action_id))
     linked_analysis_label = ", ".join(linked_analysis_ids) if linked_analysis_ids else "(none)"
 
     details_items = [
@@ -1209,18 +1287,21 @@ def _render_action_details() -> None:
             st.markdown(f"**{html.escape(title_text)}**")
             section("Description")
             st.markdown(card(html.escape(stripped_description or "(none)")), unsafe_allow_html=True)
-            _render_tasks_section(
-                action_id=int(action_id),
-                team_ids=team_ids,
-                champion_options=champion_options,
-            )
-            _render_analysis_section(
-                action_id=int(action_id),
-                action=action,
-                actions_df=actions_df,
-                analysis_column=analysis_column,
-                analysis_value=analysis_value,
-            )
+            if use_api:
+                st.info("Subtasks and analysis editing are read-only while API mode is enabled.")
+            else:
+                _render_tasks_section(
+                    action_id=int(action_id),
+                    team_ids=team_ids,
+                    champion_options=champion_options,
+                )
+                _render_analysis_section(
+                    action_id=int(action_id),
+                    action=action,
+                    actions_df=actions_df,
+                    analysis_column=analysis_column,
+                    analysis_value=analysis_value,
+                )
         with side:
             section("Action summary")
             details_html = f"<ul class='ds-list'>{''.join(details_items)}</ul>"
@@ -1228,8 +1309,16 @@ def _render_action_details() -> None:
             section("Actions")
             st.button("Back to list", on_click=_queue_actions_list, use_container_width=True)
             if st.button("Delete action (soft)", use_container_width=True):
-                soft_delete_action(int(action_id))
+                if use_api:
+                    try:
+                        api_delete_action(int(action_id))
+                    except Exception as exc:
+                        st.error(f"API error while deleting action: {exc}")
+                        return
+                else:
+                    soft_delete_action(int(action_id))
                 st.session_state.pop("selected_action_id", None)
+                st.session_state["action_details_select_action"] = None
                 st.session_state["flash_action_deleted"] = True
                 st.rerun()
     footer("Action-to-Money Tracker • Transparency before impact.")
