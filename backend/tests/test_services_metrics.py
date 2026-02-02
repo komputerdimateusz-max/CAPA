@@ -10,6 +10,7 @@ from app.services.metrics import (
     calculate_on_time_close_rate,
     calculate_time_to_close_days,
 )
+from app.services.kpi import build_actions_kpi
 
 
 def test_days_late_with_subtasks():
@@ -99,3 +100,45 @@ def test_on_time_close_rate():
     rate = calculate_on_time_close_rate(actions)
 
     assert rate == 50.0
+
+
+def test_build_actions_kpi():
+    today = date(2024, 1, 10)
+    actions = [
+        Action(
+            id=1,
+            title="Open action",
+            description="",
+            status="OPEN",
+            created_at=datetime(2024, 1, 1, 8, 0, 0),
+            due_date=date(2024, 1, 5),
+            tags=[],
+        ),
+        Action(
+            id=2,
+            title="Closed action",
+            description="",
+            status="CLOSED",
+            created_at=datetime(2024, 1, 1, 8, 0, 0),
+            due_date=date(2024, 1, 9),
+            closed_at=datetime(2024, 1, 8, 8, 0, 0),
+            tags=[],
+        ),
+    ]
+    subtasks = [
+        Subtask(
+            action_id=1,
+            title="Subtask",
+            status="OPEN",
+            due_date=date(2024, 1, 7),
+            created_at=datetime(2024, 1, 1, 8, 0, 0),
+        )
+    ]
+
+    kpi = build_actions_kpi(actions, subtasks, today=today)
+
+    assert kpi["open_count"] == 1
+    assert kpi["overdue_count"] == 1
+    assert kpi["on_time_close_rate"] == 100.0
+    assert kpi["avg_time_to_close_days"] == 7.0
+    assert kpi["sum_days_late"] == 3
