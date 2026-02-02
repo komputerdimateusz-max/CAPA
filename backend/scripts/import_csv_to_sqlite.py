@@ -46,10 +46,28 @@ def import_champions(session, path: Path) -> None:
     with path.open(newline="", encoding="utf-8") as handle:
         reader = csv.DictReader(handle)
         for row in reader:
-            name = (row.get("name") or "").strip()
-            if not name:
-                continue
-            session.add(Champion(name=name))
+            first_name = (row.get("first_name") or "").strip()
+            last_name = (row.get("last_name") or "").strip()
+            if not first_name and not last_name:
+                name = (row.get("name") or "").strip()
+                if not name:
+                    continue
+                parts = name.split()
+                if len(parts) >= 2:
+                    first_name = parts[0]
+                    last_name = " ".join(parts[1:])
+                else:
+                    first_name = "Unknown"
+                    last_name = name
+            session.add(
+                Champion(
+                    first_name=first_name,
+                    last_name=last_name,
+                    email=(row.get("email") or "").strip() or None,
+                    position=(row.get("position") or "").strip() or None,
+                    birth_date=_parse_date(row.get("birth_date")),
+                )
+            )
     session.commit()
 
 

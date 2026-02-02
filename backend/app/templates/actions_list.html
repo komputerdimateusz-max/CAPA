@@ -49,7 +49,7 @@
               <select name="champion_id">
                 <option value="">All champions</option>
                 {% for champion in champions %}
-                  <option value="{{ champion.id }}">{{ champion.name }}</option>
+                  <option value="{{ champion.id }}">{{ champion.full_name }}</option>
                 {% endfor %}
               </select>
             </label>
@@ -130,7 +130,7 @@
           <option value="">All champions</option>
           {% for champion in champions %}
             <option value="{{ champion.id }}" {% if filters.champion_id == champion.id %}selected{% endif %}>
-              {{ champion.name }}
+              {{ champion.full_name }}
             </option>
           {% endfor %}
         </select>

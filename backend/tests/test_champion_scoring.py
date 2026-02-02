@@ -8,7 +8,7 @@ from app.services.champions import score_actions, summarize_champions
 
 
 def test_score_actions_on_time_close():
-    champion = Champion(id=1, name="Alex")
+    champion = Champion(id=1, first_name="Alex", last_name="Morgan")
     action = Action(
         id=10,
         title="Close on time",
@@ -43,7 +43,7 @@ def test_score_actions_late_penalties_for_open_action():
 
 
 def test_summarize_champions_totals():
-    champion = Champion(id=2, name="Jordan")
+    champion = Champion(id=2, first_name="Jordan", last_name="Lee")
     actions = [
         Action(
             id=12,
