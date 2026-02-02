@@ -138,7 +138,6 @@ def _render_view_selector() -> None:
 def _init_add_action_state(champions_df: pd.DataFrame, projects_df: pd.DataFrame) -> None:
     defaults = {
         "add_action_title": "",
-        "add_action_line": "",
         "add_action_description": "",
         "add_action_status": "OPEN",
         "add_action_created_at": date.today(),
@@ -207,7 +206,6 @@ def _apply_add_action_template(template: dict) -> None:
 def _clear_add_action_state() -> None:
     keys = [
         "add_action_title",
-        "add_action_line",
         "add_action_description",
         "add_action_status",
         "add_action_created_at",
@@ -296,10 +294,9 @@ def _render_add() -> None:
             if current_step == 1:
                 title = st.text_input(
                     "Title *",
-                    placeholder="e.g. Reduce scratch defects on L1",
+                    placeholder="e.g. Reduce scratch defects in assembly",
                     key="add_action_title",
                 )
-                line = st.text_input("Line *", placeholder="e.g. L1", key="add_action_line")
                 project = _render_project_input(projects_df, key_prefix="add_action")
                 champion = _render_champion_input(champions_df, key_prefix="add_action")
                 team_selection = _render_team_input(
@@ -371,13 +368,11 @@ def _render_add() -> None:
                 target_date = st.session_state.get("add_action_target_date")
                 closed_at = st.session_state.get("add_action_closed_at")
                 title = st.session_state.get("add_action_title", "")
-                line = st.session_state.get("add_action_line", "")
                 description = st.session_state.get("add_action_description", "")
                 tags = st.session_state.get("add_action_tags", [])
 
                 summary_items = [
                     f"<li><strong>Title:</strong> {html.escape(title or '(missing)')}</li>",
-                    f"<li><strong>Line:</strong> {html.escape(line or '(missing)')}</li>",
                     f"<li><strong>Project:</strong> {html.escape(project or '(none)')}</li>",
                     f"<li><strong>Champion:</strong> {html.escape(champion or '(none)')}</li>",
                     f"<li><strong>Status:</strong> {pill(status)}</li>",
@@ -393,8 +388,6 @@ def _render_add() -> None:
                     validation_errors = []
                     if not title.strip():
                         validation_errors.append("Title is required.")
-                    if not line.strip():
-                        validation_errors.append("Line is required.")
                     if not target_date:
                         validation_errors.append("Target/Due date is required.")
                     if status == "CLOSED" and not closed_at:
@@ -412,7 +405,6 @@ def _render_add() -> None:
                         a = ActionCreate(
                             title=title.strip(),
                             description=description.strip(),
-                            line=line.strip(),
                             project_or_family=_normalize_name(project),
                             owner="",
                             champion=_normalize_name(champion),

@@ -12,7 +12,6 @@ Status = Literal["OPEN", "IN_PROGRESS", "CLOSED"]
 class ActionCreate(BaseModel):
     title: str = Field(min_length=3, max_length=200)
     description: str = Field(default="", max_length=2000)
-    line: str = Field(min_length=1, max_length=50)
     project_or_family: str = Field(default="", max_length=80)
     owner: str = Field(default="", max_length=80)
     champion: str = Field(default="", max_length=80)

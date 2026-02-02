@@ -31,6 +31,7 @@ def insert_action(a: ActionCreate) -> int:
     cur = con.cursor()
 
     owner_value = a.champion or ""
+    line_value = getattr(a, "line", "") or ""
     cur.execute(
         """
         INSERT INTO actions (
@@ -43,7 +44,7 @@ def insert_action(a: ActionCreate) -> int:
         (
             a.title,
             a.description,
-            a.line,
+            line_value,
             a.project_or_family,
             owner_value,
             a.champion,
@@ -82,9 +83,6 @@ def list_actions(
     if status:
         where.append("status = ?")
         params.append(status)
-    if line:
-        where.append("line = ?")
-        params.append(line)
     if project_or_family:
         where.append("project_or_family = ?")
         params.append(project_or_family)
