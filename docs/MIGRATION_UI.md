@@ -86,11 +86,16 @@
 **API/service dependencies**
 - `backend/app/repositories/analyses.py` (or equivalent module)
 
+**Migration status**: ✅ **Completed** (templates + list/detail; action linking pending)
+
 **Migration complexity**: **M** (form-heavy but mostly text)
 
 **Dependencies**
 - Actions (link/unlink; create action from analysis).
 - Settings (champion/project lookup).
+
+**Notes / differences**
+- Ishikawa template is available as a placeholder; detailed sections and action linking are TODOs.
 
 ---
 
@@ -199,40 +204,39 @@
 
 **Migration complexity**: **L** (ranking logic + drill-down + audit log)
 
-**Dependencies**
-- Actions + Analyses.
-- Settings (champion reference data).
-
 ---
 
-### 6) Global Settings (Streamlit: `atm_tracker/settings/ui.py`)
+### 6) Settings (Streamlit: `atm_tracker/settings/ui.py`)
 **Feature summary**
-- Manage Champions and Projects (CRUD with soft delete).
+- Manage Champions and Projects reference data.
+- Add and edit records used across Actions and KPIs.
 
 **Inputs / filters**
-- Champion and project forms (create/edit/deactivate).
+- Champion name field.
+- Project name, status, and due date fields.
 
-**Outputs**
-- List + edit panels for champions/projects.
+**Outputs / tables / charts**
+- Champion list with edit links.
+- Project list with edit links.
 
 **Data sources**
-- `atm_tracker.champions.repo`
-- `atm_tracker.projects.repo`
-
-**Business rules**
-- Soft delete for champions/projects (retain history).
+- `backend/app/models/champion.py`
+- `backend/app/models/project.py`
 
 **UI target route**
 - `/ui/settings`
 
 **API/service dependencies**
-- `backend/app/repositories/champions.py`
-- `backend/app/repositories/projects.py`
+- `backend/app/services/settings.py`
 
-**Migration complexity**: **S/M** (simple CRUD)
+**Migration status**: ✅ **Completed** (add/edit flows)
+
+**Notes / differences**
+- No soft-delete/inactive toggles yet; the UI focuses on add/edit for the current SQL schema.
 
 **Dependencies**
-- None (foundational for other modules).
+- Actions + Analyses.
+- Settings (champion reference data).
 
 ---
 
@@ -262,5 +266,4 @@
 ---
 
 ## UI Route status (as of this migration step)
-- **Ready**: `/ui/actions` + `/ui/actions/{id}`
-- **Legacy (Streamlit)**: `/ui/projects`, `/ui/analyses`, `/ui/champions`, `/ui/explorer`, `/ui/kpi`, `/ui/settings`
+- **Ready**: `/ui/actions`, `/ui/actions/{id}`, `/ui/projects`, `/ui/projects/{id}`, `/ui/champions`, `/ui/champions/{id}`, `/ui/explorer`, `/ui/kpi`, `/ui/analyses`, `/ui/analyses/{id}`, `/ui/settings`

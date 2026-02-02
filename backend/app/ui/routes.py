@@ -160,30 +160,6 @@ def ui_index(request: Request):
     return templates.TemplateResponse("ui_index.html", {"request": request})
 
 
-@router.get("/analyses", response_class=HTMLResponse, response_model=None)
-def analyses_placeholder(request: Request):
-    return templates.TemplateResponse(
-        "ui_placeholder.html",
-        {
-            "request": request,
-            "title": "Analyses",
-            "message": "Analyses UI is coming next. (Legacy in Streamlit)",
-        },
-    )
-
-
-@router.get("/settings", response_class=HTMLResponse, response_model=None)
-def settings_placeholder(request: Request):
-    return templates.TemplateResponse(
-        "ui_placeholder.html",
-        {
-            "request": request,
-            "title": "Global Settings",
-            "message": "Settings UI is coming next. (Legacy in Streamlit)",
-        },
-    )
-
-
 @router.get("/actions", response_class=HTMLResponse, response_model=None)
 def actions_list(
     request: Request,
