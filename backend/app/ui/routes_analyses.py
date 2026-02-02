@@ -7,6 +7,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
+from app.core.auth import enforce_admin
 from app.db.session import get_db
 from app.repositories import analyses as analyses_repo
 from app.repositories import champions as champions_repo
@@ -17,6 +18,10 @@ router = APIRouter(prefix="/ui", tags=["ui"])
 
 TEMPLATES_DIR = Path(__file__).resolve().parents[1] / "templates"
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
+
+
+def _current_user(request: Request):
+    return getattr(request.state, "user", None)
 
 
 def _load_analysis_table(page: int, page_size: int) -> dict[str, object]:
@@ -105,6 +110,7 @@ def create_analysis(
     champion: str = Form(default=""),
     db: Session = Depends(get_db),
 ):
+    enforce_admin(_current_user(request))
     champions = champions_repo.list_champions(db)
     template_options = analyses_service.list_analysis_templates()
     try:

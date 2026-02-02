@@ -20,6 +20,8 @@ dependencies = [
   "pydantic-settings>=2.2",
   "python-dateutil>=2.8",
   "alembic>=1.13",
+  "passlib[bcrypt]>=1.7",
+  "itsdangerous>=2.1",
 ]
 
 [project.optional-dependencies]

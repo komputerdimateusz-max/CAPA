@@ -23,6 +23,14 @@
         <a href="/ui/analyses">Analyses</a>
         <a href="/ui/settings">Settings</a>
       </nav>
+      {% if request.state.user %}
+      <div class="auth-meta">
+        <span class="muted">Signed in as {{ request.state.user.username }} ({{ request.state.user.role }})</span>
+        <form method="post" action="/ui/logout" style="display:inline;">
+          <button type="submit">Logout</button>
+        </form>
+      </div>
+      {% endif %}
     </header>
     <main class="container">
       {% block content %}{% endblock %}

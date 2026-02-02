@@ -8,6 +8,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
+from app.core.auth import enforce_admin
 from app.db.session import get_db
 from app.repositories import champions as champions_repo
 from app.repositories import projects as projects_repo
@@ -24,6 +25,10 @@ def _parse_optional_date(value: str | None) -> date | None:
     if not value:
         return None
     return date.fromisoformat(value)
+
+
+def _current_user(request: Request):
+    return getattr(request.state, "user", None)
 
 
 def _render_settings(
@@ -80,6 +85,7 @@ def add_champion(
     name: str = Form(...),
     db: Session = Depends(get_db),
 ):
+    enforce_admin(_current_user(request))
     try:
         champion = settings_service.create_champion(db, name)
     except ValueError as exc:
@@ -104,6 +110,7 @@ def update_champion(
     name: str = Form(...),
     db: Session = Depends(get_db),
 ):
+    enforce_admin(_current_user(request))
     try:
         champion = settings_service.update_champion(db, champion_id, name)
     except ValueError as exc:
@@ -129,6 +136,7 @@ def add_project(
     due_date: str | None = Form(default=None),
     db: Session = Depends(get_db),
 ):
+    enforce_admin(_current_user(request))
     try:
         project = settings_service.create_project(db, name, status, _parse_optional_date(due_date))
     except ValueError as exc:
@@ -159,6 +167,7 @@ def update_project(
     due_date: str | None = Form(default=None),
     db: Session = Depends(get_db),
 ):
+    enforce_admin(_current_user(request))
     try:
         project = settings_service.update_project(db, project_id, name, status, _parse_optional_date(due_date))
     except ValueError as exc:

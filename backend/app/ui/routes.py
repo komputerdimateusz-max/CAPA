@@ -7,6 +7,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
+from app.core.auth import enforce_action_create_permission, enforce_action_ownership, enforce_write_access
 from app.db.session import get_db
 from app.models.action import Action
 from app.models.subtask import Subtask
@@ -50,6 +51,10 @@ def _parse_optional_int(value: str | None) -> int | None:
     if not value:
         return None
     return int(value)
+
+
+def _current_user(request: Request):
+    return getattr(request.state, "user", None)
 
 
 def _load_kpi_data(
@@ -315,11 +320,13 @@ def create_action(
     tags: str | None = Form(None),
     db: Session = Depends(get_db),
 ):
+    parsed_champion_id = _parse_optional_int(champion_id)
+    enforce_action_create_permission(_current_user(request), parsed_champion_id)
     action = Action(
         title=title,
         description=description or "",
         project_id=_parse_optional_int(project_id),
-        champion_id=_parse_optional_int(champion_id),
+        champion_id=parsed_champion_id,
         owner=owner or None,
         status=status or "OPEN",
         due_date=_parse_optional_date(due_date),
@@ -331,10 +338,13 @@ def create_action(
 
 
 @router.post("/actions/{action_id}/delete", response_model=None)
-def delete_action(action_id: int, db: Session = Depends(get_db)):
+def delete_action(action_id: int, request: Request, db: Session = Depends(get_db)):
     action = actions_repo.get_action(db, action_id)
     if not action:
         raise HTTPException(status_code=404, detail="Action not found")
+    user = _current_user(request)
+    enforce_write_access(user)
+    enforce_action_ownership(user, action)
     actions_repo.delete_action(db, action)
     return RedirectResponse(url="/ui/actions?deleted=1", status_code=303)
 
@@ -350,6 +360,9 @@ def create_subtask(
     action = actions_repo.get_action(db, action_id)
     if not action:
         raise HTTPException(status_code=404, detail="Action not found")
+    user = _current_user(request)
+    enforce_write_access(user)
+    enforce_action_ownership(user, action)
     subtask = Subtask(
         action_id=action_id,
         title=title,
@@ -381,6 +394,9 @@ def update_subtask(
     subtask = actions_repo.get_subtask(db, subtask_id)
     if not subtask:
         raise HTTPException(status_code=404, detail="Subtask not found")
+    user = _current_user(request)
+    enforce_write_access(user)
+    enforce_action_ownership(user, action)
 
     if title is not None:
         subtask.title = title
@@ -416,6 +432,9 @@ def delete_subtask(
     subtask = actions_repo.get_subtask(db, subtask_id)
     if not subtask:
         raise HTTPException(status_code=404, detail="Subtask not found")
+    user = _current_user(request)
+    enforce_write_access(user)
+    enforce_action_ownership(user, action)
     actions_repo.delete_subtask(db, subtask)
     subtasks = actions_repo.list_subtasks(db, action_id)
     if request.headers.get("HX-Request"):
