@@ -43,6 +43,9 @@ uvicorn app.main:app --reload
 
 ### Primary UI (FastAPI)
 
+Primary UI: /ui (FastAPI)
+Legacy UI: Streamlit (archived)
+
 The production UI is served from FastAPI. Open: `http://127.0.0.1:8000/ui/actions`.
 
 ### Streamlit (legacy/dev-only)
