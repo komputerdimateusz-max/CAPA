@@ -62,7 +62,7 @@ def _compute_late_days(
 
 def _champion_label(action: Action) -> str:
     if action.champion:
-        return action.champion.name
+        return action.champion.full_name
     if action.owner:
         return action.owner
     return "Unassigned"

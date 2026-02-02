@@ -36,8 +36,9 @@ def list_actions(
     if champion_id is not None:
         stmt = stmt.where(Action.champion_id == champion_id)
     if champion_name:
+        champion_full_name = func.lower(func.trim(Champion.first_name + " " + Champion.last_name))
         stmt = stmt.join(Champion, isouter=True).where(
-            (func.lower(Champion.name) == champion_name.lower())
+            (champion_full_name == champion_name.lower())
             | (func.lower(Action.owner) == champion_name.lower())
         )
     if owner:

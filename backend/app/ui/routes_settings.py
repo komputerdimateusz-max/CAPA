@@ -82,12 +82,23 @@ def settings_page(
 @router.post("/settings/champions", response_model=None)
 def add_champion(
     request: Request,
-    name: str = Form(...),
+    first_name: str = Form(...),
+    last_name: str = Form(...),
+    email: str | None = Form(default=None),
+    position: str | None = Form(default=None),
+    birth_date: str | None = Form(default=None),
     db: Session = Depends(get_db),
 ):
     enforce_admin(_current_user(request))
     try:
-        champion = settings_service.create_champion(db, name)
+        champion = settings_service.create_champion(
+            db,
+            first_name=first_name,
+            last_name=last_name,
+            email=email,
+            position=position,
+            birth_date=_parse_optional_date(birth_date),
+        )
     except ValueError as exc:
         return _render_settings(
             request,
@@ -95,7 +106,13 @@ def add_champion(
             champion_id=None,
             project_id=None,
             error=str(exc),
-            form={"champion_name": name},
+            form={
+                "champion_first_name": first_name,
+                "champion_last_name": last_name,
+                "champion_email": email or "",
+                "champion_position": position or "",
+                "champion_birth_date": birth_date or "",
+            },
         )
     return RedirectResponse(
         url=f"/ui/settings?message=Champion+added&champion_id={champion.id}",
@@ -107,12 +124,24 @@ def add_champion(
 def update_champion(
     champion_id: int,
     request: Request,
-    name: str = Form(...),
+    first_name: str = Form(...),
+    last_name: str = Form(...),
+    email: str | None = Form(default=None),
+    position: str | None = Form(default=None),
+    birth_date: str | None = Form(default=None),
     db: Session = Depends(get_db),
 ):
     enforce_admin(_current_user(request))
     try:
-        champion = settings_service.update_champion(db, champion_id, name)
+        champion = settings_service.update_champion(
+            db,
+            champion_id,
+            first_name=first_name,
+            last_name=last_name,
+            email=email,
+            position=position,
+            birth_date=_parse_optional_date(birth_date),
+        )
     except ValueError as exc:
         return _render_settings(
             request,
@@ -120,7 +149,13 @@ def update_champion(
             champion_id=champion_id,
             project_id=None,
             error=str(exc),
-            form={"champion_name": name},
+            form={
+                "champion_first_name": first_name,
+                "champion_last_name": last_name,
+                "champion_email": email or "",
+                "champion_position": position or "",
+                "champion_birth_date": birth_date or "",
+            },
         )
     return RedirectResponse(
         url=f"/ui/settings?message=Champion+updated&champion_id={champion.id}",

@@ -7,7 +7,7 @@ from app.models.champion import Champion
 
 
 def list_champions(db: Session) -> list[Champion]:
-    stmt = select(Champion).order_by(Champion.name.asc())
+    stmt = select(Champion).order_by(Champion.last_name.asc(), Champion.first_name.asc())
     return list(db.scalars(stmt).all())
 
 

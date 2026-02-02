@@ -30,7 +30,7 @@
         <input type="text" name="champion" list="champion-list" value="{{ form.champion or '' }}" />
         <datalist id="champion-list">
           {% for champion in champions %}
-            <option value="{{ champion.name }}"></option>
+            <option value="{{ champion.full_name }}"></option>
           {% endfor %}
         </datalist>
       </label>

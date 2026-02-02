@@ -12,8 +12,46 @@
         <h3>Champions</h3>
         <form class="form-grid" method="post" action="/ui/settings/champions">
           <label>
-            Add champion
-            <input type="text" name="name" placeholder="e.g. Alex Martin" value="{{ form.champion_name or '' }}" />
+            First name
+            <input
+              type="text"
+              name="first_name"
+              required
+              placeholder="e.g. Alex"
+              value="{{ form.champion_first_name or '' }}"
+            />
+          </label>
+          <label>
+            Last name
+            <input
+              type="text"
+              name="last_name"
+              required
+              placeholder="e.g. Martin"
+              value="{{ form.champion_last_name or '' }}"
+            />
+          </label>
+          <label>
+            Email
+            <input
+              type="email"
+              name="email"
+              placeholder="alex@example.com"
+              value="{{ form.champion_email or '' }}"
+            />
+          </label>
+          <label>
+            Position
+            <input
+              type="text"
+              name="position"
+              placeholder="Process Engineer"
+              value="{{ form.champion_position or '' }}"
+            />
+          </label>
+          <label>
+            Birth date
+            <input type="date" name="birth_date" value="{{ form.champion_birth_date or '' }}" />
           </label>
           <div class="form-actions">
             <button class="button" type="submit">Add champion</button>
@@ -25,13 +63,17 @@
             <thead>
               <tr>
                 <th>Name</th>
+                <th>Email</th>
+                <th>Position</th>
                 <th></th>
               </tr>
             </thead>
             <tbody>
               {% for champion in champions %}
                 <tr>
-                  <td>{{ champion.name }}</td>
+                  <td>{{ champion.full_name }}</td>
+                  <td>{{ champion.email or '—' }}</td>
+                  <td>{{ champion.position or '—' }}</td>
                   <td>
                     <a class="button secondary" href="/ui/settings?champion_id={{ champion.id }}">Edit</a>
                   </td>
@@ -48,11 +90,45 @@
             <h4>Edit champion</h4>
             <form class="form-grid" method="post" action="/ui/settings/champions/{{ selected_champion.id }}">
               <label>
-                Name
+                First name
                 <input
                   type="text"
-                  name="name"
-                  value="{{ form.champion_name or selected_champion.name }}"
+                  name="first_name"
+                  required
+                  value="{{ form.champion_first_name or selected_champion.first_name }}"
+                />
+              </label>
+              <label>
+                Last name
+                <input
+                  type="text"
+                  name="last_name"
+                  required
+                  value="{{ form.champion_last_name or selected_champion.last_name }}"
+                />
+              </label>
+              <label>
+                Email
+                <input
+                  type="email"
+                  name="email"
+                  value="{{ form.champion_email or selected_champion.email or '' }}"
+                />
+              </label>
+              <label>
+                Position
+                <input
+                  type="text"
+                  name="position"
+                  value="{{ form.champion_position or selected_champion.position or '' }}"
+                />
+              </label>
+              <label>
+                Birth date
+                <input
+                  type="date"
+                  name="birth_date"
+                  value="{{ form.champion_birth_date or (selected_champion.birth_date.isoformat() if selected_champion.birth_date else '') }}"
                 />
               </label>
               <div class="form-actions">

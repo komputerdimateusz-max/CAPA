@@ -30,7 +30,7 @@ def build_action_rows(actions: list[Action], subtasks: list[Subtask]) -> list[di
     for action in actions:
         days_late = calculate_action_days_late(action, subtask_map.get(action.id, []))
         owner = action.owner or "—"
-        champion = action.champion.name if action.champion else "—"
+        champion = action.champion.full_name if action.champion else "—"
         rows.append(
             {
                 "id": action.id,
