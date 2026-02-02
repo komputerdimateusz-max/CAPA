@@ -4,28 +4,80 @@
       <thead>
         <tr>
           <th>Title</th>
-          <th>Status</th>
-          <th>Champion</th>
           <th>Project</th>
+          <th>Status</th>
           <th>Due date</th>
-          <th>Closed at</th>
           <th>Days late</th>
+          <th>Owner / Champion</th>
+          <th>Closed at</th>
+          <th>Tags</th>
         </tr>
       </thead>
       <tbody>
         {% for action in actions %}
           <tr>
             <td><a href="/ui/actions/{{ action.id }}">{{ action.title }}</a></td>
-            <td>{{ action.status }}</td>
-            <td>{{ action.champion }}</td>
             <td>{{ action.project }}</td>
+            <td><span class="status-badge status-{{ action.status|lower }}">{{ action.status }}</span></td>
             <td>{{ action.due_date }}</td>
-            <td>{{ action.closed_at }}</td>
             <td>{{ action.days_late }}</td>
+            <td>{{ action.owner_display }}</td>
+            <td>{{ action.closed_at }}</td>
+            <td>
+              {% if action.tags %}
+                <div class="tag-list">
+                  {% for tag in action.tags %}
+                    <span class="tag">{{ tag }}</span>
+                  {% endfor %}
+                </div>
+              {% else %}
+                <span class="muted">—</span>
+              {% endif %}
+            </td>
           </tr>
         {% endfor %}
       </tbody>
     </table>
+    <div class="pagination">
+      <div class="muted">
+        Page {{ pagination.page }} of {{ pagination.total_pages }} · {{ pagination.total }} actions
+      </div>
+      <div class="button-row">
+        {% set base_query = query_builder(filters) %}
+        {% if pagination.page > 1 %}
+          {% if base_query %}
+            {% set prev_query = base_query ~ "&page=" ~ (pagination.page - 1) %}
+          {% else %}
+            {% set prev_query = "page=" ~ (pagination.page - 1) %}
+          {% endif %}
+          <a
+            class="button secondary"
+            hx-get="/ui/actions/_table?{{ prev_query }}"
+            hx-target="#actions-table"
+            hx-swap="outerHTML"
+            hx-push-url="true"
+          >
+            Previous
+          </a>
+        {% endif %}
+        {% if pagination.page < pagination.total_pages %}
+          {% if base_query %}
+            {% set next_query = base_query ~ "&page=" ~ (pagination.page + 1) %}
+          {% else %}
+            {% set next_query = "page=" ~ (pagination.page + 1) %}
+          {% endif %}
+          <a
+            class="button secondary"
+            hx-get="/ui/actions/_table?{{ next_query }}"
+            hx-target="#actions-table"
+            hx-swap="outerHTML"
+            hx-push-url="true"
+          >
+            Next
+          </a>
+        {% endif %}
+      </div>
+    </div>
   {% else %}
     <p class="muted">No actions available.</p>
   {% endif %}

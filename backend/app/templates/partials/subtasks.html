@@ -1,0 +1,106 @@
+<section class="card" id="subtasks-list">
+  <div class="card-header">
+    <h3>Subtasks</h3>
+  </div>
+  <form
+    class="form-inline"
+    method="post"
+    action="/ui/actions/{{ action.id }}/subtasks"
+    hx-post="/ui/actions/{{ action.id }}/subtasks"
+    hx-target="#subtasks-list"
+    hx-swap="outerHTML"
+  >
+    <label>
+      New subtask
+      <input type="text" name="title" placeholder="Subtask title" required />
+    </label>
+    <label>
+      Due date
+      <input type="date" name="due_date" />
+    </label>
+    <button class="button secondary" type="submit">Add</button>
+  </form>
+  {% if subtasks %}
+    <table>
+      <thead>
+        <tr>
+          <th>Title</th>
+          <th>Status</th>
+          <th>Due date</th>
+          <th>Closed at</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for subtask in subtasks %}
+          <tr>
+            <td>{{ subtask.title }}</td>
+            <td><span class="status-badge status-{{ subtask.status|lower }}">{{ subtask.status }}</span></td>
+            <td>{{ format_date(subtask.due_date) }}</td>
+            <td>{{ format_date(subtask.closed_at) }}</td>
+            <td>
+              <details class="inline-details">
+                <summary class="button secondary">Edit</summary>
+                <form
+                  class="form-inline"
+                  method="post"
+                  action="/ui/actions/{{ action.id }}/subtasks/{{ subtask.id }}"
+                  hx-patch="/ui/actions/{{ action.id }}/subtasks/{{ subtask.id }}"
+                  hx-target="#subtasks-list"
+                  hx-swap="outerHTML"
+                >
+                  <label>
+                    Title
+                    <input type="text" name="title" value="{{ subtask.title }}" />
+                  </label>
+                  <label>
+                    Status
+                    <select name="status">
+                      {% for status in ["OPEN", "IN_PROGRESS", "BLOCKED", "CLOSED"] %}
+                        <option value="{{ status }}" {% if subtask.status == status %}selected{% endif %}>
+                          {{ status }}
+                        </option>
+                      {% endfor %}
+                    </select>
+                  </label>
+                  <label>
+                    Due date
+                    <input
+                      type="date"
+                      name="due_date"
+                      value="{{ subtask.due_date.isoformat() if subtask.due_date else "" }}"
+                    />
+                  </label>
+                  <button class="button secondary" type="submit">Save</button>
+                </form>
+              </details>
+              <form
+                class="inline-form"
+                method="post"
+                action="/ui/actions/{{ action.id }}/subtasks/{{ subtask.id }}"
+                hx-patch="/ui/actions/{{ action.id }}/subtasks/{{ subtask.id }}"
+                hx-target="#subtasks-list"
+                hx-swap="outerHTML"
+              >
+                <input type="hidden" name="close" value="1" />
+                <button class="button" type="submit">Close</button>
+              </form>
+              <form
+                class="inline-form"
+                method="post"
+                action="/ui/actions/{{ action.id }}/subtasks/{{ subtask.id }}/delete"
+                hx-post="/ui/actions/{{ action.id }}/subtasks/{{ subtask.id }}/delete"
+                hx-target="#subtasks-list"
+                hx-swap="outerHTML"
+              >
+                <button class="button danger" type="submit">Delete</button>
+              </form>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="muted">No subtasks found for this action.</p>
+  {% endif %}
+</section>

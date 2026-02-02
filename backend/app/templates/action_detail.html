@@ -10,7 +10,7 @@
     <div class="detail-grid">
       <div>
         <strong>Status</strong>
-        <p>{{ action.status }}</p>
+        <p><span class="status-badge status-{{ action.status|lower }}">{{ action.status }}</span></p>
       </div>
       <div>
         <strong>Champion</strong>
@@ -19,6 +19,10 @@
       <div>
         <strong>Project</strong>
         <p>{{ action.project.name if action.project else "—" }}</p>
+      </div>
+      <div>
+        <strong>Owner</strong>
+        <p>{{ action.owner or "—" }}</p>
       </div>
       <div>
         <strong>Created at</strong>
@@ -36,36 +40,22 @@
         <strong>Days late</strong>
         <p>{{ days_late }}</p>
       </div>
+      <div>
+        <strong>Tags</strong>
+        {% if action.tags %}
+          <div class="tag-list">
+            {% for tag in action.tags %}
+              <span class="tag">{{ tag }}</span>
+            {% endfor %}
+          </div>
+        {% else %}
+          <p class="muted">—</p>
+        {% endif %}
+      </div>
     </div>
     <form method="post" action="/ui/actions/{{ action.id }}/delete">
       <button class="button danger" type="submit">Delete action</button>
     </form>
   </section>
-  <section class="card">
-    <h3>Subtasks</h3>
-    {% if subtasks %}
-      <table>
-        <thead>
-          <tr>
-            <th>Title</th>
-            <th>Status</th>
-            <th>Due date</th>
-            <th>Closed at</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for subtask in subtasks %}
-            <tr>
-              <td>{{ subtask.title }}</td>
-              <td>{{ subtask.status }}</td>
-              <td>{{ format_date(subtask.due_date) }}</td>
-              <td>{{ format_date(subtask.closed_at) }}</td>
-            </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    {% else %}
-      <p class="muted">No subtasks found for this action.</p>
-    {% endif %}
-  </section>
+  {% include "partials/subtasks.html" %}
 {% endblock %}
