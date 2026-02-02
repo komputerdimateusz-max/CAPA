@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from datetime import date, timedelta
 import html
+import json
+import re
 from typing import Optional
 
 import streamlit as st
@@ -26,6 +28,7 @@ from atm_tracker.actions.repo import (
     soft_delete_action,
     soft_delete_task,
     update_task,
+    update_action_text_field,
 )
 from atm_tracker.analyses.repo import list_linked_analysis_ids
 from atm_tracker.champions.repo import list_champions
@@ -79,6 +82,288 @@ WIZARD_STEPS = {
     3: "3. Tags & Context",
     4: "4. Review",
 }
+
+ANALYSIS_COLUMN_PRIORITY = [
+    "analysis",
+    "analysis_notes",
+    "rca",
+    "root_cause",
+    "rca_notes",
+    "investigation",
+    "notes",
+    "description",
+    "comment",
+]
+
+ANALYSIS_IMPACT_OPTIONS = ["Scrap", "Downtime", "Quality", "Safety", "Cost", "Customer"]
+ANALYSIS_EVIDENCE_STATUSES = ["Hypothesis", "Confirmed", "Rejected"]
+ANALYSIS_CONTAINMENT_OPTIONS = [
+    "Stop shipment",
+    "100% inspection",
+    "Sort & rework",
+    "Quarantine",
+    "Temporary parameter change",
+]
+ANALYSIS_RCA_METHODS = ["5 Why", "Ishikawa"]
+ISHIKAWA_CATEGORIES = [
+    "Man",
+    "Machine",
+    "Method",
+    "Material",
+    "Measurement",
+    "Environment",
+]
+
+ANALYSIS_BLOCK_PATTERN = re.compile(
+    r"### Analysis \(Wizard\)(?:.|\n)*?```json\s*(?P<payload>\{.*?\})\s*```",
+    re.DOTALL,
+)
+
+
+def _analysis_storage_column(action: pd.Series) -> Optional[str]:
+    columns = set(action.index)
+    for column in ANALYSIS_COLUMN_PRIORITY:
+        if column in columns:
+            return column
+    return None
+
+
+def _split_analysis_block(text: str) -> tuple[str, Optional[dict[str, object]]]:
+    if not text:
+        return "", None
+    match = ANALYSIS_BLOCK_PATTERN.search(str(text))
+    if not match:
+        return str(text).strip(), None
+    payload = None
+    payload_text = match.group("payload")
+    try:
+        payload = json.loads(payload_text)
+    except json.JSONDecodeError:
+        payload = None
+    remaining = (str(text)[: match.start()] + str(text)[match.end() :]).strip()
+    return remaining, payload
+
+
+def _init_state_value(key: str, value: object) -> None:
+    if key not in st.session_state:
+        st.session_state[key] = value
+
+
+def _build_analysis_draft(payload: Optional[dict[str, object]]) -> dict[str, object]:
+    payload = payload or {}
+    evidence = payload.get("evidence", {})
+    if not isinstance(evidence, dict):
+        evidence = {}
+    whys_payload = payload.get("whys", [])
+    whys_list: list[dict[str, str]] = []
+    if isinstance(whys_payload, list):
+        for item in whys_payload:
+            if isinstance(item, dict):
+                text = str(item.get("text", "") or item.get("why", "") or "")
+                status = str(item.get("status", "Hypothesis") or "Hypothesis")
+            else:
+                text = str(item or "")
+                status = "Hypothesis"
+            whys_list.append({"text": text, "status": status})
+    while len(whys_list) < 3:
+        whys_list.append({"text": "", "status": "Hypothesis"})
+
+    ishikawa_payload = payload.get("ishikawa", {})
+    ishikawa: dict[str, list[dict[str, str]]] = {}
+    if isinstance(ishikawa_payload, dict):
+        for category in ISHIKAWA_CATEGORIES:
+            category_payload = ishikawa_payload.get(category, [])
+            causes: list[dict[str, str]] = []
+            if isinstance(category_payload, list):
+                for entry in category_payload:
+                    if isinstance(entry, dict):
+                        cause_text = str(entry.get("cause", "") or "")
+                        confidence = str(entry.get("confidence", "Medium") or "Medium")
+                    else:
+                        cause_text = str(entry or "")
+                        confidence = "Medium"
+                    causes.append({"cause": cause_text, "confidence": confidence})
+            ishikawa[category] = causes
+    else:
+        ishikawa = {category: [] for category in ISHIKAWA_CATEGORIES}
+
+    return {
+        "problem": str(payload.get("problem", "") or ""),
+        "process": str(evidence.get("where_process", "") or payload.get("process", "") or ""),
+        "impact": payload.get("impact", []) if isinstance(payload.get("impact"), list) else [],
+        "evidence_note": str(evidence.get("note", "") or ""),
+        "evidence_status": str(evidence.get("status", "Hypothesis") or "Hypothesis"),
+        "containment": payload.get("containment", []) if isinstance(payload.get("containment"), list) else [],
+        "containment_notes": str(evidence.get("containment_notes", "") or ""),
+        "rca_method": str(payload.get("rca_method", "5why") or "5why"),
+        "whys": whys_list,
+        "root_cause_index": payload.get("root_cause_index"),
+        "ishikawa": ishikawa,
+        "step": int(payload.get("step", 1) or 1),
+    }
+
+
+def _format_analysis_block(draft: dict[str, object]) -> str:
+    problem = str(draft.get("problem", "") or "(not set)")
+    process = str(draft.get("process", "") or "(not set)")
+    impact = draft.get("impact", []) or []
+    containment = draft.get("containment", []) or []
+    containment_notes = str(draft.get("containment_notes", "") or "")
+    rca_method = str(draft.get("rca_method", "5why") or "5why")
+    evidence_note = str(draft.get("evidence_note", "") or "")
+    evidence_status = str(draft.get("evidence_status", "Hypothesis") or "Hypothesis")
+    whys = draft.get("whys", []) or []
+    root_index = draft.get("root_cause_index")
+    ishikawa = draft.get("ishikawa", {}) if isinstance(draft.get("ishikawa"), dict) else {}
+
+    root_label = "(not selected)"
+    root_text = ""
+    if isinstance(root_index, int) and 1 <= root_index <= len(whys):
+        root_label = f"Why #{root_index}"
+        root_text = str(whys[root_index - 1].get("text", "") or "")
+    elif isinstance(root_index, str) and root_index.isdigit():
+        index_int = int(root_index)
+        if 1 <= index_int <= len(whys):
+            root_label = f"Why #{index_int}"
+            root_text = str(whys[index_int - 1].get("text", "") or "")
+
+    impact_text = ", ".join(impact) if impact else "(none)"
+    containment_text = ", ".join(containment) if containment else "(none)"
+    root_text_summary = f"{root_label} – {root_text}".strip(" –") if root_text else root_label
+
+    markdown_lines = [
+        "### Analysis (Wizard)",
+        f"Problem: {problem}",
+        f"Where / Process: {process}",
+        f"Impact: [{impact_text}]",
+        f"Containment: {containment_text}",
+    ]
+    if containment_notes:
+        markdown_lines.append(f"Containment notes: {containment_notes}")
+    markdown_lines.extend(
+        [
+            f"RCA method: {'5 Why' if rca_method == '5why' else 'Ishikawa'}",
+            f"Root cause: {root_text_summary}",
+            f"Evidence: {evidence_status} — {evidence_note or '(none)'}",
+            "",
+        ]
+    )
+
+    payload = {
+        "problem": problem,
+        "impact": impact,
+        "containment": containment,
+        "rca_method": rca_method,
+        "whys": whys,
+        "root_cause_index": root_index,
+        "ishikawa": ishikawa,
+        "evidence": {
+            "note": evidence_note,
+            "status": evidence_status,
+            "where_process": process,
+            "containment_notes": containment_notes,
+        },
+    }
+    json_payload = json.dumps(payload, indent=2)
+    markdown_lines.append("```json")
+    markdown_lines.append(json_payload)
+    markdown_lines.append("```")
+    return "\n".join(markdown_lines)
+
+
+def _build_analysis_summary_html(draft: dict[str, object]) -> str:
+    problem = html.escape(str(draft.get("problem", "") or "(not set)"))
+    process = html.escape(str(draft.get("process", "") or "(not set)"))
+    impact = draft.get("impact", []) or []
+    containment = draft.get("containment", []) or []
+    containment_notes = html.escape(str(draft.get("containment_notes", "") or ""))
+    evidence_note = html.escape(str(draft.get("evidence_note", "") or "(none)"))
+    evidence_status = html.escape(str(draft.get("evidence_status", "Hypothesis") or "Hypothesis"))
+    rca_method = str(draft.get("rca_method", "5why") or "5why")
+    whys = draft.get("whys", []) or []
+    root_index = draft.get("root_cause_index")
+    ishikawa = draft.get("ishikawa", {}) if isinstance(draft.get("ishikawa"), dict) else {}
+
+    impact_text = ", ".join(html.escape(str(item)) for item in impact) if impact else "(none)"
+    containment_text = ", ".join(html.escape(str(item)) for item in containment) if containment else "(none)"
+
+    root_label = "(not selected)"
+    root_text = ""
+    if isinstance(root_index, int) and 1 <= root_index <= len(whys):
+        root_label = f"Why #{root_index}"
+        root_text = str(whys[root_index - 1].get("text", "") or "")
+    elif isinstance(root_index, str) and root_index.isdigit():
+        index_int = int(root_index)
+        if 1 <= index_int <= len(whys):
+            root_label = f"Why #{index_int}"
+            root_text = str(whys[index_int - 1].get("text", "") or "")
+    root_display = html.escape(root_label)
+    if root_text:
+        root_display = f"{root_display} – {html.escape(root_text)}"
+
+    html_parts = [
+        "<ul class='ds-list'>",
+        f"<li><strong>Problem:</strong> {problem}</li>",
+        f"<li><strong>Where / Process:</strong> {process}</li>",
+        f"<li><strong>Impact:</strong> {impact_text}</li>",
+        f"<li><strong>Containment:</strong> {containment_text}</li>",
+    ]
+    if containment_notes:
+        html_parts.append(f"<li><strong>Containment notes:</strong> {containment_notes}</li>")
+    html_parts.extend(
+        [
+            f"<li><strong>RCA method:</strong> {'5 Why' if rca_method == '5why' else 'Ishikawa'}</li>",
+            f"<li><strong>Root cause:</strong> {root_display}</li>",
+            f"<li><strong>Evidence:</strong> {evidence_status} — {evidence_note}</li>",
+        ]
+    )
+
+    if rca_method == "5why":
+        if whys:
+            html_parts.append("<li><strong>5 Whys:</strong><ol class='ds-list'>")
+            for item in whys:
+                why_text = html.escape(str(item.get("text", "") or "(blank)"))
+                why_status = html.escape(str(item.get("status", "Hypothesis") or "Hypothesis"))
+                html_parts.append(f"<li>{why_text} <em>({why_status})</em></li>")
+            html_parts.append("</ol></li>")
+        else:
+            html_parts.append("<li><strong>5 Whys:</strong> (none)</li>")
+    else:
+        html_parts.append("<li><strong>Ishikawa causes:</strong><ul class='ds-list'>")
+        for category in ISHIKAWA_CATEGORIES:
+            causes = ishikawa.get(category, [])
+            if not causes:
+                html_parts.append(f"<li>{html.escape(category)}: (none)</li>")
+                continue
+            html_parts.append(f"<li>{html.escape(category)}:<ul class='ds-list'>")
+            for cause in causes:
+                cause_text = html.escape(str(cause.get("cause", "") or "(blank)"))
+                confidence = html.escape(str(cause.get("confidence", "Medium") or "Medium"))
+                html_parts.append(f"<li>{cause_text} <em>({confidence})</em></li>")
+            html_parts.append("</ul></li>")
+        html_parts.append("</ul></li>")
+
+    html_parts.append("</ul>")
+    return "".join(html_parts)
+
+
+def _set_analysis_step(action_id: int, step: int) -> None:
+    clamped = max(1, min(4, step))
+    st.session_state["analysis_step"] = clamped
+    action_key = str(action_id)
+    if "analysis_draft" in st.session_state and action_key in st.session_state["analysis_draft"]:
+        st.session_state["analysis_draft"][action_key]["step"] = clamped
+
+
+def _clear_analysis_state(action_id: int) -> None:
+    action_key = str(action_id)
+    if "analysis_draft" in st.session_state:
+        st.session_state["analysis_draft"].pop(action_key, None)
+    pattern = re.compile(rf"_{re.escape(str(action_id))}(?:_|$)")
+    for key in list(st.session_state.keys()):
+        if key.startswith("analysis_") and pattern.search(key):
+            st.session_state.pop(key, None)
+    st.session_state["analysis_step"] = 1
 
 
 def _apply_action_details_query_params() -> None:
@@ -855,7 +1140,7 @@ def _render_action_details() -> None:
         st.divider()
         with main_grid("focus") as (main, _side):
             with main:
-                st.markdown(muted("Select an action to view details."), unsafe_allow_html=True)
+                st.markdown(muted("Select an action to add analysis."), unsafe_allow_html=True)
         footer("Action-to-Money Tracker • Transparency before impact.")
         return
 
@@ -892,6 +1177,11 @@ def _render_action_details() -> None:
     closed_at = action.get("closed_at")
     updated_at = action.get("updated_at")
     description = action.get("description", "")
+    analysis_column = _analysis_storage_column(action)
+    analysis_value = action.get(analysis_column, "") if analysis_column else ""
+    stripped_description = description
+    if analysis_column == "description":
+        stripped_description, _payload = _split_analysis_block(str(description or ""))
     linked_analysis_ids = list_linked_analysis_ids(int(action_id))
     linked_analysis_label = ", ".join(linked_analysis_ids) if linked_analysis_ids else "(none)"
 
@@ -926,11 +1216,18 @@ def _render_action_details() -> None:
             title_text = str(title or f"Action #{int(action_id)}")
             st.markdown(f"**{html.escape(title_text)}**")
             section("Description")
-            st.markdown(card(html.escape(description or "(none)")), unsafe_allow_html=True)
+            st.markdown(card(html.escape(stripped_description or "(none)")), unsafe_allow_html=True)
             _render_tasks_section(
                 action_id=int(action_id),
                 team_ids=team_ids,
                 champion_options=champion_options,
+            )
+            _render_analysis_section(
+                action_id=int(action_id),
+                action=action,
+                actions_df=actions_df,
+                analysis_column=analysis_column,
+                analysis_value=analysis_value,
             )
         with side:
             section("Action summary")
@@ -944,6 +1241,253 @@ def _render_action_details() -> None:
                 st.session_state["flash_action_deleted"] = True
                 st.rerun()
     footer("Action-to-Money Tracker • Transparency before impact.")
+
+
+def _render_analysis_section(
+    action_id: int,
+    action: pd.Series,
+    actions_df: pd.DataFrame,
+    analysis_column: Optional[str],
+    analysis_value: object,
+) -> None:
+    section("🧠 Analysis")
+
+    if analysis_column is None:
+        st.error(
+            "No suitable text column exists to store analysis. "
+            "Add a text column such as notes or description to enable analysis persistence."
+        )
+        return
+
+    action_key = str(action_id)
+    base_text, payload = _split_analysis_block(str(analysis_value or ""))
+
+    if "analysis_draft" not in st.session_state:
+        st.session_state["analysis_draft"] = {}
+    if action_key not in st.session_state["analysis_draft"]:
+        draft = _build_analysis_draft(payload)
+        draft["base_text"] = base_text
+        st.session_state["analysis_draft"][action_key] = draft
+    else:
+        draft = st.session_state["analysis_draft"][action_key]
+        draft.setdefault("base_text", base_text)
+
+    if st.session_state.get("analysis_action_id") != action_id:
+        st.session_state["analysis_action_id"] = action_id
+        _set_analysis_step(action_id, int(draft.get("step", 1) or 1))
+
+    current_step = int(st.session_state.get("analysis_step", 1) or 1)
+
+    st.progress(current_step / 4)
+    step_labels = [
+        "Problem definition",
+        "Containment",
+        "Root cause",
+        "Review & save",
+    ]
+    step_cols = st.columns(4)
+    for idx, label in enumerate(step_labels, start=1):
+        step_cols[idx - 1].markdown(f"**{label}**" if idx == current_step else label)
+
+    if st.button("Reset analysis draft", key=f"analysis_reset_{action_id}"):
+        _clear_analysis_state(action_id)
+        st.rerun()
+
+    st.divider()
+
+    line_options: list[str] = []
+    if not actions_df.empty and "line" in actions_df.columns:
+        line_options = sorted(
+            {
+                str(value).strip()
+                for value in actions_df["line"].dropna().tolist()
+                if str(value).strip()
+            }
+        )
+
+    if current_step == 1:
+        problem_key = f"analysis_problem_{action_id}"
+        _init_state_value(problem_key, draft.get("problem", ""))
+        problem_value = st.text_input("Problem statement", key=problem_key)
+
+        process_value = ""
+        if line_options:
+            process_key = f"analysis_process_{action_id}"
+            process_options = ["(not set)"] + line_options + ["Other (type manually)"]
+            default_process = draft.get("process", "")
+            if default_process not in process_options:
+                default_process = "Other (type manually)" if default_process else "(not set)"
+            _init_state_value(process_key, default_process)
+            selection = st.selectbox("Where / Process", options=process_options, key=process_key)
+            if selection == "Other (type manually)":
+                custom_key = f"analysis_process_custom_{action_id}"
+                custom_default = draft.get("process", "")
+                _init_state_value(custom_key, custom_default if custom_default not in process_options else "")
+                process_value = st.text_input("Specify process", key=custom_key)
+            elif selection != "(not set)":
+                process_value = selection
+        else:
+            process_key = f"analysis_process_{action_id}"
+            _init_state_value(process_key, draft.get("process", ""))
+            process_value = st.text_input("Where / Process", key=process_key)
+
+        impact_key = f"analysis_impact_{action_id}"
+        _init_state_value(impact_key, draft.get("impact", []))
+        impact_value = chip_toggle_group("Impact chips", ANALYSIS_IMPACT_OPTIONS, impact_key, columns=3)
+
+        evidence_note_key = f"analysis_evidence_note_{action_id}"
+        _init_state_value(evidence_note_key, draft.get("evidence_note", ""))
+        evidence_note_value = st.text_input("Evidence note", key=evidence_note_key)
+
+        evidence_status_key = f"analysis_evidence_status_{action_id}"
+        _init_state_value(evidence_status_key, draft.get("evidence_status", "Hypothesis"))
+        evidence_status_value = chip_single_select(
+            "Evidence status",
+            ANALYSIS_EVIDENCE_STATUSES,
+            evidence_status_key,
+            columns=3,
+        )
+
+        draft.update(
+            {
+                "problem": problem_value,
+                "process": process_value,
+                "impact": impact_value,
+                "evidence_note": evidence_note_value,
+                "evidence_status": evidence_status_value,
+            }
+        )
+
+    elif current_step == 2:
+        containment_key = f"analysis_containment_{action_id}"
+        _init_state_value(containment_key, draft.get("containment", []))
+        containment_value = chip_toggle_group(
+            "Containment actions",
+            ANALYSIS_CONTAINMENT_OPTIONS,
+            containment_key,
+            columns=2,
+        )
+
+        containment_notes_key = f"analysis_containment_notes_{action_id}"
+        _init_state_value(containment_notes_key, draft.get("containment_notes", ""))
+        containment_notes_value = st.text_area("Containment notes", key=containment_notes_key, height=120)
+
+        draft.update(
+            {
+                "containment": containment_value,
+                "containment_notes": containment_notes_value,
+            }
+        )
+
+    elif current_step == 3:
+        method_key = f"analysis_rca_method_{action_id}"
+        default_method = "5 Why" if draft.get("rca_method") == "5why" else "Ishikawa"
+        _init_state_value(method_key, default_method)
+        method_label = st.radio(
+            "RCA method",
+            ANALYSIS_RCA_METHODS,
+            key=method_key,
+            horizontal=True,
+        )
+        rca_method = "5why" if method_label == "5 Why" else "ishikawa"
+        draft["rca_method"] = rca_method
+
+        if rca_method == "5why":
+            whys = draft.get("whys", []) or []
+            root_key = f"analysis_root_cause_{action_id}"
+            _init_state_value(root_key, draft.get("root_cause_index"))
+            for idx, item in enumerate(whys):
+                st.markdown(f"**Why #{idx + 1}**")
+                text_key = f"analysis_why_text_{action_id}_{idx}"
+                _init_state_value(text_key, item.get("text", ""))
+                why_text = st.text_input(f"Why #{idx + 1} statement", key=text_key)
+
+                status_key = f"analysis_why_status_{action_id}_{idx}"
+                _init_state_value(status_key, item.get("status", "Hypothesis"))
+                why_status = chip_single_select(
+                    "Evidence status",
+                    ANALYSIS_EVIDENCE_STATUSES,
+                    status_key,
+                    columns=3,
+                )
+                whys[idx] = {"text": why_text, "status": why_status}
+
+                if st.button("🎯 Mark Root Cause", key=f"analysis_root_select_{action_id}_{idx}"):
+                    st.session_state[root_key] = idx + 1
+
+                selected_root = st.session_state.get(root_key)
+                if selected_root == idx + 1:
+                    st.caption("Root cause selected ✅")
+
+                st.divider()
+
+            if st.button("➕ Add next Why", key=f"analysis_add_why_{action_id}"):
+                whys.append({"text": "", "status": "Hypothesis"})
+                new_idx = len(whys) - 1
+                _init_state_value(f"analysis_why_text_{action_id}_{new_idx}", "")
+                _init_state_value(f"analysis_why_status_{action_id}_{new_idx}", "Hypothesis")
+
+            draft["whys"] = whys
+            draft["root_cause_index"] = st.session_state.get(root_key)
+
+        else:
+            ishikawa = draft.get("ishikawa", {}) or {category: [] for category in ISHIKAWA_CATEGORIES}
+            tabs = st.tabs(ISHIKAWA_CATEGORIES)
+            for category, tab in zip(ISHIKAWA_CATEGORIES, tabs):
+                with tab:
+                    causes = ishikawa.get(category, [])
+                    if causes:
+                        for idx, cause in enumerate(causes):
+                            cause_text = str(cause.get("cause", "") or "")
+                            st.markdown(card(f"<strong>{html.escape(cause_text or '(blank)')}</strong>"), unsafe_allow_html=True)
+                            conf_key = f"analysis_ishikawa_conf_{action_id}_{category}_{idx}"
+                            _init_state_value(conf_key, cause.get("confidence", "Medium"))
+                            confidence = chip_single_select(
+                                f"Confidence ({category} #{idx + 1})",
+                                ["Low", "Medium", "High"],
+                                conf_key,
+                                columns=3,
+                            )
+                            causes[idx]["confidence"] = confidence
+                            st.divider()
+                    else:
+                        st.markdown(muted("No causes yet."), unsafe_allow_html=True)
+
+                    new_key = f"analysis_ishikawa_new_{action_id}_{category}"
+                    _init_state_value(new_key, "")
+                    new_cause = st.text_input("Add cause", key=new_key)
+                    if st.button("Add cause", key=f"analysis_ishikawa_add_{action_id}_{category}"):
+                        if new_cause.strip():
+                            causes.append({"cause": new_cause.strip(), "confidence": "Medium"})
+                            st.session_state[new_key] = ""
+
+                    ishikawa[category] = causes
+
+            draft["ishikawa"] = ishikawa
+
+    else:
+        summary_html = _build_analysis_summary_html(draft)
+        st.markdown(card(summary_html), unsafe_allow_html=True)
+
+        save_label = "✅ Save analysis to action"
+        if st.button(save_label, key=f"analysis_save_{action_id}"):
+            base_text = str(draft.get("base_text", "") or "").strip()
+            analysis_block = _format_analysis_block(draft)
+            updated_text = f"{base_text}\n\n{analysis_block}" if base_text else analysis_block
+            update_action_text_field(action_id, analysis_column, updated_text)
+            draft["base_text"] = base_text
+            st.success("Analysis saved to action ✅")
+
+        if st.button("Back to Action Details", key=f"analysis_back_to_details_{action_id}"):
+            _queue_action_details(action_id)
+
+    nav_cols = st.columns(3)
+    if current_step > 1:
+        if nav_cols[0].button("⬅️ Back", key=f"analysis_nav_back_{action_id}"):
+            _set_analysis_step(action_id, current_step - 1)
+    if current_step < 4:
+        if nav_cols[2].button("Next ➡️", key=f"analysis_nav_next_{action_id}"):
+            _set_analysis_step(action_id, current_step + 1)
 
 
 def _render_tasks_section(
