@@ -1,0 +1,32 @@
+<div id="actions-table">
+  {% if actions %}
+    <table>
+      <thead>
+        <tr>
+          <th>Title</th>
+          <th>Status</th>
+          <th>Champion</th>
+          <th>Project</th>
+          <th>Due date</th>
+          <th>Closed at</th>
+          <th>Days late</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for action in actions %}
+          <tr>
+            <td><a href="/ui/actions/{{ action.id }}">{{ action.title }}</a></td>
+            <td>{{ action.status }}</td>
+            <td>{{ action.champion }}</td>
+            <td>{{ action.project }}</td>
+            <td>{{ action.due_date }}</td>
+            <td>{{ action.closed_at }}</td>
+            <td>{{ action.days_late }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="muted">No actions available.</p>
+  {% endif %}
+</div>

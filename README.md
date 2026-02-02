@@ -31,6 +31,32 @@ It’s the missing layer that answers one question:
 
 ---
 
+## Run the backend (FastAPI)
+
+```bash
+cd backend
+python -m venv .venv
+source .venv/bin/activate
+pip install -e .[dev]
+uvicorn app.main:app --reload
+```
+
+## Run Streamlit in API mode
+
+**Windows CMD**
+```cmd
+set USE_API=true
+set API_BASE_URL=http://127.0.0.1:8000
+streamlit run app.py
+```
+
+**PowerShell**
+```powershell
+$env:USE_API="true"
+$env:API_BASE_URL="http://127.0.0.1:8000"
+streamlit run app.py
+```
+
 ## Data Inputs (MVP)
 
 ### 1) Actions (CAPA)
@@ -62,4 +88,3 @@ Detailed formulas live in: `docs/02_kpis_formulas.md`
 ---
 
 ## Repo Structure (planned)
-

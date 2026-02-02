@@ -1,0 +1,42 @@
+{% extends "layout.html" %}
+{% block content %}
+  <section class="card">
+    <div class="card-header">
+      <h2>📋 Actions</h2>
+      <button
+        class="button"
+        hx-get="/ui/actions/table"
+        hx-target="#actions-table"
+        hx-swap="outerHTML"
+      >
+        Refresh
+      </button>
+    </div>
+    {% if deleted %}
+      <div class="toast success">Action deleted.</div>
+    {% endif %}
+    <div class="kpi-grid">
+      <div class="kpi-card">
+        <span class="kpi-label">Open actions</span>
+        <span class="kpi-value">{{ kpi.open_count }}</span>
+      </div>
+      <div class="kpi-card">
+        <span class="kpi-label">Overdue actions</span>
+        <span class="kpi-value">{{ kpi.overdue_count }}</span>
+      </div>
+      <div class="kpi-card">
+        <span class="kpi-label">On-time close rate</span>
+        <span class="kpi-value">{{ "%.0f"|format(kpi.on_time_close_rate) }}%</span>
+      </div>
+      <div class="kpi-card">
+        <span class="kpi-label">Avg time to close (days)</span>
+        <span class="kpi-value">{{ "%.1f"|format(kpi.avg_time_to_close_days) }}</span>
+      </div>
+      <div class="kpi-card">
+        <span class="kpi-label">Sum days late</span>
+        <span class="kpi-value">{{ kpi.sum_days_late }}</span>
+      </div>
+    </div>
+    {% include "partials/actions_table.html" %}
+  </section>
+{% endblock %}
