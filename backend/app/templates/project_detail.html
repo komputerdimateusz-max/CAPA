@@ -1,0 +1,63 @@
+{% extends "layout.html" %}
+{% block content %}
+  <section class="card">
+    <div class="card-header">
+      <div>
+        <h2>📌 {{ project.name }}</h2>
+        <p class="muted">
+          Status: {{ project.status or "—" }} · Due: {{ format_date(project.due_date) }}
+        </p>
+      </div>
+      <div class="button-row">
+        <a class="button secondary" href="/ui/actions?project_id={{ project.id }}">Open full Actions list</a>
+      </div>
+    </div>
+    {% set kpi_cards = [
+      {"label": "Open actions", "value": kpi.open_count},
+      {"label": "Overdue actions", "value": kpi.overdue_count},
+      {"label": "On-time close rate", "value": "%.0f"|format(kpi.on_time_close_rate) ~ "%"},
+      {"label": "Avg time to close (days)", "value": "%.1f"|format(kpi.avg_time_to_close_days)},
+      {"label": "Sum days late", "value": kpi.sum_days_late},
+    ] %}
+    {% include "partials/kpi_cards.html" %}
+    <div class="card">
+      <div class="card-header">
+        <h3>Related actions</h3>
+        <div class="button-row">
+          <button
+            class="button secondary"
+            hx-get="/ui/projects/{{ project.id }}/_table"
+            hx-target="#project-actions-table"
+            hx-swap="outerHTML"
+          >
+            Refresh
+          </button>
+        </div>
+      </div>
+      {% from "partials/filters_bar.html" import filter_bar %}
+      {% call filter_bar("/ui/projects/" ~ project.id, "#project-actions-table", "/ui/projects/" ~ project.id ~ "/_table") %}
+        <input type="hidden" name="page" value="1" />
+        <label class="checkbox">
+          <input type="checkbox" name="only_open" value="1" {% if filters.only_open %}checked{% endif %} />
+          Only open
+        </label>
+        <label class="checkbox">
+          <input type="checkbox" name="only_overdue" value="1" {% if filters.only_overdue %}checked{% endif %} />
+          Only overdue
+        </label>
+        <label>
+          Page size
+          <select name="page_size">
+            {% for size in [10, 25, 50, 100] %}
+              <option value="{{ size }}" {% if filters.page_size == size %}selected{% endif %}>{{ size }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <div class="form-actions">
+          <button class="button secondary" type="submit">Apply filters</button>
+        </div>
+      {% endcall %}
+      {% include "partials/project_actions_table.html" %}
+    </div>
+  </section>
+{% endblock %}

@@ -1,0 +1,32 @@
+<div id="projects-table">
+  {% if projects %}
+    <table>
+      <thead>
+        <tr>
+          <th>Project</th>
+          <th>Status</th>
+          <th>Due date</th>
+          <th>Open actions</th>
+          <th>Overdue actions</th>
+          <th>Total days late</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for rollup in projects %}
+          <tr>
+            <td><a href="/ui/projects/{{ rollup.project.id }}">{{ rollup.project.name }}</a></td>
+            <td>{{ rollup.project.status or "—" }}</td>
+            <td>{{ format_date(rollup.project.due_date) }}</td>
+            <td>{{ rollup.open_actions }}</td>
+            <td>{{ rollup.overdue_actions }}</td>
+            <td>{{ rollup.sum_days_late }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% from "partials/pagination.html" import render_pagination %}
+    {{ render_pagination(pagination, filters, "/ui/projects/_table", "#projects-table", query_builder, "projects") }}
+  {% else %}
+    <p class="muted">No projects match these filters.</p>
+  {% endif %}
+</div>

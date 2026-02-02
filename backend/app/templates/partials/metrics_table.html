@@ -1,0 +1,32 @@
+<div id="metrics-table">
+  {% if rows %}
+    <table>
+      <thead>
+        <tr>
+          <th>Date</th>
+          <th>Total actions</th>
+          <th>Open actions</th>
+          <th>Overdue actions</th>
+          <th>On-time close rate</th>
+          <th>Avg time to close (days)</th>
+          <th>Sum days late</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in rows %}
+          <tr>
+            <td>{{ row.date }}</td>
+            <td>{{ row.total_actions }}</td>
+            <td>{{ row.open_count }}</td>
+            <td>{{ row.overdue_count }}</td>
+            <td>{{ "%.0f"|format(row.on_time_close_rate) }}%</td>
+            <td>{{ "%.1f"|format(row.avg_time_to_close_days) }}</td>
+            <td>{{ row.sum_days_late }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="muted">No KPI data for the selected range.</p>
+  {% endif %}
+</div>

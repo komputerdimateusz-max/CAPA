@@ -94,7 +94,35 @@
 
 ---
 
-### 3) KPI Dashboard (Streamlit: `atm_tracker/kpi_dashboard/ui.py`)
+### 3) Projects (Streamlit: `atm_tracker/projects/ui.py`)
+**Feature summary**
+- Project list with rollups (open/overdue actions, days late).
+- Project details with KPI cards and related actions.
+
+**Inputs / filters**
+- Search by name, status, sort by due date/open actions, pagination.
+- Project detail filters for only open/overdue actions.
+
+**Outputs / tables / charts**
+- Project list table (name, status, due, rollups).
+- Project detail KPIs + related actions table.
+
+**Data sources**
+- `backend/app/repositories/projects.py` + `backend/app/repositories/actions.py`.
+- KPI rollups via `backend/app/services/projects.py`.
+
+**Business rules**
+- Days late and KPI metrics reuse core Actions logic (subtask-aware).
+
+**UI target route**
+- `/ui/projects` (list + filters + pagination)
+- `/ui/projects/{id}` (detail + actions)
+
+**Migration status**: ✅ **Completed**
+
+---
+
+### 4) KPI Dashboard (Streamlit: `atm_tracker/kpi_dashboard/ui.py`)
 **Feature summary**
 - Global KPI summary for actions (open/overdue/closed/on-time, days late).
 - Filters for project, champion, status, search, date range.
@@ -115,11 +143,14 @@
 - Ensures KPI counts align with action status rules.
 
 **UI target route**
-- `/ui/kpi`
+- `/ui/kpi` (MVP table view; charts pending)
+- `/ui/explorer` (MVP table view; charts pending)
 
 **API/service dependencies**
 - `backend/app/repositories/actions.py`
 - `backend/app/services/metrics.py`
+
+**Migration status**: 🚧 **In progress** (MVP tables shipped; charts pending)
 
 **Migration complexity**: **M/L** (charting + insight logic)
 
@@ -128,7 +159,7 @@
 
 ---
 
-### 4) Champions (Streamlit: `atm_tracker/champions/ui.py`)
+### 5) Champions (Streamlit: `atm_tracker/champions/ui.py`)
 **Feature summary**
 - Champion ranking based on actions and subtasks.
 - Drill-down into action and analysis contributors.
@@ -161,6 +192,11 @@
 - `backend/app/repositories/champions.py`
 - `backend/app/services/scoring.py` (or similar)
 
+**Migration notes**
+- Current FastAPI UI scoring is actions-only (analyses scoring will be added when analyses are migrated).
+
+**Migration status**: ✅ **Completed** (actions-only scoring; see note above)
+
 **Migration complexity**: **L** (ranking logic + drill-down + audit log)
 
 **Dependencies**
@@ -169,7 +205,7 @@
 
 ---
 
-### 5) Global Settings (Streamlit: `atm_tracker/settings/ui.py`)
+### 6) Global Settings (Streamlit: `atm_tracker/settings/ui.py`)
 **Feature summary**
 - Manage Champions and Projects (CRUD with soft delete).
 

@@ -1,0 +1,56 @@
+{% extends "layout.html" %}
+{% block content %}
+  <section class="card">
+    <div class="card-header">
+      <h2>📁 Projects</h2>
+      <div class="button-row">
+        <button
+          class="button secondary"
+          hx-get="/ui/projects/_table"
+          hx-target="#projects-table"
+          hx-swap="outerHTML"
+        >
+          Refresh
+        </button>
+      </div>
+    </div>
+    {% from "partials/filters_bar.html" import filter_bar %}
+    {% call filter_bar("/ui/projects", "#projects-table", "/ui/projects/_table") %}
+      <input type="hidden" name="page" value="1" />
+      <label>
+        Search
+        <input type="text" name="q" value="{{ filters.q }}" placeholder="Project name" />
+      </label>
+      <label>
+        Status
+        <select name="status">
+          <option value="">All statuses</option>
+          {% for option in status_options %}
+            <option value="{{ option }}" {% if filters.status == option %}selected{% endif %}>{{ option }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>
+        Sort
+        <select name="sort">
+          <option value="">Default</option>
+          {% for value, label in sort_options %}
+            <option value="{{ value }}" {% if filters.sort == value %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>
+        Page size
+        <select name="page_size">
+          {% for size in [10, 25, 50, 100] %}
+            <option value="{{ size }}" {% if filters.page_size == size %}selected{% endif %}>{{ size }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <div class="form-actions">
+        <button class="button secondary" type="submit">Apply filters</button>
+      </div>
+    {% endcall %}
+    {% include "partials/projects_table.html" %}
+  </section>
+{% endblock %}

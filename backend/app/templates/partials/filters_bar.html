@@ -1,0 +1,15 @@
+{% macro filter_bar(action, target_id=None, hx_action=None) %}
+  <form
+    class="filter-grid"
+    method="get"
+    action="{{ action }}"
+    {% if target_id %}
+      hx-get="{{ hx_action or action }}"
+      hx-target="{{ target_id }}"
+      hx-swap="outerHTML"
+      hx-push-url="true"
+    {% endif %}
+  >
+    {{ caller() }}
+  </form>
+{% endmacro %}

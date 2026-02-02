@@ -1,0 +1,42 @@
+{% macro render_pagination(pagination, filters, endpoint, target_id, query_builder, label) %}
+  <div class="pagination">
+    <div class="muted">
+      Page {{ pagination.page }} of {{ pagination.total_pages }} · {{ pagination.total }} {{ label }}
+    </div>
+    <div class="button-row">
+      {% set base_query = query_builder(filters) %}
+      {% if pagination.page > 1 %}
+        {% if base_query %}
+          {% set prev_query = base_query ~ "&page=" ~ (pagination.page - 1) %}
+        {% else %}
+          {% set prev_query = "page=" ~ (pagination.page - 1) %}
+        {% endif %}
+        <a
+          class="button secondary"
+          hx-get="{{ endpoint }}?{{ prev_query }}"
+          hx-target="{{ target_id }}"
+          hx-swap="outerHTML"
+          hx-push-url="true"
+        >
+          Previous
+        </a>
+      {% endif %}
+      {% if pagination.page < pagination.total_pages %}
+        {% if base_query %}
+          {% set next_query = base_query ~ "&page=" ~ (pagination.page + 1) %}
+        {% else %}
+          {% set next_query = "page=" ~ (pagination.page + 1) %}
+        {% endif %}
+        <a
+          class="button secondary"
+          hx-get="{{ endpoint }}?{{ next_query }}"
+          hx-target="{{ target_id }}"
+          hx-swap="outerHTML"
+          hx-push-url="true"
+        >
+          Next
+        </a>
+      {% endif %}
+    </div>
+  </div>
+{% endmacro %}
