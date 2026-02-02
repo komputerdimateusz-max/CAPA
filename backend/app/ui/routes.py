@@ -197,36 +197,36 @@ def _render_subtasks(
     )
 
 
-@router.get("", response_class=HTMLResponse)
-def ui_index(request: Request) -> HTMLResponse:
+@router.get("", response_class=HTMLResponse, response_model=None)
+def ui_index(request: Request):
     return templates.TemplateResponse("ui_index.html", {"request": request})
 
 
-@router.get("/projects", response_class=HTMLResponse)
-def projects_placeholder(request: Request) -> HTMLResponse:
+@router.get("/projects", response_class=HTMLResponse, response_model=None)
+def projects_placeholder(request: Request):
     return templates.TemplateResponse(
         "ui_placeholder.html",
         {"request": request, "title": "Projects", "message": "Projects UI is coming next."},
     )
 
 
-@router.get("/champions", response_class=HTMLResponse)
-def champions_placeholder(request: Request) -> HTMLResponse:
+@router.get("/champions", response_class=HTMLResponse, response_model=None)
+def champions_placeholder(request: Request):
     return templates.TemplateResponse(
         "ui_placeholder.html",
         {"request": request, "title": "Champions", "message": "Champions UI is coming next."},
     )
 
 
-@router.get("/explorer", response_class=HTMLResponse)
-def explorer_placeholder(request: Request) -> HTMLResponse:
+@router.get("/explorer", response_class=HTMLResponse, response_model=None)
+def explorer_placeholder(request: Request):
     return templates.TemplateResponse(
         "ui_placeholder.html",
         {"request": request, "title": "Explorer", "message": "Explorer UI is coming next."},
     )
 
 
-@router.get("/actions", response_class=HTMLResponse)
+@router.get("/actions", response_class=HTMLResponse, response_model=None)
 def actions_list(
     request: Request,
     deleted: int | None = None,
@@ -241,7 +241,7 @@ def actions_list(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=25, ge=1, le=200),
     db: Session = Depends(get_db),
-) -> HTMLResponse:
+):
     parsed_tags = _parse_tags(tags)
     table_data = _load_actions_table(
         db,
@@ -297,7 +297,7 @@ def actions_list(
     )
 
 
-@router.get("/actions/_table", response_class=HTMLResponse)
+@router.get("/actions/_table", response_class=HTMLResponse, response_model=None)
 def actions_table(
     request: Request,
     status_filters: list[str] | None = Query(default=None, alias="status"),
@@ -311,7 +311,7 @@ def actions_table(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=25, ge=1, le=200),
     db: Session = Depends(get_db),
-) -> HTMLResponse:
+):
     parsed_tags = _parse_tags(tags)
     table_data = _load_actions_table(
         db,
@@ -349,8 +349,8 @@ def actions_table(
     )
 
 
-@router.get("/actions/{action_id}", response_class=HTMLResponse)
-def action_detail(action_id: int, request: Request, db: Session = Depends(get_db)) -> HTMLResponse:
+@router.get("/actions/{action_id}", response_class=HTMLResponse, response_model=None)
+def action_detail(action_id: int, request: Request, db: Session = Depends(get_db)):
     action = actions_repo.get_action(db, action_id)
     if not action:
         raise HTTPException(status_code=404, detail="Action not found")
@@ -368,7 +368,7 @@ def action_detail(action_id: int, request: Request, db: Session = Depends(get_db
     )
 
 
-@router.post("/actions")
+@router.post("/actions", response_model=None)
 def create_action(
     request: Request,
     title: str = Form(...),
@@ -380,7 +380,7 @@ def create_action(
     due_date: str | None = Form(None),
     tags: str | None = Form(None),
     db: Session = Depends(get_db),
-) -> RedirectResponse:
+):
     action = Action(
         title=title,
         description=description or "",
@@ -396,8 +396,8 @@ def create_action(
     return RedirectResponse(url=f"/ui/actions/{action.id}", status_code=303)
 
 
-@router.post("/actions/{action_id}/delete")
-def delete_action(action_id: int, db: Session = Depends(get_db)) -> RedirectResponse:
+@router.post("/actions/{action_id}/delete", response_model=None)
+def delete_action(action_id: int, db: Session = Depends(get_db)):
     action = actions_repo.get_action(db, action_id)
     if not action:
         raise HTTPException(status_code=404, detail="Action not found")
@@ -405,14 +405,14 @@ def delete_action(action_id: int, db: Session = Depends(get_db)) -> RedirectResp
     return RedirectResponse(url="/ui/actions?deleted=1", status_code=303)
 
 
-@router.post("/actions/{action_id}/subtasks", response_class=HTMLResponse)
+@router.post("/actions/{action_id}/subtasks", response_model=None)
 def create_subtask(
     action_id: int,
     request: Request,
     title: str = Form(...),
     due_date: str | None = Form(None),
     db: Session = Depends(get_db),
-) -> HTMLResponse | RedirectResponse:
+):
     action = actions_repo.get_action(db, action_id)
     if not action:
         raise HTTPException(status_code=404, detail="Action not found")
@@ -430,7 +430,7 @@ def create_subtask(
     return RedirectResponse(url=f"/ui/actions/{action_id}", status_code=303)
 
 
-@router.patch("/actions/{action_id}/subtasks/{subtask_id}", response_class=HTMLResponse)
+@router.patch("/actions/{action_id}/subtasks/{subtask_id}", response_model=None)
 def update_subtask(
     action_id: int,
     subtask_id: int,
@@ -440,7 +440,7 @@ def update_subtask(
     due_date: str | None = Form(None),
     close: str | None = Form(None),
     db: Session = Depends(get_db),
-) -> HTMLResponse | RedirectResponse:
+):
     action = actions_repo.get_action(db, action_id)
     if not action:
         raise HTTPException(status_code=404, detail="Action not found")
@@ -469,13 +469,13 @@ def update_subtask(
     return RedirectResponse(url=f"/ui/actions/{action_id}", status_code=303)
 
 
-@router.post("/actions/{action_id}/subtasks/{subtask_id}/delete", response_class=HTMLResponse)
+@router.post("/actions/{action_id}/subtasks/{subtask_id}/delete", response_model=None)
 def delete_subtask(
     action_id: int,
     subtask_id: int,
     request: Request,
     db: Session = Depends(get_db),
-) -> HTMLResponse | RedirectResponse:
+):
     action = actions_repo.get_action(db, action_id)
     if not action:
         raise HTTPException(status_code=404, detail="Action not found")
