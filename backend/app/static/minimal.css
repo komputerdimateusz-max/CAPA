@@ -227,6 +227,32 @@ th {
   color: inherit;
 }
 
+.nav-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+}
+
+.status-pill {
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.status-ready {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.status-legacy {
+  background: #fef3c7;
+  color: #92400e;
+}
+
 .nav-card:hover {
   border-color: #cbd5f5;
   text-decoration: none;

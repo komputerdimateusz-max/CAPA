@@ -185,7 +185,7 @@ def _render_subtasks(
     request: Request,
     action: Action,
     subtasks: list[Subtask],
-) -> HTMLResponse:
+):
     return templates.TemplateResponse(
         "partials/subtasks.html",
         {
@@ -206,7 +206,11 @@ def ui_index(request: Request):
 def projects_placeholder(request: Request):
     return templates.TemplateResponse(
         "ui_placeholder.html",
-        {"request": request, "title": "Projects", "message": "Projects UI is coming next."},
+        {
+            "request": request,
+            "title": "Projects",
+            "message": "Projects UI is coming next. (Legacy in Streamlit)",
+        },
     )
 
 
@@ -214,7 +218,11 @@ def projects_placeholder(request: Request):
 def champions_placeholder(request: Request):
     return templates.TemplateResponse(
         "ui_placeholder.html",
-        {"request": request, "title": "Champions", "message": "Champions UI is coming next."},
+        {
+            "request": request,
+            "title": "Champions",
+            "message": "Champions UI is coming next. (Legacy in Streamlit)",
+        },
     )
 
 
@@ -222,7 +230,71 @@ def champions_placeholder(request: Request):
 def explorer_placeholder(request: Request):
     return templates.TemplateResponse(
         "ui_placeholder.html",
-        {"request": request, "title": "Explorer", "message": "Explorer UI is coming next."},
+        {
+            "request": request,
+            "title": "Explorer",
+            "message": "Explorer UI is coming next. (Legacy in Streamlit)",
+        },
+    )
+
+
+@router.get("/analyses", response_class=HTMLResponse, response_model=None)
+def analyses_placeholder(request: Request):
+    return templates.TemplateResponse(
+        "ui_placeholder.html",
+        {
+            "request": request,
+            "title": "Analyses",
+            "message": "Analyses UI is coming next. (Legacy in Streamlit)",
+        },
+    )
+
+
+@router.get("/settings", response_class=HTMLResponse, response_model=None)
+def settings_placeholder(request: Request):
+    return templates.TemplateResponse(
+        "ui_placeholder.html",
+        {
+            "request": request,
+            "title": "Global Settings",
+            "message": "Settings UI is coming next. (Legacy in Streamlit)",
+        },
+    )
+
+
+@router.get("/kpi", response_class=HTMLResponse, response_model=None)
+def kpi_placeholder(request: Request):
+    return templates.TemplateResponse(
+        "ui_placeholder.html",
+        {
+            "request": request,
+            "title": "KPI Dashboard",
+            "message": "KPI dashboard UI is coming next. (Legacy in Streamlit)",
+        },
+    )
+
+
+@router.get("/projects/{project_id}", response_class=HTMLResponse, response_model=None)
+def project_detail_placeholder(request: Request, project_id: int):
+    return templates.TemplateResponse(
+        "ui_placeholder.html",
+        {
+            "request": request,
+            "title": f"Project {project_id}",
+            "message": "Project details UI is coming next. (Legacy in Streamlit)",
+        },
+    )
+
+
+@router.get("/champions/{champion_id}", response_class=HTMLResponse, response_model=None)
+def champion_detail_placeholder(request: Request, champion_id: int):
+    return templates.TemplateResponse(
+        "ui_placeholder.html",
+        {
+            "request": request,
+            "title": f"Champion {champion_id}",
+            "message": "Champion details UI is coming next. (Legacy in Streamlit)",
+        },
     )
 
 
