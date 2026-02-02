@@ -65,6 +65,8 @@ def list_actions(
             stmt = stmt.order_by(Action.due_date.asc())
         elif sort == "-due_date":
             stmt = stmt.order_by(Action.due_date.desc())
+        elif sort == "created_at":
+            stmt = stmt.order_by(Action.created_at.asc())
         elif sort == "-created_at":
             stmt = stmt.order_by(Action.created_at.desc())
         else:

@@ -3,18 +3,72 @@
   <section class="card">
     <div class="card-header">
       <h2>📋 Actions</h2>
-      <button
-        class="button"
-        hx-get="/ui/actions/table"
-        hx-target="#actions-table"
-        hx-swap="outerHTML"
-      >
-        Refresh
-      </button>
+      <div class="button-row">
+        <button
+          class="button secondary"
+          hx-get="/ui/actions/_table"
+          hx-target="#actions-table"
+          hx-swap="outerHTML"
+        >
+          Refresh
+        </button>
+        <details class="inline-details">
+          <summary class="button">Create action</summary>
+          <form class="form-grid" method="post" action="/ui/actions">
+            <label>
+              Title
+              <input type="text" name="title" placeholder="Action title" required />
+            </label>
+            <label>
+              Description
+              <textarea name="description" rows="3" placeholder="Why this action matters"></textarea>
+            </label>
+            <label>
+              Owner
+              <input type="text" name="owner" placeholder="Owner name" />
+            </label>
+            <label>
+              Status
+              <select name="status">
+                {% for status in status_options %}
+                  <option value="{{ status }}">{{ status }}</option>
+                {% endfor %}
+              </select>
+            </label>
+            <label>
+              Project
+              <select name="project_id">
+                <option value="">All projects</option>
+                {% for project in projects %}
+                  <option value="{{ project.id }}">{{ project.name }}</option>
+                {% endfor %}
+              </select>
+            </label>
+            <label>
+              Champion
+              <select name="champion_id">
+                <option value="">All champions</option>
+                {% for champion in champions %}
+                  <option value="{{ champion.id }}">{{ champion.name }}</option>
+                {% endfor %}
+              </select>
+            </label>
+            <label>
+              Due date
+              <input type="date" name="due_date" />
+            </label>
+            <label>
+              Tags (comma separated)
+              <input type="text" name="tags" placeholder="scrap, downtime" />
+            </label>
+            <div class="form-actions">
+              <button class="button" type="submit">Save action</button>
+            </div>
+          </form>
+        </details>
+      </div>
     </div>
-    {% if deleted %}
-      <div class="toast success">Action deleted.</div>
-    {% endif %}
+    {% include "partials/flash.html" %}
     <div class="kpi-grid">
       <div class="kpi-card">
         <span class="kpi-label">Open actions</span>
@@ -37,6 +91,83 @@
         <span class="kpi-value">{{ kpi.sum_days_late }}</span>
       </div>
     </div>
+    <form
+      class="filter-grid"
+      method="get"
+      action="/ui/actions"
+      hx-get="/ui/actions/_table"
+      hx-target="#actions-table"
+      hx-swap="outerHTML"
+      hx-push-url="true"
+    >
+      <input type="hidden" name="page" value="1" />
+      <label>
+        Search
+        <input type="text" name="q" value="{{ filters.q }}" placeholder="Title or description" />
+      </label>
+      <label>
+        Status
+        <select name="status" multiple>
+          {% for status in status_options %}
+            <option value="{{ status }}" {% if status in filters.status %}selected{% endif %}>{{ status }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>
+        Project
+        <select name="project_id">
+          <option value="">All projects</option>
+          {% for project in projects %}
+            <option value="{{ project.id }}" {% if filters.project_id == project.id %}selected{% endif %}>
+              {{ project.name }}
+            </option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>
+        Champion
+        <select name="champion_id">
+          <option value="">All champions</option>
+          {% for champion in champions %}
+            <option value="{{ champion.id }}" {% if filters.champion_id == champion.id %}selected{% endif %}>
+              {{ champion.name }}
+            </option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>
+        Tags
+        <input type="text" name="tags" value="{{ filters.tags }}" placeholder="comma separated" />
+      </label>
+      <label>
+        Due from
+        <input type="date" name="from" value="{{ filters.from }}" />
+      </label>
+      <label>
+        Due to
+        <input type="date" name="to" value="{{ filters.to }}" />
+      </label>
+      <label>
+        Sort
+        <select name="sort">
+          <option value="">Default</option>
+          {% for value, label in sort_options %}
+            <option value="{{ value }}" {% if filters.sort == value %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>
+        Page size
+        <select name="page_size">
+          {% for size in [10, 25, 50, 100] %}
+            <option value="{{ size }}" {% if filters.page_size == size %}selected{% endif %}>{{ size }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <div class="form-actions">
+        <button class="button secondary" type="submit">Apply filters</button>
+      </div>
+    </form>
     {% include "partials/actions_table.html" %}
   </section>
 {% endblock %}

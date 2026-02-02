@@ -41,7 +41,11 @@ pip install -e .[dev]
 uvicorn app.main:app --reload
 ```
 
-## Run Streamlit in API mode
+### Primary UI (FastAPI)
+
+The production UI is served from FastAPI. Open: `http://127.0.0.1:8000/ui/actions`.
+
+### Streamlit (legacy/dev-only)
 
 **Windows CMD**
 ```cmd
