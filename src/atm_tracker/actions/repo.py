@@ -153,6 +153,34 @@ def update_status(action_id: int, status: str, closed_at: Optional[date]) -> Non
     con.close()
 
 
+def update_action_text_field(action_id: int, field: str, value: str) -> None:
+    allowed_fields = {
+        "analysis",
+        "analysis_notes",
+        "rca",
+        "root_cause",
+        "rca_notes",
+        "investigation",
+        "notes",
+        "description",
+        "comment",
+    }
+    if field not in allowed_fields:
+        raise ValueError(f"Field '{field}' is not allowed for updates.")
+    con = connect()
+    cur = con.cursor()
+    cur.execute(
+        f"""
+        UPDATE actions
+        SET {field} = ?, updated_at = datetime('now')
+        WHERE id = ?;
+        """,
+        (value, action_id),
+    )
+    con.commit()
+    con.close()
+
+
 def set_action_analysis_id(action_id: int, analysis_id: str | None) -> None:
     con = connect()
     cur = con.cursor()
