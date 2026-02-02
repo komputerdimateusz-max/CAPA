@@ -8,7 +8,17 @@ from app.db.session import get_engine
 
 
 def create_app() -> FastAPI:
-    app = FastAPI(title="CAPA Backend", version="0.1.0")
+    app = FastAPI(
+        title="CAPA Backend",
+        version="0.1.0",
+        # Ensure Swagger UI stays interactive in local development for all endpoints.
+        swagger_ui_parameters={
+            "tryItOutEnabled": True,
+            "supportedSubmitMethods": ["get", "post", "put", "patch", "delete"],
+            "persistAuthorization": True,
+            "displayRequestDuration": True,
+        },
+    )
 
     app.include_router(actions.router)
     app.include_router(projects.router)
