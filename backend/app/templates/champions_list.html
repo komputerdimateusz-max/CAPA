@@ -1,0 +1,58 @@
+{% extends "layout.html" %}
+{% block content %}
+  <section class="card">
+    <div class="card-header">
+      <h2>🏅 Champions</h2>
+      <div class="button-row">
+        <button
+          class="button secondary"
+          hx-get="/ui/champions/_table"
+          hx-target="#champions-table"
+          hx-swap="outerHTML"
+        >
+          Refresh
+        </button>
+      </div>
+    </div>
+    {% from "partials/filters_bar.html" import filter_bar %}
+    {% call filter_bar("/ui/champions", "#champions-table", "/ui/champions/_table") %}
+      <label>
+        From
+        <input type="date" name="from" value="{{ filters.from }}" />
+      </label>
+      <label>
+        To
+        <input type="date" name="to" value="{{ filters.to }}" />
+      </label>
+      <label>
+        Project
+        <select name="project_id">
+          <option value="">All projects</option>
+          {% for project in projects %}
+            <option value="{{ project.id }}" {% if filters.project_id == project.id %}selected{% endif %}>
+              {{ project.name }}
+            </option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>
+        Status scope
+        <select name="status_scope">
+          {% for value, label in status_scope_options %}
+            <option value="{{ value }}" {% if filters.status_scope == value %}selected{% endif %}>
+              {{ label }}
+            </option>
+          {% endfor %}
+        </select>
+      </label>
+      <div class="form-actions">
+        <button class="button secondary" type="submit">Apply filters</button>
+      </div>
+    {% endcall %}
+    <div class="muted">
+      Scores are computed from actions using consistent points for creation, closure, on-time bonuses,
+      and overdue penalties.
+    </div>
+    {% include "partials/champions_table.html" %}
+  </section>
+{% endblock %}

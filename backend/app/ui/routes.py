@@ -2,8 +2,6 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from pathlib import Path
-from urllib.parse import urlencode
-
 from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
@@ -17,6 +15,7 @@ from app.repositories import champions as champions_repo
 from app.repositories import projects as projects_repo
 from app.services.kpi import build_actions_kpi
 from app.services.metrics import calculate_action_days_late
+from app.ui.utils import build_action_rows, build_query_params, format_date
 
 router = APIRouter(prefix="/ui", tags=["ui"])
 
@@ -32,14 +31,6 @@ SORT_OPTIONS = (
     ("-days_late", "Days late (most first)"),
 )
 STATUS_OPTIONS = ("OPEN", "IN_PROGRESS", "BLOCKED", "CLOSED")
-
-
-def _format_date(value: date | datetime | None) -> str:
-    if value is None:
-        return "—"
-    if isinstance(value, datetime):
-        value = value.date()
-    return value.isoformat()
 
 
 def _parse_tags(tags: str | None) -> list[str] | None:
@@ -59,39 +50,6 @@ def _parse_optional_int(value: str | None) -> int | None:
     if not value:
         return None
     return int(value)
-
-
-def _build_query_params(filters: dict[str, object]) -> str:
-    cleaned = {key: value for key, value in filters.items() if value not in (None, "", [])}
-    return urlencode(cleaned, doseq=True)
-
-
-def _build_action_rows(actions: list[Action], subtasks: list[Subtask]) -> list[dict[str, object]]:
-    subtask_map: dict[int, list] = {}
-    for subtask in subtasks:
-        subtask_map.setdefault(subtask.action_id, []).append(subtask)
-
-    rows: list[dict[str, object]] = []
-    for action in actions:
-        days_late = calculate_action_days_late(action, subtask_map.get(action.id, []))
-        owner = action.owner or "—"
-        champion = action.champion.name if action.champion else "—"
-        rows.append(
-            {
-                "id": action.id,
-                "title": action.title,
-                "status": action.status,
-                "champion": champion,
-                "owner": owner,
-                "owner_display": f"{owner} / {champion}" if owner != "—" else champion,
-                "project": action.project.name if action.project else "—",
-                "due_date": _format_date(action.due_date),
-                "closed_at": _format_date(action.closed_at),
-                "days_late": days_late,
-                "tags": action.tags or [],
-            }
-        )
-    return rows
 
 
 def _load_kpi_data(
@@ -147,7 +105,7 @@ def _load_actions_table(
             offset=0,
         )
         subtasks = actions_repo.list_subtasks_for_actions(db, [action.id for action in actions])
-        rows = _build_action_rows(actions, subtasks)
+        rows = build_action_rows(actions, subtasks)
         reverse = sort == "-days_late"
         rows.sort(key=lambda row: row["days_late"], reverse=reverse)
         total = len(rows)
@@ -169,7 +127,7 @@ def _load_actions_table(
             offset=(page - 1) * page_size,
         )
         subtasks = actions_repo.list_subtasks_for_actions(db, [action.id for action in actions])
-        page_rows = _build_action_rows(actions, subtasks)
+        page_rows = build_action_rows(actions, subtasks)
 
     total_pages = max(1, (total + page_size - 1) // page_size)
     return {
@@ -192,7 +150,7 @@ def _render_subtasks(
             "request": request,
             "action": action,
             "subtasks": subtasks,
-            "format_date": _format_date,
+            "format_date": format_date,
         },
     )
 
@@ -200,42 +158,6 @@ def _render_subtasks(
 @router.get("", response_class=HTMLResponse, response_model=None)
 def ui_index(request: Request):
     return templates.TemplateResponse("ui_index.html", {"request": request})
-
-
-@router.get("/projects", response_class=HTMLResponse, response_model=None)
-def projects_placeholder(request: Request):
-    return templates.TemplateResponse(
-        "ui_placeholder.html",
-        {
-            "request": request,
-            "title": "Projects",
-            "message": "Projects UI is coming next. (Legacy in Streamlit)",
-        },
-    )
-
-
-@router.get("/champions", response_class=HTMLResponse, response_model=None)
-def champions_placeholder(request: Request):
-    return templates.TemplateResponse(
-        "ui_placeholder.html",
-        {
-            "request": request,
-            "title": "Champions",
-            "message": "Champions UI is coming next. (Legacy in Streamlit)",
-        },
-    )
-
-
-@router.get("/explorer", response_class=HTMLResponse, response_model=None)
-def explorer_placeholder(request: Request):
-    return templates.TemplateResponse(
-        "ui_placeholder.html",
-        {
-            "request": request,
-            "title": "Explorer",
-            "message": "Explorer UI is coming next. (Legacy in Streamlit)",
-        },
-    )
 
 
 @router.get("/analyses", response_class=HTMLResponse, response_model=None)
@@ -258,42 +180,6 @@ def settings_placeholder(request: Request):
             "request": request,
             "title": "Global Settings",
             "message": "Settings UI is coming next. (Legacy in Streamlit)",
-        },
-    )
-
-
-@router.get("/kpi", response_class=HTMLResponse, response_model=None)
-def kpi_placeholder(request: Request):
-    return templates.TemplateResponse(
-        "ui_placeholder.html",
-        {
-            "request": request,
-            "title": "KPI Dashboard",
-            "message": "KPI dashboard UI is coming next. (Legacy in Streamlit)",
-        },
-    )
-
-
-@router.get("/projects/{project_id}", response_class=HTMLResponse, response_model=None)
-def project_detail_placeholder(request: Request, project_id: int):
-    return templates.TemplateResponse(
-        "ui_placeholder.html",
-        {
-            "request": request,
-            "title": f"Project {project_id}",
-            "message": "Project details UI is coming next. (Legacy in Streamlit)",
-        },
-    )
-
-
-@router.get("/champions/{champion_id}", response_class=HTMLResponse, response_model=None)
-def champion_detail_placeholder(request: Request, champion_id: int):
-    return templates.TemplateResponse(
-        "ui_placeholder.html",
-        {
-            "request": request,
-            "title": f"Champion {champion_id}",
-            "message": "Champion details UI is coming next. (Legacy in Streamlit)",
         },
     )
 
@@ -364,7 +250,7 @@ def actions_list(
             "status_options": STATUS_OPTIONS,
             "sort_options": SORT_OPTIONS,
             "pagination": table_data,
-            "query_builder": _build_query_params,
+            "query_builder": build_query_params,
         },
     )
 
@@ -416,7 +302,7 @@ def actions_table(
             "actions": table_data["actions"],
             "pagination": table_data,
             "filters": filters,
-            "query_builder": _build_query_params,
+            "query_builder": build_query_params,
         },
     )
 
@@ -435,7 +321,7 @@ def action_detail(action_id: int, request: Request, db: Session = Depends(get_db
             "action": action,
             "subtasks": subtasks,
             "days_late": days_late,
-            "format_date": _format_date,
+            "format_date": format_date,
         },
     )
 

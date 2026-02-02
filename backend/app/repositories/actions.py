@@ -3,7 +3,8 @@ from __future__ import annotations
 from datetime import date
 from typing import Iterable
 
-from sqlalchemy import select, func, String
+from sqlalchemy import select, func, String, Date
+from sqlalchemy.orm import selectinload
 from sqlalchemy.orm import Session
 
 from app.models.action import Action
@@ -28,7 +29,7 @@ def list_actions(
     limit: int = 100,
     offset: int = 0,
 ) -> tuple[list[Action], int]:
-    stmt = select(Action)
+    stmt = select(Action).options(selectinload(Action.project), selectinload(Action.champion))
 
     if statuses:
         stmt = stmt.where(Action.status.in_(statuses))
@@ -77,6 +78,38 @@ def list_actions(
     stmt = stmt.limit(limit).offset(offset)
 
     return list(db.scalars(stmt).all()), total
+
+
+def list_actions_for_projects(db: Session, project_ids: list[int]) -> list[Action]:
+    if not project_ids:
+        return []
+    stmt = (
+        select(Action)
+        .options(selectinload(Action.project), selectinload(Action.champion))
+        .where(Action.project_id.in_(project_ids))
+    )
+    return list(db.scalars(stmt).all())
+
+
+def list_actions_created_between(
+    db: Session,
+    date_from: date | None,
+    date_to: date | None,
+    project_id: int | None = None,
+    champion_id: int | None = None,
+) -> list[Action]:
+    stmt = select(Action).options(selectinload(Action.project), selectinload(Action.champion))
+    created_date = func.date(Action.created_at).cast(Date)
+    if date_from:
+        stmt = stmt.where(created_date >= date_from)
+    if date_to:
+        stmt = stmt.where(created_date <= date_to)
+    if project_id is not None:
+        stmt = stmt.where(Action.project_id == project_id)
+    if champion_id is not None:
+        stmt = stmt.where(Action.champion_id == champion_id)
+    stmt = stmt.order_by(Action.created_at.asc())
+    return list(db.scalars(stmt).all())
 
 
 def get_action(db: Session, action_id: int) -> Action | None:

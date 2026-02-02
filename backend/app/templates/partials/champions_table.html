@@ -1,0 +1,42 @@
+<div id="champions-table">
+  {% if champions %}
+    <table>
+      <thead>
+        <tr>
+          <th>Champion</th>
+          <th>Total score</th>
+          <th>Closed actions points</th>
+          <th>On-time bonus</th>
+          <th>Late penalties</th>
+          <th>Aging penalties</th>
+          <th>Created points</th>
+          <th>Actions closed</th>
+          <th>Actions total</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for champion in champions %}
+          <tr>
+            <td>
+              {% if champion.champion_id %}
+                <a href="/ui/champions/{{ champion.champion_id }}">{{ champion.champion_label }}</a>
+              {% else %}
+                {{ champion.champion_label }}
+              {% endif %}
+            </td>
+            <td>{{ champion.total_score }}</td>
+            <td>{{ champion.closed_points }}</td>
+            <td>{{ champion.on_time_bonus }}</td>
+            <td>{{ champion.late_penalty }}</td>
+            <td>{{ champion.aging_penalty }}</td>
+            <td>{{ champion.created_points }}</td>
+            <td>{{ champion.actions_closed }}</td>
+            <td>{{ champion.actions_total }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="muted">No champions available for the current filters.</p>
+  {% endif %}
+</div>

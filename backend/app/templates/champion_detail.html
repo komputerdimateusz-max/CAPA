@@ -1,0 +1,140 @@
+{% extends "layout.html" %}
+{% block content %}
+  <section class="card">
+    <div class="card-header">
+      <div>
+        <h2>🏅 {{ champion.name }}</h2>
+        <p class="muted">Detailed score breakdown and contributing actions.</p>
+      </div>
+      <div class="button-row">
+        <a class="button secondary" href="/ui/champions">Back to ranking</a>
+      </div>
+    </div>
+    {% from "partials/filters_bar.html" import filter_bar %}
+    {% call filter_bar("/ui/champions/" ~ champion.id) %}
+      <label>
+        From
+        <input type="date" name="from" value="{{ filters.from }}" />
+      </label>
+      <label>
+        To
+        <input type="date" name="to" value="{{ filters.to }}" />
+      </label>
+      <label>
+        Project
+        <select name="project_id">
+          <option value="">All projects</option>
+          {% for project in projects %}
+            <option value="{{ project.id }}" {% if filters.project_id == project.id %}selected{% endif %}>
+              {{ project.name }}
+            </option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>
+        Status scope
+        <select name="status_scope">
+          {% for value, label in status_scope_options %}
+            <option value="{{ value }}" {% if filters.status_scope == value %}selected{% endif %}>
+              {{ label }}
+            </option>
+          {% endfor %}
+        </select>
+      </label>
+      <div class="form-actions">
+        <button class="button secondary" type="submit">Apply filters</button>
+      </div>
+    {% endcall %}
+    {% if summary %}
+      {% set kpi_cards = [
+        {"label": "Total score", "value": summary.total_score},
+        {"label": "Actions closed", "value": summary.actions_closed},
+        {"label": "Actions total", "value": summary.actions_total},
+        {"label": "Late actions", "value": summary.actions_late},
+      ] %}
+      {% include "partials/kpi_cards.html" %}
+      <h3>Score breakdown</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>Component</th>
+            <th>Points</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Closed action points</td>
+            <td>{{ summary.closed_points }}</td>
+          </tr>
+          <tr>
+            <td>On-time bonus</td>
+            <td>{{ summary.on_time_bonus }}</td>
+          </tr>
+          <tr>
+            <td>Late penalties</td>
+            <td>{{ summary.late_penalty }}</td>
+          </tr>
+          <tr>
+            <td>Aging penalties</td>
+            <td>{{ summary.aging_penalty }}</td>
+          </tr>
+          <tr>
+            <td>Created points</td>
+            <td>{{ summary.created_points }}</td>
+          </tr>
+        </tbody>
+      </table>
+    {% else %}
+      <p class="muted">No score data for this champion in the selected range.</p>
+    {% endif %}
+    <h3>Contributing actions</h3>
+    <div id="champion-actions">
+      {% if action_scores %}
+        <table>
+          <thead>
+            <tr>
+              <th>Action</th>
+              <th>Points</th>
+              <th>Due date</th>
+              <th>Closed at</th>
+              <th>On-time</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for action in action_scores %}
+              <tr>
+                <td><a href="/ui/actions/{{ action.id }}">{{ action.title }}</a></td>
+                <td>{{ action.points }}</td>
+                <td>{{ action.due_date }}</td>
+                <td>{{ action.closed_at }}</td>
+                <td>
+                  {% if action.on_time is none %}
+                    —
+                  {% elif action.on_time %}
+                    Yes
+                  {% else %}
+                    No
+                  {% endif %}
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% else %}
+        <p class="muted">No actions found for this champion.</p>
+      {% endif %}
+    </div>
+    <div class="card">
+      <h3>Explain score</h3>
+      <ul>
+        <li>+1 point for every action created.</li>
+        <li>+3 points for closing an action.</li>
+        <li>+2 bonus points for closing on or before the due date.</li>
+        <li>-2 points for closing after the due date.</li>
+        <li>-1 point once an action exceeds 14 days late.</li>
+        <li>-3 additional points once an action exceeds 30 days late.</li>
+      </ul>
+      <p class="muted">Scores are deterministic and computed from current action data.</p>
+    </div>
+  </section>
+{% endblock %}

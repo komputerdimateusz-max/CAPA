@@ -1,0 +1,10 @@
+{% if kpi_cards %}
+  <div class="kpi-grid">
+    {% for card in kpi_cards %}
+      <div class="kpi-card">
+        <span class="kpi-label">{{ card.label }}</span>
+        <span class="kpi-value">{{ card.value }}</span>
+      </div>
+    {% endfor %}
+  </div>
+{% endif %}

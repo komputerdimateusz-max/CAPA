@@ -1,0 +1,35 @@
+{% extends "layout.html" %}
+{% block content %}
+  <section class="card">
+    <div class="card-header">
+      <h2>🧭 Explorer</h2>
+      <div class="button-row">
+        <button
+          class="button secondary"
+          hx-get="/ui/explorer/_table"
+          hx-target="#metrics-table"
+          hx-swap="outerHTML"
+        >
+          Refresh
+        </button>
+      </div>
+    </div>
+    <p class="muted">MVP table view of daily action KPIs. Charts will be added later.</p>
+    {% from "partials/filters_bar.html" import filter_bar %}
+    {% call filter_bar("/ui/explorer", "#metrics-table", "/ui/explorer/_table") %}
+      <label>
+        From
+        <input type="date" name="from" value="{{ filters.from }}" />
+      </label>
+      <label>
+        To
+        <input type="date" name="to" value="{{ filters.to }}" />
+      </label>
+      <div class="form-actions">
+        <button class="button secondary" type="submit">Apply filters</button>
+      </div>
+    {% endcall %}
+    {% include "partials/metrics_table.html" %}
+    <p class="muted">TODO: add Chart.js/Plotly trend charts and axis formatting.</p>
+  </section>
+{% endblock %}

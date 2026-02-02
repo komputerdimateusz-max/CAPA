@@ -1,0 +1,46 @@
+<div id="project-actions-table">
+  {% if actions %}
+    <table>
+      <thead>
+        <tr>
+          <th>Title</th>
+          <th>Project</th>
+          <th>Status</th>
+          <th>Due date</th>
+          <th>Days late</th>
+          <th>Owner / Champion</th>
+          <th>Closed at</th>
+          <th>Tags</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for action in actions %}
+          <tr>
+            <td><a href="/ui/actions/{{ action.id }}">{{ action.title }}</a></td>
+            <td>{{ action.project }}</td>
+            <td><span class="status-badge status-{{ action.status|lower }}">{{ action.status }}</span></td>
+            <td>{{ action.due_date }}</td>
+            <td>{{ action.days_late }}</td>
+            <td>{{ action.owner_display }}</td>
+            <td>{{ action.closed_at }}</td>
+            <td>
+              {% if action.tags %}
+                <div class="tag-list">
+                  {% for tag in action.tags %}
+                    <span class="tag">{{ tag }}</span>
+                  {% endfor %}
+                </div>
+              {% else %}
+                <span class="muted">—</span>
+              {% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% from "partials/pagination.html" import render_pagination %}
+    {{ render_pagination(pagination, filters, table_endpoint, "#project-actions-table", query_builder, "actions") }}
+  {% else %}
+    <p class="muted">No actions found for this project.</p>
+  {% endif %}
+</div>
