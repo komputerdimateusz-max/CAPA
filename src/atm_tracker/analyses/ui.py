@@ -719,7 +719,6 @@ def _render_add_action(analysis_id: str) -> None:
 
         with st.form(f"analysis_add_action_{analysis_id}"):
             title = st.text_input("Title *", placeholder="e.g. Replace coating nozzle")
-            line = st.text_input("Line *", placeholder="e.g. L1")
             project = _render_project_input(projects_df)
             champion = st.selectbox("Champion", champion_options, index=0)
             status = st.selectbox("Status", ["OPEN", "IN_PROGRESS", "CLOSED"], index=0)
@@ -743,7 +742,6 @@ def _render_add_action(analysis_id: str) -> None:
             action = ActionCreate(
                 title=title.strip(),
                 description=description.strip(),
-                line=line.strip(),
                 project_or_family=project.strip(),
                 owner="",
                 champion=champion.strip(),
