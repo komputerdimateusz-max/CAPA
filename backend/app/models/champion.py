@@ -13,3 +13,4 @@ class Champion(Base):
     name: Mapped[str] = mapped_column(String(255), nullable=False)
 
     actions = relationship("Action", back_populates="champion")
+    users = relationship("User", back_populates="champion")

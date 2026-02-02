@@ -6,9 +6,11 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
+from app.core.auth import enforce_action_create_permission, enforce_action_ownership, enforce_write_access, require_auth
 from app.db.session import get_db
 from app.models.action import Action
 from app.models.subtask import Subtask
+from app.models.user import User
 from app.repositories import actions as actions_repo
 from app.schemas.action import ActionCreate, ActionDetailResponse, ActionListResponse, ActionRead, ActionUpdate
 from app.schemas.subtask import SubtaskCreate, SubtaskRead, SubtaskUpdate
@@ -84,7 +86,12 @@ def list_actions(
 
 
 @router.post("", response_model=ActionDetailResponse, status_code=status.HTTP_201_CREATED)
-def create_action(payload: ActionCreate, db: Session = Depends(get_db)) -> ActionDetailResponse:
+def create_action(
+    payload: ActionCreate,
+    db: Session = Depends(get_db),
+    user: User | None = Depends(require_auth),
+) -> ActionDetailResponse:
+    enforce_action_create_permission(user, payload.champion_id)
     action = Action(
         title=payload.title,
         description=payload.description or "",
@@ -150,11 +157,19 @@ def get_action(action_id: int, db: Session = Depends(get_db)) -> ActionDetailRes
 
 @router.patch("/{action_id}", response_model=ActionDetailResponse)
 def update_action(
-    action_id: int, payload: ActionUpdate, db: Session = Depends(get_db)
+    action_id: int,
+    payload: ActionUpdate,
+    db: Session = Depends(get_db),
+    user: User | None = Depends(require_auth),
 ) -> ActionDetailResponse:
     action = actions_repo.get_action(db, action_id)
     if not action:
         raise HTTPException(status_code=404, detail="Action not found")
+    enforce_write_access(user)
+    enforce_action_ownership(user, action)
+    if user and user.role == "champion" and payload.champion_id is not None:
+        if payload.champion_id != user.champion_id:
+            raise HTTPException(status_code=403, detail="Cannot reassign action ownership")
 
     for field, value in payload.model_dump(exclude_unset=True).items():
         setattr(action, field, value)
@@ -184,10 +199,16 @@ def update_action(
 
 
 @router.delete("/{action_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_action(action_id: int, db: Session = Depends(get_db)) -> None:
+def delete_action(
+    action_id: int,
+    db: Session = Depends(get_db),
+    user: User | None = Depends(require_auth),
+) -> None:
     action = actions_repo.get_action(db, action_id)
     if not action:
         raise HTTPException(status_code=404, detail="Action not found")
+    enforce_write_access(user)
+    enforce_action_ownership(user, action)
     actions_repo.delete_action(db, action)
 
 
@@ -204,10 +225,13 @@ def create_subtask(
     action_id: int,
     payload: SubtaskCreate,
     db: Session = Depends(get_db),
+    user: User | None = Depends(require_auth),
 ) -> SubtaskRead:
     action = actions_repo.get_action(db, action_id)
     if not action:
         raise HTTPException(status_code=404, detail="Action not found")
+    enforce_write_access(user)
+    enforce_action_ownership(user, action)
     subtask = Subtask(
         action_id=action_id,
         title=payload.title,
@@ -225,10 +249,16 @@ def update_subtask(
     subtask_id: int,
     payload: SubtaskUpdate,
     db: Session = Depends(get_db),
+    user: User | None = Depends(require_auth),
 ) -> SubtaskRead:
     subtask = actions_repo.get_subtask(db, subtask_id)
     if not subtask:
         raise HTTPException(status_code=404, detail="Subtask not found")
+    action = actions_repo.get_action(db, subtask.action_id)
+    if not action:
+        raise HTTPException(status_code=404, detail="Action not found")
+    enforce_write_access(user)
+    enforce_action_ownership(user, action)
     for field, value in payload.model_dump(exclude_unset=True).items():
         setattr(subtask, field, value)
     subtask = actions_repo.update_subtask(db, subtask)
@@ -236,8 +266,17 @@ def update_subtask(
 
 
 @router.delete("/subtasks/{subtask_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_subtask(subtask_id: int, db: Session = Depends(get_db)) -> None:
+def delete_subtask(
+    subtask_id: int,
+    db: Session = Depends(get_db),
+    user: User | None = Depends(require_auth),
+) -> None:
     subtask = actions_repo.get_subtask(db, subtask_id)
     if not subtask:
         raise HTTPException(status_code=404, detail="Subtask not found")
+    action = actions_repo.get_action(db, subtask.action_id)
+    if not action:
+        raise HTTPException(status_code=404, detail="Action not found")
+    enforce_write_access(user)
+    enforce_action_ownership(user, action)
     actions_repo.delete_subtask(db, subtask)
