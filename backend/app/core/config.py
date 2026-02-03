@@ -10,6 +10,7 @@ class Settings(BaseSettings):
     database_url: str | None = None
     auth_enabled: bool = True
     dev_mode: bool = True
+    allow_signup: bool | None = None
     secret_key: str | None = None
     admin_username: str | None = None
     admin_password: str | None = None
@@ -19,6 +20,12 @@ class Settings(BaseSettings):
     @property
     def session_cookie_secure(self) -> bool:
         return not self.dev_mode
+
+    @property
+    def allow_signup_enabled(self) -> bool:
+        if self.allow_signup is None:
+            return self.dev_mode
+        return self.allow_signup
 
     @property
     def required_secret_key(self) -> str:

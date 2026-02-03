@@ -63,7 +63,11 @@ def create_app() -> FastAPI:
         if settings.auth_enabled and request.url.path.startswith("/ui"):
             with SessionLocal() as db:
                 request.state.user = get_current_user_optional(request, db)
-            if not request.url.path.startswith("/ui/login") and not request.state.user:
+            if (
+                not request.url.path.startswith("/ui/login")
+                and not request.url.path.startswith("/ui/signup")
+                and not request.state.user
+            ):
                 if request.headers.get("HX-Request"):
                     response = HTMLResponse("Login required", status_code=401)
                     response.headers["HX-Redirect"] = "/ui/login"
