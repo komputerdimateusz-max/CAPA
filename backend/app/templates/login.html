@@ -19,4 +19,30 @@
       <button type="submit">Login</button>
     </form>
   </section>
+  <section class="card">
+    <h2>Create account</h2>
+    {% if allow_signup %}
+      <p class="muted">Create a new account to access CAPA.</p>
+      {% if signup_error %}
+        <p class="error">{{ signup_error }}</p>
+      {% endif %}
+      <form method="post" action="/ui/signup">
+        <label>
+          Username
+          <input type="text" name="username" required />
+        </label>
+        <label>
+          Email (optional)
+          <input type="email" name="email" />
+        </label>
+        <label>
+          Password
+          <input type="password" name="password" required />
+        </label>
+        <button type="submit">Create account</button>
+      </form>
+    {% else %}
+      <p class="muted">Contact admin to create an account.</p>
+    {% endif %}
+  </section>
 {% endblock %}
