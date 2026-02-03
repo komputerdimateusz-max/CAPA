@@ -85,22 +85,24 @@ def on_startup() -> None:
         db = SessionLocal()
         try:
             if users_repo.count_users(db) == 0:
+                admin_username = settings.admin_username
+                admin_password = settings.admin_password
                 if settings.dev_mode:
-                    username = settings.admin_username or "admin"
-                    password = settings.admin_password or "admin123"
+                    username = admin_username or "admin"
+                    password = admin_password or "admin123"
                 else:
-                    if not settings.admin_username and not settings.admin_password:
+                    if not admin_username and not admin_password:
                         return
-                    if not settings.admin_username:
+                    if not admin_username:
                         raise RuntimeError(
                             "ADMIN_USERNAME must be set to seed admin when DEV_MODE=false."
                         )
-                    if not settings.admin_password:
+                    if not admin_password:
                         raise RuntimeError(
                             "ADMIN_PASSWORD must be set to seed admin when DEV_MODE=false."
                         )
-                    username = settings.admin_username
-                    password = settings.admin_password
+                    username = admin_username
+                    password = admin_password
                 if is_password_too_long(password):
                     raise RuntimeError(
                         "ADMIN_PASSWORD too long for bcrypt (max 72 bytes). Use a shorter password."
