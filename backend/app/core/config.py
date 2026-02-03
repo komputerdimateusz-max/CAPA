@@ -11,6 +11,8 @@ class Settings(BaseSettings):
     auth_enabled: bool = True
     dev_mode: bool = True
     secret_key: str | None = None
+    admin_username: str | None = None
+    admin_password: str | None = None
     session_cookie_name: str = "capa_session"
     session_ttl_days: int = 7
 

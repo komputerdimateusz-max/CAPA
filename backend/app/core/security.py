@@ -6,10 +6,17 @@ from passlib.context import CryptContext
 from app.core.config import settings
 
 _pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+_MAX_BCRYPT_PASSWORD_BYTES = 72
 _SESSION_SALT = "capa-session"
 
 
+def is_password_too_long(password: str) -> bool:
+    return len(password.encode("utf-8")) > _MAX_BCRYPT_PASSWORD_BYTES
+
+
 def hash_password(password: str) -> str:
+    if is_password_too_long(password):
+        raise RuntimeError("Password too long for bcrypt (max 72 bytes). Use a shorter password.")
     return _pwd_context.hash(password)
 
 
