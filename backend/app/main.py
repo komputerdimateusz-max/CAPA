@@ -74,6 +74,46 @@ def create_app() -> FastAPI:
     return app
 
 
+def seed_admin_user(db: SessionLocal) -> None:
+    if users_repo.count_users(db) != 0:
+        return
+
+    admin_username = settings.admin_username
+    admin_password = settings.admin_password
+
+    if settings.dev_mode:
+        username = admin_username or "admin"
+        password = admin_password or "admin123"
+    else:
+        if not admin_username and not admin_password:
+            return
+        if not admin_username:
+            raise RuntimeError("ADMIN_USERNAME must be set to seed admin when DEV_MODE=false.")
+        if not admin_password:
+            raise RuntimeError("ADMIN_PASSWORD must be set to seed admin when DEV_MODE=false.")
+        username = admin_username
+        password = admin_password
+
+    if is_password_too_long(password):
+        raise RuntimeError(
+            "ADMIN_PASSWORD too long for bcrypt (max 72 bytes). Use a shorter password."
+        )
+
+    try:
+        user = User(
+            username=username,
+            password_hash=hash_password(password),
+            role="admin",
+            is_active=True,
+        )
+        users_repo.create_user(db, user)
+        print(f"Created admin user: {username}")
+    except RuntimeError:
+        raise
+    except Exception as exc:
+        raise RuntimeError(f"Failed to seed admin user: {exc}") from exc
+
+
 app = create_app()
 
 
@@ -84,36 +124,6 @@ def on_startup() -> None:
     if settings.auth_enabled:
         db = SessionLocal()
         try:
-            if users_repo.count_users(db) == 0:
-                admin_username = settings.admin_username
-                admin_password = settings.admin_password
-                if settings.dev_mode:
-                    username = admin_username or "admin"
-                    password = admin_password or "admin123"
-                else:
-                    if not admin_username and not admin_password:
-                        return
-                    if not admin_username:
-                        raise RuntimeError(
-                            "ADMIN_USERNAME must be set to seed admin when DEV_MODE=false."
-                        )
-                    if not admin_password:
-                        raise RuntimeError(
-                            "ADMIN_PASSWORD must be set to seed admin when DEV_MODE=false."
-                        )
-                    username = admin_username
-                    password = admin_password
-                if is_password_too_long(password):
-                    raise RuntimeError(
-                        "ADMIN_PASSWORD too long for bcrypt (max 72 bytes). Use a shorter password."
-                    )
-                user = User(
-                    username=username,
-                    password_hash=hash_password(password),
-                    role="admin",
-                    is_active=True,
-                )
-                users_repo.create_user(db, user)
-                print(f"Created admin user: {username}")
+            seed_admin_user(db)
         finally:
             db.close()

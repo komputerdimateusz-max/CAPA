@@ -9,6 +9,8 @@ source .venv/bin/activate
 pip install -e .[dev]
 ```
 
+On Windows, keep `bcrypt` pinned to `<4` (already specified in the backend dependencies) because `passlib` expects the legacy interface provided by `bcrypt<4`.
+
 ### Configure database
 
 By default the backend uses a SQLite database stored at `data/actions_api.db` in the repo root.
