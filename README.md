@@ -41,6 +41,24 @@ pip install -e .[dev]
 uvicorn app.main:app --reload
 ```
 
+### Apply database migrations (required)
+
+After installing dependencies, run Alembic migrations before starting the app:
+
+```bash
+cd backend
+alembic upgrade head
+```
+
+Windows PowerShell:
+
+```powershell
+cd backend
+alembic upgrade head
+```
+
+This upgrades legacy SQLite files (including Champion schema changes) and prevents runtime errors such as missing `champions.first_name`.
+
 ### Primary UI (FastAPI)
 
 Primary UI: /ui (FastAPI)
