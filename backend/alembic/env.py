@@ -9,8 +9,8 @@ from alembic import context
 
 sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
 
-from app.core.config import settings
 from app.db.base import Base
+from app.db.session import engine
 from app.models import action, champion, project, subtask  # noqa: F401
 
 config = context.config
@@ -18,7 +18,7 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-config.set_main_option("sqlalchemy.url", settings.DATABASE_URL)
+config.set_main_option("sqlalchemy.url", str(engine.url))
 
 resolved_db_url = config.get_main_option("sqlalchemy.url")
 print(f"[alembic] Running migrations against: {resolved_db_url}")
