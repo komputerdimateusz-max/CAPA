@@ -4,7 +4,6 @@ import logging
 import os
 import sys
 import time
-import traceback
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, Request
@@ -25,7 +24,6 @@ from app.ui import routes_analyses, routes_auth, routes_champions, routes_metric
 
 
 REQUIRED_CHAMPION_COLUMNS = {"first_name", "last_name", "email", "position", "birth_date"}
-UI_DEBUG_ERRORS_ENV = "DEV_DEBUG_UI_ERRORS"
 
 
 logger = logging.getLogger("app.request")
@@ -44,10 +42,6 @@ def configure_app_logging() -> None:
         logger.addHandler(stream_handler)
 
     logger.propagate = True
-
-
-def dev_debug_ui_errors_enabled() -> bool:
-    return os.getenv(UI_DEBUG_ERRORS_ENV, "false").strip().lower() == "true"
 
 
 def validate_dev_schema(engine) -> None:
@@ -106,37 +100,28 @@ def create_app() -> FastAPI:
     app.include_router(routes_analyses.router)
 
     static_dir = Path(__file__).resolve().parent / "static"
+    templates_dir = Path(__file__).resolve().parent / "templates"
     app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
+    app.mount("/templates", StaticFiles(directory=str(templates_dir)), name="templates")
+
+    @app.get("/login", include_in_schema=False)
+    def login_redirect() -> RedirectResponse:
+        return RedirectResponse(url="/ui/login", status_code=302)
 
     @app.get("/health")
     def healthcheck() -> dict[str, bool]:
         return {"ok": True}
 
-    @app.exception_handler(Exception)
-    async def ui_debug_exception_handler(request: Request, exc: Exception):
-        if dev_debug_ui_errors_enabled() and request.url.path.startswith("/ui"):
-            traceback_text = traceback.format_exc()
-            if traceback_text.strip() == "NoneType: None":
-                traceback_text = "".join(
-                    traceback.format_exception(type(exc), exc, exc.__traceback__)
-                )
-
-            return HTMLResponse(
-                content=(
-                    "<h1>Unhandled UI Exception</h1>"
-                    f"<p><strong>{type(exc).__name__}:</strong> {exc}</p>"
-                    f"<pre>{traceback_text}</pre>"
-                ),
-                status_code=500,
-            )
-        raise exc
-
     @app.middleware("http")
     async def ui_auth_middleware(request: Request, call_next):
         request.state.user = None
         if settings.auth_enabled and request.url.path.startswith("/ui"):
-            with SessionLocal() as db:
-                request.state.user = get_current_user_optional(request, db)
+            try:
+                with SessionLocal() as db:
+                    request.state.user = get_current_user_optional(request, db)
+            except Exception:
+                logger.exception("Failed to resolve UI session for %s", request.url.path)
+                request.state.user = None
             if (
                 not request.url.path.startswith("/ui/login")
                 and not request.url.path.startswith("/ui/signup")
@@ -144,10 +129,31 @@ def create_app() -> FastAPI:
             ):
                 if request.headers.get("HX-Request"):
                     response = HTMLResponse("Login required", status_code=401)
-                    response.headers["HX-Redirect"] = "/ui/login"
+                    response.headers["HX-Redirect"] = "/login"
                     return response
-                return RedirectResponse("/ui/login", status_code=303)
+                return RedirectResponse("/login", status_code=302)
         return await call_next(request)
+
+    @app.middleware("http")
+    async def ui_exception_middleware(request: Request, call_next):
+        if not request.url.path.startswith("/ui"):
+            return await call_next(request)
+        try:
+            return await call_next(request)
+        except Exception as exc:
+            logger.exception("Unhandled UI exception for %s", request.url.path)
+            return HTMLResponse(
+                content=(
+                    "<!doctype html><html lang='en'><head><meta charset='utf-8'>"
+                    "<title>CAPA UI Error</title></head><body>"
+                    "<h1>CAPA UI Error</h1>"
+                    "<p>The page could not be rendered due to an internal error.</p>"
+                    f"<p><strong>{type(exc).__name__}:</strong> {exc}</p>"
+                    "<p><a href='/login'>Go to Login</a></p>"
+                    "</body></html>"
+                ),
+                status_code=500,
+            )
 
     @app.middleware("http")
     async def request_logging_middleware(request: Request, call_next):
