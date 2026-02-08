@@ -1,5 +1,10 @@
 from __future__ import annotations
 
+import logging
+import os
+import sys
+import time
+import traceback
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, Request
@@ -20,6 +25,29 @@ from app.ui import routes_analyses, routes_auth, routes_champions, routes_metric
 
 
 REQUIRED_CHAMPION_COLUMNS = {"first_name", "last_name", "email", "position", "birth_date"}
+UI_DEBUG_ERRORS_ENV = "DEV_DEBUG_UI_ERRORS"
+
+
+logger = logging.getLogger("app.request")
+
+
+def configure_app_logging() -> None:
+    log_level_name = os.getenv("LOG_LEVEL", "INFO").upper()
+    log_level = getattr(logging, log_level_name, logging.INFO)
+    logger.setLevel(log_level)
+
+    if not any(isinstance(handler, logging.StreamHandler) and handler.stream is sys.stdout for handler in logger.handlers):
+        stream_handler = logging.StreamHandler(sys.stdout)
+        stream_handler.setFormatter(
+            logging.Formatter("%(asctime)s %(levelname)s [%(name)s] %(message)s")
+        )
+        logger.addHandler(stream_handler)
+
+    logger.propagate = True
+
+
+def dev_debug_ui_errors_enabled() -> bool:
+    return os.getenv(UI_DEBUG_ERRORS_ENV, "false").strip().lower() == "true"
 
 
 def validate_dev_schema(engine) -> None:
@@ -45,6 +73,7 @@ def validate_dev_schema(engine) -> None:
 
 
 def create_app() -> FastAPI:
+    configure_app_logging()
     if settings.auth_enabled:
         settings.required_secret_key
     docs_url = "/docs" if settings.dev_mode else None
@@ -80,8 +109,27 @@ def create_app() -> FastAPI:
     app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 
     @app.get("/health")
-    def healthcheck() -> dict[str, str]:
-        return {"status": "ok"}
+    def healthcheck() -> dict[str, bool]:
+        return {"ok": True}
+
+    @app.exception_handler(Exception)
+    async def ui_debug_exception_handler(request: Request, exc: Exception):
+        if dev_debug_ui_errors_enabled() and request.url.path.startswith("/ui"):
+            traceback_text = traceback.format_exc()
+            if traceback_text.strip() == "NoneType: None":
+                traceback_text = "".join(
+                    traceback.format_exception(type(exc), exc, exc.__traceback__)
+                )
+
+            return HTMLResponse(
+                content=(
+                    "<h1>Unhandled UI Exception</h1>"
+                    f"<p><strong>{type(exc).__name__}:</strong> {exc}</p>"
+                    f"<pre>{traceback_text}</pre>"
+                ),
+                status_code=500,
+            )
+        raise exc
 
     @app.middleware("http")
     async def ui_auth_middleware(request: Request, call_next):
@@ -100,6 +148,30 @@ def create_app() -> FastAPI:
                     return response
                 return RedirectResponse("/ui/login", status_code=303)
         return await call_next(request)
+
+    @app.middleware("http")
+    async def request_logging_middleware(request: Request, call_next):
+        started_at = time.perf_counter()
+        try:
+            response = await call_next(request)
+            elapsed_ms = (time.perf_counter() - started_at) * 1000
+            logger.info(
+                "%s %s -> %s (%.2f ms)",
+                request.method,
+                request.url.path,
+                response.status_code,
+                elapsed_ms,
+            )
+            return response
+        except Exception:
+            elapsed_ms = (time.perf_counter() - started_at) * 1000
+            logger.exception(
+                "%s %s -> 500 (%.2f ms)",
+                request.method,
+                request.url.path,
+                elapsed_ms,
+            )
+            raise
 
     return app
 
