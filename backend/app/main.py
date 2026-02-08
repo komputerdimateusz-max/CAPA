@@ -10,6 +10,7 @@ from app.api import actions, kpi, projects
 from app.core.auth import get_current_user_optional, require_auth
 from app.core.config import settings
 from app.core.security import hash_password, is_password_too_long
+from app.db.schema_guard import ensure_champion_schema
 from app.db.base import Base
 from app.db.session import SessionLocal, get_engine
 from app.models.user import User
@@ -121,6 +122,8 @@ app = create_app()
 def on_startup() -> None:
     engine = get_engine()
     Base.metadata.create_all(bind=engine)
+    if settings.dev_mode:
+        ensure_champion_schema(engine)
     if settings.auth_enabled:
         db = SessionLocal()
         try:
