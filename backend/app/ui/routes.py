@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime
+import logging
 from pathlib import Path
 from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -32,6 +33,20 @@ SORT_OPTIONS = (
     ("-days_late", "Days late (most first)"),
 )
 STATUS_OPTIONS = ("OPEN", "IN_PROGRESS", "BLOCKED", "CLOSED")
+logger = logging.getLogger("app.ui")
+
+
+def _html_fallback_page(title: str, message: str, status_code: int = 500) -> HTMLResponse:
+    body = (
+        "<!doctype html>"
+        "<html lang='en'><head><meta charset='utf-8'><title>"
+        f"{title}"
+        "</title></head><body>"
+        f"<h1>{title}</h1><p>{message}</p>"
+        "<p><a href='/ui/login'>Go to Login</a></p>"
+        "</body></html>"
+    )
+    return HTMLResponse(content=body, status_code=status_code)
 
 
 def _parse_tags(tags: str | None) -> list[str] | None:
@@ -162,7 +177,17 @@ def _render_subtasks(
 
 @router.get("", response_class=HTMLResponse, response_model=None)
 def ui_index(request: Request):
-    return templates.TemplateResponse("ui_index.html", {"request": request})
+    try:
+        if not getattr(request.state, "user", None):
+            return RedirectResponse(url="/login", status_code=302)
+        return templates.TemplateResponse("ui_index.html", {"request": request})
+    except Exception:
+        logger.exception("Failed to render /ui")
+        return _html_fallback_page(
+            title="CAPA UI Error",
+            message="The UI failed to render. Please check server logs for details.",
+            status_code=500,
+        )
 
 
 @router.get("/actions", response_class=HTMLResponse, response_model=None)
