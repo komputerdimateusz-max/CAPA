@@ -38,7 +38,15 @@ cd backend
 python -m venv .venv
 source .venv/bin/activate
 pip install -e .[dev]
+alembic upgrade head
 uvicorn app.main:app --reload
+```
+
+**Windows (PowerShell) migration step**
+```powershell
+cd backend
+.\.venv\Scripts\Activate.ps1
+alembic upgrade head
 ```
 
 ### Primary UI (FastAPI)

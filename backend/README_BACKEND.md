@@ -20,6 +20,20 @@ Override with `DATABASE_URL`:
 export DATABASE_URL=sqlite:////absolute/path/to/actions_api.db
 ```
 
+### Run migrations
+
+Before starting the API, apply all Alembic migrations:
+
+```bash
+alembic upgrade head
+```
+
+Windows PowerShell:
+
+```powershell
+alembic upgrade head
+```
+
 ### Run the API
 
 ```bash
