@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from alembic import op
 import sqlalchemy as sa
+from sqlalchemy import inspect
 
 
 revision = "0002_add_users_table"
@@ -11,6 +12,11 @@ depends_on = None
 
 
 def upgrade() -> None:
+    bind = op.get_bind()
+    insp = inspect(bind)
+    if "users" in insp.get_table_names():
+        return
+
     op.create_table(
         "users",
         sa.Column("id", sa.Integer(), primary_key=True),

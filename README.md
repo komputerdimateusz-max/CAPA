@@ -74,6 +74,15 @@ cd backend
 alembic upgrade head
 ```
 
+If you already have a populated SQLite DB and only need Alembic to mark it as migrated, baseline it with:
+
+```bash
+cd backend
+alembic stamp head
+```
+
+For partial/manual baselines, you can stamp specific revisions in sequence (for example `0001_create_core_tables` then `0002_add_users_table`) before running `alembic upgrade head`.
+
 **Windows PowerShell**
 ```powershell
 cd backend
