@@ -20,6 +20,23 @@ Override with `DATABASE_URL`:
 export DATABASE_URL=sqlite:////absolute/path/to/actions_api.db
 ```
 
+
+### Run Alembic migrations
+
+After creating the virtual environment and before running the API, migrate the database:
+
+```bash
+alembic upgrade head
+```
+
+**Windows PowerShell**
+```powershell
+.\.venv\Scripts\Activate.ps1
+alembic upgrade head
+```
+
+If startup reports missing Champion columns (for example `first_name`/`last_name`), your DB is behind and this command is required.
+
 ### Run the API
 
 ```bash

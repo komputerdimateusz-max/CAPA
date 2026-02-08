@@ -64,6 +64,23 @@ $env:API_BASE_URL="http://127.0.0.1:8000"
 streamlit run app.py
 ```
 
+
+### Run database migrations
+
+Before starting the backend, apply Alembic migrations so the SQLite schema matches the code (including the Champion refactor fields):
+
+```bash
+cd backend
+alembic upgrade head
+```
+
+**Windows PowerShell**
+```powershell
+cd backend
+.\.venv\Scripts\Activate.ps1
+alembic upgrade head
+```
+
 ## Data Inputs (MVP)
 
 ### 1) Actions (CAPA)

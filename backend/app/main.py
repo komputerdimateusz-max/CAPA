@@ -5,6 +5,7 @@ from pathlib import Path
 from fastapi import Depends, FastAPI, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
+from sqlalchemy import inspect
 
 from app.api import actions, kpi, projects
 from app.core.auth import get_current_user_optional, require_auth
@@ -16,6 +17,31 @@ from app.models.user import User
 from app.repositories import users as users_repo
 from app.ui import routes as ui_routes
 from app.ui import routes_analyses, routes_auth, routes_champions, routes_metrics, routes_projects, routes_settings
+
+
+REQUIRED_CHAMPION_COLUMNS = {"first_name", "last_name", "email", "position", "birth_date"}
+
+
+def validate_dev_schema(engine) -> None:
+    if not settings.dev_mode:
+        return
+
+    inspector = inspect(engine)
+    if not inspector.has_table("champions"):
+        return
+
+    champion_columns = {column["name"] for column in inspector.get_columns("champions")}
+    missing_columns = sorted(REQUIRED_CHAMPION_COLUMNS - champion_columns)
+    if not missing_columns:
+        return
+
+    missing_fields = ", ".join(missing_columns)
+    raise RuntimeError(
+        "Database schema is behind the current app models. "
+        f"Missing columns on 'champions': {missing_fields}. "
+        "Run Alembic migrations before starting the app: `alembic upgrade head` "
+        "(PowerShell: `cd backend; .\\.venv\\Scripts\\Activate.ps1; alembic upgrade head`)."
+    )
 
 
 def create_app() -> FastAPI:
@@ -125,6 +151,7 @@ app = create_app()
 def on_startup() -> None:
     engine = get_engine()
     Base.metadata.create_all(bind=engine)
+    validate_dev_schema(engine)
     if settings.auth_enabled:
         db = SessionLocal()
         try:
