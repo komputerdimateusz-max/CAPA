@@ -41,5 +41,9 @@ class Settings(BaseSettings):
         default_path = repo_root / "data" / "actions_api.db"
         return f"sqlite:///{default_path}"
 
+    @property
+    def DATABASE_URL(self) -> str:
+        return self.sqlalchemy_database_uri
+
 
 settings = Settings()
