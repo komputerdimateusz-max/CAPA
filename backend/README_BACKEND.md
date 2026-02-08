@@ -45,6 +45,26 @@ uvicorn app.main:app --reload
 
 OpenAPI docs will be available at http://localhost:8000/docs.
 
+### Debugging UI 500 errors in development
+
+To surface full traceback details for unhandled `/ui` exceptions during development:
+
+```bash
+export DEV_DEBUG_UI_ERRORS=true
+export LOG_LEVEL=debug
+uvicorn app.main:app --reload --log-level debug
+```
+
+**Windows PowerShell**
+```powershell
+$env:DEV_DEBUG_UI_ERRORS="true"
+$env:LOG_LEVEL="debug"
+uvicorn app.main:app --reload --log-level debug
+```
+
+With `DEV_DEBUG_UI_ERRORS=true`, unhandled exceptions on `/ui` routes render an HTML error page with exception details and traceback, and exceptions are logged to the console. API behavior is unchanged.
+
+
 ### Run tests
 
 ```bash
