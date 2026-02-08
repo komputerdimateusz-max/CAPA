@@ -12,7 +12,7 @@ from app.core.auth import get_current_user_optional, require_auth
 from app.core.config import settings
 from app.core.security import hash_password, is_password_too_long
 from app.db.base import Base
-from app.db.session import SessionLocal, get_engine
+from app.db.session import SessionLocal, engine
 from app.models.user import User
 from app.repositories import users as users_repo
 from app.ui import routes as ui_routes
@@ -149,7 +149,6 @@ app = create_app()
 
 @app.on_event("startup")
 def on_startup() -> None:
-    engine = get_engine()
     Base.metadata.create_all(bind=engine)
     validate_dev_schema(engine)
     if settings.auth_enabled:
