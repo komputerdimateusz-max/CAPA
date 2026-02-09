@@ -5,6 +5,7 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -57,7 +58,24 @@ def login(
 ):
     if not settings.auth_enabled:
         return RedirectResponse(url="/ui", status_code=303)
-    user = users_repo.get_user_by_username(db, username)
+    try:
+        user = users_repo.get_user_by_username(db, username)
+    except OperationalError as exc:
+        return HTMLResponse(
+            content=(
+                "<!doctype html><html lang='en'><head><meta charset='utf-8'>"
+                "<title>CAPA Login Error</title></head><body>"
+                "<h1>Database schema is out of date</h1>"
+                "<p>The login query failed because the database is missing expected columns "
+                "(for example <code>users.email</code>).</p>"
+                "<p>Run: <code>alembic upgrade head</code></p>"
+                f"<p><strong>Details:</strong> {exc}</p>"
+                "<p><a href='/docs'>Open API docs</a></p>"
+                "<p><a href='/ui/login'>Back to login</a></p>"
+                "</body></html>"
+            ),
+            status_code=500,
+        )
     if not user or not user.is_active or not verify_password(password, user.password_hash):
         return templates.TemplateResponse(
             "login.html",

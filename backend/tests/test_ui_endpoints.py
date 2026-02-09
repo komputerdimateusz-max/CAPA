@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from sqlalchemy.exc import OperationalError
+
 from app.core.config import settings
 from app.models.user import User
 
@@ -45,3 +47,16 @@ def test_login_alias_redirects_to_ui_login(client):
 
     assert response.status_code == 302
     assert response.headers["location"] == "/ui/login"
+
+
+def test_login_shows_schema_error_when_users_email_missing(client, monkeypatch):
+    def _raise_operational_error(db, username):
+        raise OperationalError("SELECT users.email FROM users", {}, Exception("no such column: users.email"))
+
+    monkeypatch.setattr("app.ui.routes_auth.users_repo.get_user_by_username", _raise_operational_error)
+
+    response = client.post("/ui/login", data={"username": "u", "password": "p"})
+
+    assert response.status_code == 500
+    assert "Database schema is out of date" in response.text
+    assert "alembic upgrade head" in response.text
