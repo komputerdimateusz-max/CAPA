@@ -37,6 +37,35 @@ alembic upgrade head
 
 If startup reports missing Champion columns (for example `first_name`/`last_name`), your DB is behind and this command is required.
 
+
+### Windows (CMD) dev launcher
+
+From the repository root, you can run:
+
+```bat
+run_dev.bat
+```
+
+This script starts the backend with the backend virtualenv python and sets:
+- `AUTH_ENABLED=true`
+- `SECRET_KEY=dev_secret_key_123`
+- `LOG_LEVEL=debug`
+- `DEV_DEBUG_UI_ERRORS=true`
+
+### DB doctor
+
+Use this when login fails due to schema mismatch or DB path confusion:
+
+```bash
+cd backend
+python db_doctor.py
+```
+
+It prints:
+- `settings.sqlalchemy_database_uri`
+- columns in `users` and `champions`
+- current `alembic_version` rows (if present)
+
 ### Run the API
 
 ```bash

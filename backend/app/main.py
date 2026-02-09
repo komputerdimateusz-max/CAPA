@@ -9,7 +9,7 @@ from pathlib import Path
 from fastapi import Depends, FastAPI, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
-from sqlalchemy import inspect
+from sqlalchemy import inspect, text
 
 from app.api import actions, kpi, projects
 from app.core.auth import get_current_user_optional, require_auth
@@ -24,6 +24,7 @@ from app.ui import routes_analyses, routes_auth, routes_champions, routes_metric
 
 
 REQUIRED_CHAMPION_COLUMNS = {"first_name", "last_name", "email", "position", "birth_date"}
+REQUIRED_USERS_COLUMNS = {"username", "password_hash", "role", "is_active", "email"}
 
 
 logger = logging.getLogger("app.request")
@@ -44,25 +45,57 @@ def configure_app_logging() -> None:
     logger.propagate = True
 
 
+def _get_alembic_revisions(engine) -> list[str]:
+    inspector = inspect(engine)
+    if not inspector.has_table("alembic_version"):
+        return []
+    with engine.connect() as connection:
+        rows = connection.execute(text("SELECT version_num FROM alembic_version")).fetchall()
+    return [str(row[0]) for row in rows]
+
+
 def validate_dev_schema(engine) -> None:
     if not settings.dev_mode:
         return
 
     inspector = inspect(engine)
-    if not inspector.has_table("champions"):
+    db_uri = settings.sqlalchemy_database_uri
+    missing_by_table: dict[str, list[str]] = {}
+
+    if inspector.has_table("champions"):
+        champion_columns = {column["name"] for column in inspector.get_columns("champions")}
+        missing_champions = sorted(REQUIRED_CHAMPION_COLUMNS - champion_columns)
+        if missing_champions:
+            missing_by_table["champions"] = missing_champions
+
+    if inspector.has_table("users"):
+        users_columns = {column["name"] for column in inspector.get_columns("users")}
+        missing_users = sorted(REQUIRED_USERS_COLUMNS - users_columns)
+        if missing_users:
+            missing_by_table["users"] = missing_users
+
+    if not missing_by_table:
         return
 
-    champion_columns = {column["name"] for column in inspector.get_columns("champions")}
-    missing_columns = sorted(REQUIRED_CHAMPION_COLUMNS - champion_columns)
-    if not missing_columns:
-        return
+    revisions = _get_alembic_revisions(engine)
+    logger.error("Database schema check failed for URI: %s", db_uri)
+    logger.error("Detected Alembic revisions: %s", revisions if revisions else "<none>")
+    for table_name, columns in missing_by_table.items():
+        logger.error("Missing columns on '%s': %s", table_name, ", ".join(columns))
 
-    missing_fields = ", ".join(missing_columns)
+    details = "; ".join(
+        f"{table_name}: {', '.join(columns)}" for table_name, columns in sorted(missing_by_table.items())
+    )
+    revisions_text = ", ".join(revisions) if revisions else "<none>"
     raise RuntimeError(
-        "Database schema is behind the current app models. "
-        f"Missing columns on 'champions': {missing_fields}. "
-        "Run Alembic migrations before starting the app: `alembic upgrade head` "
-        "(PowerShell: `cd backend; .\\.venv\\Scripts\\Activate.ps1; alembic upgrade head`)."
+        "Database schema is out of date for the current app models. "
+        f"DB URI: {db_uri}. "
+        f"Alembic revisions: {revisions_text}. "
+        f"Missing columns -> {details}. "
+        "Run these commands in Windows Command Prompt:\n"
+        "cd C:\\CAPA\\backend\n"
+        "call .venv\\Scripts\\activate\n"
+        "alembic upgrade head"
     )
 
 
@@ -79,7 +112,6 @@ def create_app() -> FastAPI:
         docs_url=docs_url,
         openapi_url=openapi_url,
         redoc_url=redoc_url,
-        # Ensure Swagger UI stays interactive in local development for all endpoints.
         swagger_ui_parameters={
             "tryItOutEnabled": True,
             "supportedSubmitMethods": ["get", "post", "put", "patch", "delete"],

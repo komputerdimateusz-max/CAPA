@@ -9,16 +9,17 @@ from alembic import context
 
 sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
 
+from app.core.config import settings
 from app.db.base import Base
-from app.db.session import engine
-from app.models import action, champion, project, subtask  # noqa: F401
+from app.models import action, champion, project, subtask, user  # noqa: F401
 
 config = context.config
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-config.set_main_option("sqlalchemy.url", str(engine.url))
+database_url = settings.sqlalchemy_database_uri
+config.set_main_option("sqlalchemy.url", database_url)
 
 resolved_db_url = config.get_main_option("sqlalchemy.url")
 print(f"[alembic] Running migrations against: {resolved_db_url}")
@@ -40,8 +41,10 @@ def run_migrations_offline() -> None:
 
 
 def run_migrations_online() -> None:
+    configuration = config.get_section(config.config_ini_section, {})
+    configuration["sqlalchemy.url"] = database_url
     connectable = engine_from_config(
-        config.get_section(config.config_ini_section, {}),
+        configuration,
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
     )
