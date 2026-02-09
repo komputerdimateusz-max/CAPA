@@ -44,6 +44,17 @@ class SchemaValidationResult:
         return bool(self.missing_revisions or self.missing_by_table)
 
 
+@dataclass(frozen=True)
+class BlockedModeState:
+    is_blocked: bool
+    database_url: str
+    missing_revisions: list[str]
+    missing_by_table: dict[str, list[str]]
+
+
+ALLOWED_WHEN_BLOCKED = {"/blocked", "/health", "/docs", "/openapi.json"}
+
+
 def configure_app_logging() -> None:
     log_level_name = os.getenv("LOG_LEVEL", "INFO").upper()
     log_level = getattr(logging, log_level_name, logging.INFO)
@@ -102,6 +113,42 @@ def _build_schema_error_message(result: SchemaValidationResult) -> str:
         "Application is running in BLOCKED MODE until migrations are applied.\n"
         "========================================================="
     )
+
+
+def _build_blocked_mode_html(state: BlockedModeState) -> str:
+    missing_revisions = ", ".join(state.missing_revisions) if state.missing_revisions else "<none>"
+    missing_columns = "".join(
+        f"<li><strong>{table}</strong>: {', '.join(columns)}</li>"
+        for table, columns in sorted(state.missing_by_table.items())
+    )
+    if not missing_columns:
+        missing_columns = "<li>&lt;none&gt;</li>"
+
+    return f"""<!doctype html>
+<html lang=\"en\">
+<head>
+  <meta charset=\"utf-8\">
+  <title>CAPA Blocked Mode</title>
+</head>
+<body>
+  <h1>Application is running in BLOCKED MODE</h1>
+  <p>Database schema is out of date.</p>
+  <h2>Details</h2>
+  <ul>
+    <li><strong>Database URL:</strong> {state.database_url}</li>
+    <li><strong>Missing Alembic revision(s):</strong> {missing_revisions}</li>
+  </ul>
+  <h3>Missing columns per table</h3>
+  <ul>
+    {missing_columns}
+  </ul>
+  <h2>Fix in Windows Command Prompt</h2>
+  <pre>cd C:\\CAPA\\backend
+call .venv\\Scripts\\activate
+alembic upgrade head</pre>
+  <p><strong>Restart the backend after applying migrations.</strong></p>
+</body>
+</html>"""
 
 
 def _log_schema_error_once(message: str) -> None:
@@ -170,16 +217,21 @@ def create_app() -> FastAPI:
         },
     )
 
-    app.state.schema_blocked = False
+    app.state.blocked_mode = BlockedModeState(
+        is_blocked=False,
+        database_url=settings.sqlalchemy_database_uri,
+        missing_revisions=[],
+        missing_by_table={},
+    )
 
     @app.middleware("http")
     async def schema_block_middleware(request: Request, call_next):
-        if not app.state.schema_blocked or request.url.path == "/health":
+        blocked_state: BlockedModeState = app.state.blocked_mode
+        if not blocked_state.is_blocked:
             return await call_next(request)
-        return HTMLResponse(
-            content="Application is running in BLOCKED MODE until migrations are applied.",
-            status_code=503,
-        )
+        if request.url.path in ALLOWED_WHEN_BLOCKED:
+            return await call_next(request)
+        return RedirectResponse(url="/blocked", status_code=307)
 
     app.include_router(actions.router, dependencies=[Depends(require_auth)])
     app.include_router(projects.router, dependencies=[Depends(require_auth)])
@@ -202,8 +254,20 @@ def create_app() -> FastAPI:
         return RedirectResponse(url="/ui/login", status_code=302)
 
     @app.get("/health")
-    def healthcheck() -> dict[str, bool]:
-        return {"ok": True}
+    def healthcheck() -> dict[str, str]:
+        blocked_state: BlockedModeState = app.state.blocked_mode
+        if blocked_state.is_blocked:
+            return {
+                "status": "blocked",
+                "reason": "pending migrations",
+                "action_required": "alembic upgrade head",
+            }
+        return {"status": "ok"}
+
+    @app.get("/blocked", response_class=HTMLResponse, include_in_schema=False)
+    def blocked_page() -> HTMLResponse:
+        blocked_state: BlockedModeState = app.state.blocked_mode
+        return HTMLResponse(content=_build_blocked_mode_html(blocked_state), status_code=200)
 
     @app.middleware("http")
     async def ui_auth_middleware(request: Request, call_next):
@@ -322,7 +386,12 @@ app = create_app()
 def on_startup() -> None:
     Base.metadata.create_all(bind=engine)
     schema_status = validate_dev_schema(engine)
-    app.state.schema_blocked = settings.dev_mode and not schema_status.is_valid
+    app.state.blocked_mode = BlockedModeState(
+        is_blocked=settings.dev_mode and not schema_status.is_valid,
+        database_url=schema_status.database_url,
+        missing_revisions=schema_status.missing_revisions,
+        missing_by_table=schema_status.missing_by_table,
+    )
     if settings.auth_enabled:
         db = SessionLocal()
         try:
