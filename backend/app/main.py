@@ -4,6 +4,7 @@ import logging
 import os
 import sys
 import time
+from dataclasses import dataclass
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, Request
@@ -28,6 +29,19 @@ REQUIRED_USERS_COLUMNS = {"username", "password_hash", "role", "is_active", "ema
 
 
 logger = logging.getLogger("app.request")
+_schema_error_already_logged = False
+
+
+@dataclass(frozen=True)
+class SchemaValidationResult:
+    is_valid: bool
+    database_url: str
+    missing_revisions: list[str]
+    missing_by_table: dict[str, list[str]]
+
+    @property
+    def has_errors(self) -> bool:
+        return bool(self.missing_revisions or self.missing_by_table)
 
 
 def configure_app_logging() -> None:
@@ -54,13 +68,57 @@ def _get_alembic_revisions(engine) -> list[str]:
     return [str(row[0]) for row in rows]
 
 
-def validate_dev_schema(engine) -> None:
-    if not settings.dev_mode:
-        return
+def _get_expected_alembic_revisions() -> list[str]:
+    versions_dir = Path(__file__).resolve().parents[2] / "alembic" / "versions"
+    revisions: list[str] = []
+    for migration_file in versions_dir.glob("*.py"):
+        revision = migration_file.stem.split("_", maxsplit=1)[0]
+        if revision:
+            revisions.append(revision)
+    return sorted(set(revisions))
 
+
+def _build_schema_error_message(result: SchemaValidationResult) -> str:
+    missing_revisions_text = ", ".join(result.missing_revisions) if result.missing_revisions else "<none>"
+    if result.missing_by_table:
+        missing_columns_lines = [
+            f"- {table_name}: {', '.join(columns)}"
+            for table_name, columns in sorted(result.missing_by_table.items())
+        ]
+        missing_columns_text = "\n".join(missing_columns_lines)
+    else:
+        missing_columns_text = "<none>"
+
+    return (
+        "================= DATABASE SCHEMA ERROR =================\n"
+        f"Database URL: {result.database_url}\n"
+        f"Missing Alembic revision(s): {missing_revisions_text}\n"
+        "Missing columns by table:\n"
+        f"{missing_columns_text}\n"
+        "Fix in Windows Command Prompt:\n"
+        "cd C:\\CAPA\\backend\n"
+        "call .venv\\Scripts\\activate\n"
+        "alembic upgrade head\n"
+        "Application is running in BLOCKED MODE until migrations are applied.\n"
+        "========================================================="
+    )
+
+
+def _log_schema_error_once(message: str) -> None:
+    global _schema_error_already_logged
+    if _schema_error_already_logged:
+        return
+    logger.error(message)
+    _schema_error_already_logged = True
+
+
+def validate_dev_schema(engine) -> SchemaValidationResult:
     inspector = inspect(engine)
     db_uri = settings.sqlalchemy_database_uri
     missing_by_table: dict[str, list[str]] = {}
+    expected_revisions = _get_expected_alembic_revisions()
+    detected_revisions = _get_alembic_revisions(engine)
+    missing_revisions = sorted(set(expected_revisions) - set(detected_revisions))
 
     if inspector.has_table("champions"):
         champion_columns = {column["name"] for column in inspector.get_columns("champions")}
@@ -74,29 +132,21 @@ def validate_dev_schema(engine) -> None:
         if missing_users:
             missing_by_table["users"] = missing_users
 
-    if not missing_by_table:
-        return
-
-    revisions = _get_alembic_revisions(engine)
-    logger.error("Database schema check failed for URI: %s", db_uri)
-    logger.error("Detected Alembic revisions: %s", revisions if revisions else "<none>")
-    for table_name, columns in missing_by_table.items():
-        logger.error("Missing columns on '%s': %s", table_name, ", ".join(columns))
-
-    details = "; ".join(
-        f"{table_name}: {', '.join(columns)}" for table_name, columns in sorted(missing_by_table.items())
+    result = SchemaValidationResult(
+        is_valid=not (missing_revisions or missing_by_table),
+        database_url=db_uri,
+        missing_revisions=missing_revisions,
+        missing_by_table=missing_by_table,
     )
-    revisions_text = ", ".join(revisions) if revisions else "<none>"
-    raise RuntimeError(
-        "Database schema is out of date for the current app models. "
-        f"DB URI: {db_uri}. "
-        f"Alembic revisions: {revisions_text}. "
-        f"Missing columns -> {details}. "
-        "Run these commands in Windows Command Prompt:\n"
-        "cd C:\\CAPA\\backend\n"
-        "call .venv\\Scripts\\activate\n"
-        "alembic upgrade head"
-    )
+    if result.is_valid:
+        return result
+
+    error_message = _build_schema_error_message(result)
+    if settings.dev_mode:
+        _log_schema_error_once(error_message)
+        return result
+
+    raise RuntimeError(error_message)
 
 
 def create_app() -> FastAPI:
@@ -119,6 +169,17 @@ def create_app() -> FastAPI:
             "displayRequestDuration": True,
         },
     )
+
+    app.state.schema_blocked = False
+
+    @app.middleware("http")
+    async def schema_block_middleware(request: Request, call_next):
+        if not app.state.schema_blocked or request.url.path == "/health":
+            return await call_next(request)
+        return HTMLResponse(
+            content="Application is running in BLOCKED MODE until migrations are applied.",
+            status_code=503,
+        )
 
     app.include_router(actions.router, dependencies=[Depends(require_auth)])
     app.include_router(projects.router, dependencies=[Depends(require_auth)])
@@ -260,7 +321,8 @@ app = create_app()
 @app.on_event("startup")
 def on_startup() -> None:
     Base.metadata.create_all(bind=engine)
-    validate_dev_schema(engine)
+    schema_status = validate_dev_schema(engine)
+    app.state.schema_blocked = settings.dev_mode and not schema_status.is_valid
     if settings.auth_enabled:
         db = SessionLocal()
         try:
