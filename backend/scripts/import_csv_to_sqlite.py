@@ -5,11 +5,10 @@ import csv
 from datetime import datetime, date
 from pathlib import Path
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, inspect
 from sqlalchemy.orm import sessionmaker
 
 from app.core.config import settings
-from app.db.base import Base
 from app.models.action import Action
 from app.models.champion import Champion
 from app.models.project import Project
@@ -148,7 +147,14 @@ def main() -> None:
         if settings.sqlalchemy_database_uri.startswith("sqlite")
         else {},
     )
-    Base.metadata.create_all(bind=engine)
+    inspector = inspect(engine)
+    required_tables = {"actions", "projects", "champions", "subtasks"}
+    missing_tables = sorted(required_tables - set(inspector.get_table_names()))
+    if missing_tables:
+        missing = ", ".join(missing_tables)
+        raise RuntimeError(
+            f"Database schema is missing tables: {missing}. Run Alembic migrations before importing CSV data."
+        )
     SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
     session = SessionLocal()
 

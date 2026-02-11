@@ -16,7 +16,6 @@ from app.api import actions, analyses, kpi, projects, tags
 from app.core.auth import get_current_user_optional, require_auth
 from app.core.config import settings
 from app.core.security import hash_password, is_password_too_long
-from app.db.base import Base
 from app.db.session import SessionLocal, engine
 from app.models.user import User
 from app.repositories import users as users_repo
@@ -393,7 +392,6 @@ app = create_app()
 
 @app.on_event("startup")
 def on_startup() -> None:
-    Base.metadata.create_all(bind=engine)
     schema_status = validate_dev_schema(engine)
     app.state.blocked_mode = BlockedModeState(
         is_blocked=settings.dev_mode and not schema_status.is_valid,
