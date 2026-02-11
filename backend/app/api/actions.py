@@ -28,6 +28,7 @@ def _serialize_action(action: Action, metrics, include_metrics: bool = True) -> 
         description=action.description,
         project_id=action.project_id,
         project_name=action.project.name if action.project else None,
+        project={"id": action.project.id, "name": action.project.name} if action.project else None,
         champion_id=action.champion_id,
         champion_name=action.champion.full_name if action.champion else None,
         owner=action.owner,

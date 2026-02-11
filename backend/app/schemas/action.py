@@ -37,12 +37,18 @@ class ActionUpdate(BaseModel):
     priority: str | None = None
 
 
+class ActionProjectRef(BaseModel):
+    id: int
+    name: str
+
+
 class ActionRead(BaseModel):
     id: int
     title: str
     description: str | None = ""
     project_id: int | None = None
     project_name: str | None = None
+    project: ActionProjectRef | None = None
     champion_id: int | None = None
     champion_name: str | None = None
     owner: str | None = None
