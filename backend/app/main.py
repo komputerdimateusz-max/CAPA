@@ -12,7 +12,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import inspect, text
 
-from app.api import actions, kpi, projects
+from app.api import actions, analyses, kpi, projects, tags
 from app.core.auth import get_current_user_optional, require_auth
 from app.core.config import settings
 from app.core.security import hash_password, is_password_too_long
@@ -236,6 +236,8 @@ def create_app() -> FastAPI:
     app.include_router(actions.router, dependencies=[Depends(require_auth)])
     app.include_router(projects.router, dependencies=[Depends(require_auth)])
     app.include_router(kpi.router, dependencies=[Depends(require_auth)])
+    app.include_router(tags.router, dependencies=[Depends(require_auth)])
+    app.include_router(analyses.router, dependencies=[Depends(require_auth)])
     app.include_router(routes_auth.router)
     app.include_router(ui_routes.router)
     app.include_router(routes_projects.router)

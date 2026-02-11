@@ -43,7 +43,7 @@ def build_action_rows(actions: list[Action], subtasks: list[Subtask]) -> list[di
                 "due_date": format_date(action.due_date),
                 "closed_at": format_date(action.closed_at),
                 "days_late": days_late,
-                "tags": action.tags or [],
+                "tags": [{"id": tag.id, "name": tag.name, "color": tag.color} for tag in action.tags],
             }
         )
     return rows

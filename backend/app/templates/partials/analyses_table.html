@@ -9,17 +9,29 @@
           <th>Status</th>
           <th>Champion</th>
           <th>Created</th>
+          <th>Tags</th>
         </tr>
       </thead>
       <tbody>
         {% for analysis in analyses %}
           <tr>
-            <td><a href="/ui/analyses/{{ analysis.analysis_id }}">{{ analysis.analysis_id }}</a></td>
+            <td>{{ analysis.id }}</td>
             <td>{{ analysis.type }}</td>
-            <td>{{ analysis.title or '—' }}</td>
+            <td><a href="/ui/analyses/{{ analysis.id }}">{{ analysis.title or '—' }}</a></td>
             <td>{{ analysis.status or 'Open' }}</td>
             <td>{{ analysis.champion or '—' }}</td>
             <td>{{ format_date(analysis.created_at) }}</td>
+            <td>
+              {% if analysis.tags %}
+                <div class="tag-list">
+                  {% for tag in analysis.tags %}
+                    <span class="tag-chip" {% if tag.color %}style="--tag-color: {{ tag.color }}"{% endif %}>{{ tag.name }}</span>
+                  {% endfor %}
+                </div>
+              {% else %}
+                <span class="muted">—</span>
+              {% endif %}
+            </td>
           </tr>
         {% endfor %}
       </tbody>
