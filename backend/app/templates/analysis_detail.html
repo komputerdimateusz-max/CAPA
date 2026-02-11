@@ -2,7 +2,7 @@
 {% block content %}
   <section class="card">
     <div class="card-header">
-      <h2>🔍 Analysis {{ analysis.analysis_id }}</h2>
+      <h2>🔍 Analysis {{ analysis.id }}</h2>
       <div class="button-row">
         <a class="button secondary" href="/ui/analyses">Back to list</a>
       </div>
@@ -44,6 +44,33 @@
       {% else %}
         <p class="muted">Template details coming soon.</p>
       {% endif %}
+    </div>
+
+
+    <div class="card" style="margin-top:16px;">
+      <h4>Tags</h4>
+      {% if analysis.tags %}
+        <div class="tag-list">
+          {% for tag in analysis.tags %}
+            <form method="post" action="/ui/analyses/{{ analysis.id }}/tags/{{ tag.id }}/delete" class="tag-form">
+              <span class="tag-chip" {% if tag.color %}style="--tag-color: {{ tag.color }}"{% endif %}>{{ tag.name }}</span>
+              <button class="tag-remove" type="submit">×</button>
+            </form>
+          {% endfor %}
+        </div>
+      {% else %}
+        <p class="muted">No tags yet.</p>
+      {% endif %}
+      <form method="post" action="/ui/analyses/{{ analysis.id }}/tags" class="form-inline">
+        <label>
+          Add tag
+          <input type="text" name="tag_name" list="analysis-tags-list" placeholder="Type or create tag" required />
+        </label>
+        <datalist id="analysis-tags-list">
+          {% for tag in all_tags %}<option value="{{ tag.name }}"></option>{% endfor %}
+        </datalist>
+        <button class="button secondary" type="submit">Add</button>
+      </form>
     </div>
 
     <div class="card" style="margin-top:16px;">

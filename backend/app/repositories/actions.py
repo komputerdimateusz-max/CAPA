@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import date
 from typing import Iterable
 
-from sqlalchemy import select, func, String, Date
+from sqlalchemy import select, func, Date
 from sqlalchemy.orm import selectinload
 from sqlalchemy.orm import Session
 
@@ -11,6 +11,7 @@ from app.models.action import Action
 from app.models.champion import Champion
 from app.models.project import Project
 from app.models.subtask import Subtask
+from app.models.tag import Tag
 
 
 def list_actions(
@@ -29,7 +30,7 @@ def list_actions(
     limit: int = 100,
     offset: int = 0,
 ) -> tuple[list[Action], int]:
-    stmt = select(Action).options(selectinload(Action.project), selectinload(Action.champion))
+    stmt = select(Action).options(selectinload(Action.project), selectinload(Action.champion), selectinload(Action.tags))
 
     if statuses:
         stmt = stmt.where(Action.status.in_(statuses))
@@ -54,7 +55,7 @@ def list_actions(
         )
     if tags:
         for tag in tags:
-            stmt = stmt.where(func.lower(Action.tags.cast(String)).like(f"%{tag.lower()}%"))
+            stmt = stmt.where(Action.tags.any(func.lower(Tag.name) == tag.lower()))
     if due_from:
         stmt = stmt.where(Action.due_date >= due_from)
     if due_to:
@@ -86,7 +87,7 @@ def list_actions_for_projects(db: Session, project_ids: list[int]) -> list[Actio
         return []
     stmt = (
         select(Action)
-        .options(selectinload(Action.project), selectinload(Action.champion))
+        .options(selectinload(Action.project), selectinload(Action.champion), selectinload(Action.tags))
         .where(Action.project_id.in_(project_ids))
     )
     return list(db.scalars(stmt).all())
@@ -99,7 +100,7 @@ def list_actions_created_between(
     project_id: int | None = None,
     champion_id: int | None = None,
 ) -> list[Action]:
-    stmt = select(Action).options(selectinload(Action.project), selectinload(Action.champion))
+    stmt = select(Action).options(selectinload(Action.project), selectinload(Action.champion), selectinload(Action.tags))
     created_date = func.date(Action.created_at).cast(Date)
     if date_from:
         stmt = stmt.where(created_date >= date_from)
@@ -114,7 +115,8 @@ def list_actions_created_between(
 
 
 def get_action(db: Session, action_id: int) -> Action | None:
-    return db.get(Action, action_id)
+    stmt = select(Action).options(selectinload(Action.project), selectinload(Action.champion), selectinload(Action.tags)).where(Action.id == action_id)
+    return db.scalar(stmt)
 
 
 def create_action(db: Session, action: Action) -> Action:

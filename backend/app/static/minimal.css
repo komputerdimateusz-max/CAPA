@@ -322,3 +322,37 @@ th {
   gap: 12px;
   flex-wrap: wrap;
 }
+
+.tag-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.tag-chip {
+  --tag-color: #334155;
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid color-mix(in srgb, var(--tag-color) 45%, #cbd5e1);
+  background: color-mix(in srgb, var(--tag-color) 12%, #f8fafc);
+  color: var(--tag-color);
+  border-radius: 999px;
+  font-size: 12px;
+  line-height: 1;
+  padding: 5px 10px;
+  font-weight: 600;
+}
+
+.tag-form {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.tag-remove {
+  border: none;
+  background: transparent;
+  color: #64748b;
+  cursor: pointer;
+  font-size: 14px;
+}

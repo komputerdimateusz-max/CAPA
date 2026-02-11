@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 from datetime import date, datetime
-from typing import Any
-
 from pydantic import BaseModel, Field
+
+from app.schemas.tag import TagRead
 
 
 class ActionBase(BaseModel):
@@ -37,10 +37,21 @@ class ActionUpdate(BaseModel):
     priority: str | None = None
 
 
-class ActionRead(ActionBase):
+class ActionRead(BaseModel):
     id: int
+    title: str
+    description: str | None = ""
+    project_id: int | None = None
     project_name: str | None = None
+    champion_id: int | None = None
     champion_name: str | None = None
+    owner: str | None = None
+    status: str
+    created_at: datetime | None = None
+    due_date: date | None = None
+    closed_at: datetime | None = None
+    tags: list[TagRead] = Field(default_factory=list)
+    priority: str | None = None
     days_late: int = 0
     time_to_close_days: int | None = None
     on_time_close: bool | None = None

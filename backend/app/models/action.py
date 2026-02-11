@@ -2,10 +2,11 @@ from __future__ import annotations
 
 from datetime import datetime, date
 
-from sqlalchemy import Date, DateTime, ForeignKey, Integer, String, Text, JSON
+from sqlalchemy import Date, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
+from app.models.tag import action_tags
 
 
 class Action(Base):
@@ -21,11 +22,11 @@ class Action(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
     due_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     closed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    tags: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
     priority: Mapped[str | None] = mapped_column(String(50), nullable=True)
 
     project = relationship("Project", back_populates="actions")
     champion = relationship("Champion", back_populates="actions")
+    tags = relationship("Tag", secondary=action_tags, back_populates="actions")
     subtasks = relationship(
         "Subtask",
         back_populates="action",

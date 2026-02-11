@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date
 
+from sqlalchemy.orm import Session
+
 from app.repositories import analyses as analyses_repo
 
 
@@ -25,42 +27,37 @@ def list_analysis_templates() -> tuple[AnalysisTemplate, ...]:
     return ANALYSIS_TEMPLATES
 
 
-def list_analyses_page(page: int, page_size: int) -> tuple[list[dict[str, object]], int]:
-    analyses = analyses_repo.list_analyses()
-    analyses.sort(
-        key=lambda row: (
-            row.get("created_at") or date.min,
-            str(row.get("analysis_id") or ""),
-        ),
-        reverse=True,
-    )
-    total = len(analyses)
-    start = (page - 1) * page_size
-    end = start + page_size
-    return analyses[start:end], total
+def list_analyses_page(
+    db: Session,
+    page: int,
+    page_size: int,
+    tags: list[str] | None = None,
+):
+    return analyses_repo.list_analyses(db, tags=tags, limit=page_size, offset=(page - 1) * page_size)
 
 
 def create_analysis(
+    db: Session,
     analysis_type: str,
     title: str,
     description: str,
     champion: str,
-) -> dict[str, object]:
+):
     analysis_type = analysis_type.strip().upper()
     if analysis_type not in analyses_repo.ANALYSIS_TYPES:
         raise ValueError("Select a valid analysis template.")
     title_clean = " ".join(title.split()).strip()
     if not title_clean:
         raise ValueError("Title is required.")
+
     payload = {
-        "analysis_id": analyses_repo.generate_analysis_id(analysis_type),
+        "id": analyses_repo.generate_analysis_id(analysis_type, analyses_repo.list_analysis_ids(db)),
         "type": analysis_type,
         "title": title_clean,
         "description": description.strip(),
         "champion": champion.strip(),
         "status": "Open",
-        "created_at": date.today().isoformat(),
-        "closed_at": "",
+        "created_at": date.today(),
+        "closed_at": None,
     }
-    analyses_repo.upsert_analysis(payload)
-    return payload
+    return analyses_repo.create_analysis(db, payload)

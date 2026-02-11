@@ -15,6 +15,7 @@ from app.models.subtask import Subtask
 from app.repositories import actions as actions_repo
 from app.repositories import champions as champions_repo
 from app.repositories import projects as projects_repo
+from app.repositories import tags as tags_repo
 from app.services.kpi import build_actions_kpi
 from app.services.metrics import calculate_action_days_late
 from app.ui.utils import build_action_rows, build_query_params, format_date
@@ -47,13 +48,6 @@ def _html_fallback_page(title: str, message: str, status_code: int = 500) -> HTM
         "</body></html>"
     )
     return HTMLResponse(content=body, status_code=status_code)
-
-
-def _parse_tags(tags: str | None) -> list[str] | None:
-    if not tags:
-        return None
-    parsed = [tag.strip() for tag in tags.split(",") if tag.strip()]
-    return parsed or None
 
 
 def _parse_optional_date(value: str | None) -> date | None:
@@ -198,7 +192,7 @@ def actions_list(
     champion_id: int | None = None,
     project_id: int | None = None,
     q: str | None = None,
-    tags: str | None = None,
+    tags: list[str] | None = Query(default=None),
     from_date: date | None = Query(default=None, alias="from"),
     to_date: date | None = Query(default=None, alias="to"),
     sort: str | None = None,
@@ -206,14 +200,13 @@ def actions_list(
     page_size: int = Query(default=25, ge=1, le=200),
     db: Session = Depends(get_db),
 ):
-    parsed_tags = _parse_tags(tags)
     table_data = _load_actions_table(
         db,
         status_filters=status_filters,
         champion_id=champion_id,
         project_id=project_id,
         query=q,
-        tags=parsed_tags,
+        tags=tags,
         due_from=from_date,
         due_to=to_date,
         sort=sort,
@@ -226,7 +219,7 @@ def actions_list(
         champion_id=champion_id,
         project_id=project_id,
         query=q,
-        tags=parsed_tags,
+        tags=tags,
         due_from=from_date,
         due_to=to_date,
     )
@@ -237,7 +230,7 @@ def actions_list(
         "status": status_filters or [],
         "project_id": project_id,
         "champion_id": champion_id,
-        "tags": tags or "",
+        "tags": tags or [],
         "from": from_date.isoformat() if from_date else "",
         "to": to_date.isoformat() if to_date else "",
         "sort": sort or "",
@@ -255,6 +248,7 @@ def actions_list(
             "champions": champions,
             "status_options": STATUS_OPTIONS,
             "sort_options": SORT_OPTIONS,
+            "all_tags": tags_repo.list_tags(db),
             "pagination": table_data,
             "query_builder": build_query_params,
         },
@@ -268,7 +262,7 @@ def actions_table(
     champion_id: int | None = None,
     project_id: int | None = None,
     q: str | None = None,
-    tags: str | None = None,
+    tags: list[str] | None = Query(default=None),
     from_date: date | None = Query(default=None, alias="from"),
     to_date: date | None = Query(default=None, alias="to"),
     sort: str | None = None,
@@ -276,14 +270,13 @@ def actions_table(
     page_size: int = Query(default=25, ge=1, le=200),
     db: Session = Depends(get_db),
 ):
-    parsed_tags = _parse_tags(tags)
     table_data = _load_actions_table(
         db,
         status_filters=status_filters,
         champion_id=champion_id,
         project_id=project_id,
         query=q,
-        tags=parsed_tags,
+        tags=tags,
         due_from=from_date,
         due_to=to_date,
         sort=sort,
@@ -295,7 +288,7 @@ def actions_table(
         "status": status_filters or [],
         "project_id": project_id,
         "champion_id": champion_id,
-        "tags": tags or "",
+        "tags": tags or [],
         "from": from_date.isoformat() if from_date else "",
         "to": to_date.isoformat() if to_date else "",
         "sort": sort or "",
@@ -328,6 +321,7 @@ def action_detail(action_id: int, request: Request, db: Session = Depends(get_db
             "subtasks": subtasks,
             "days_late": days_late,
             "format_date": format_date,
+            "all_tags": tags_repo.list_tags(db),
         },
     )
 
@@ -355,12 +349,53 @@ def create_action(
         owner=owner or None,
         status=status or "OPEN",
         due_date=_parse_optional_date(due_date),
-        tags=_parse_tags(tags) or [],
         created_at=datetime.utcnow(),
     )
+    if tags:
+        parsed_tags = [item.strip() for item in tags.split(",") if item.strip()]
+        action.tags = [tags_repo.get_or_create_tag(db, tag_name) for tag_name in parsed_tags]
     action = actions_repo.create_action(db, action)
     return RedirectResponse(url=f"/ui/actions/{action.id}", status_code=303)
 
+
+
+
+@router.post("/actions/{action_id}/tags", response_model=None)
+def add_action_tag(
+    action_id: int,
+    request: Request,
+    tag_name: str = Form(...),
+    db: Session = Depends(get_db),
+):
+    action = actions_repo.get_action(db, action_id)
+    if not action:
+        raise HTTPException(status_code=404, detail="Action not found")
+    user = _current_user(request)
+    enforce_write_access(user)
+    enforce_action_ownership(user, action)
+    tag = tags_repo.get_or_create_tag(db, tag_name)
+    if tag not in action.tags:
+        action.tags.append(tag)
+    actions_repo.update_action(db, action)
+    return RedirectResponse(url=f"/ui/actions/{action_id}", status_code=303)
+
+
+@router.post("/actions/{action_id}/tags/{tag_id}/delete", response_model=None)
+def remove_action_tag(
+    action_id: int,
+    tag_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    action = actions_repo.get_action(db, action_id)
+    if not action:
+        raise HTTPException(status_code=404, detail="Action not found")
+    user = _current_user(request)
+    enforce_write_access(user)
+    enforce_action_ownership(user, action)
+    action.tags = [tag for tag in action.tags if tag.id != tag_id]
+    actions_repo.update_action(db, action)
+    return RedirectResponse(url=f"/ui/actions/{action_id}", status_code=303)
 
 @router.post("/actions/{action_id}/delete", response_model=None)
 def delete_action(action_id: int, request: Request, db: Session = Depends(get_db)):

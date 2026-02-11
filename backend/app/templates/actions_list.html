@@ -137,7 +137,11 @@
       </label>
       <label>
         Tags
-        <input type="text" name="tags" value="{{ filters.tags }}" placeholder="comma separated" />
+        <select name="tags" multiple>
+          {% for tag in all_tags %}
+            <option value="{{ tag.name }}" {% if tag.name in filters.tags %}selected{% endif %}>{{ tag.name }}</option>
+          {% endfor %}
+        </select>
       </label>
       <label>
         Due from
