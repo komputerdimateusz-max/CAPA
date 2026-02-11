@@ -34,6 +34,7 @@ SORT_OPTIONS = (
     ("-days_late", "Days late (most first)"),
 )
 STATUS_OPTIONS = ("OPEN", "IN_PROGRESS", "BLOCKED", "CLOSED")
+PRIORITY_OPTIONS = ("LOW", "MEDIUM", "HIGH", "CRITICAL")
 logger = logging.getLogger("app.ui")
 
 
@@ -307,7 +308,12 @@ def actions_table(
 
 
 @router.get("/actions/{action_id}", response_class=HTMLResponse, response_model=None)
-def action_detail(action_id: int, request: Request, db: Session = Depends(get_db)):
+def action_detail(
+    action_id: int,
+    request: Request,
+    edit: bool = False,
+    db: Session = Depends(get_db),
+):
     action = actions_repo.get_action(db, action_id)
     if not action:
         raise HTTPException(status_code=404, detail="Action not found")
@@ -322,8 +328,53 @@ def action_detail(action_id: int, request: Request, db: Session = Depends(get_db
             "days_late": days_late,
             "format_date": format_date,
             "all_tags": tags_repo.list_tags(db),
+            "projects": projects_repo.list_projects(db),
+            "champions": champions_repo.list_champions(db),
+            "status_options": STATUS_OPTIONS,
+            "priority_options": PRIORITY_OPTIONS,
+            "edit_mode": edit,
         },
     )
+
+
+@router.post("/actions/{action_id}/edit", response_model=None)
+def update_action_detail(
+    action_id: int,
+    request: Request,
+    title: str = Form(...),
+    description: str = Form(""),
+    status: str = Form("OPEN"),
+    champion_id: str | None = Form(None),
+    owner: str | None = Form(None),
+    due_date: str | None = Form(None),
+    project_id: str | None = Form(None),
+    priority: str | None = Form(None),
+    db: Session = Depends(get_db),
+):
+    action = actions_repo.get_action(db, action_id)
+    if not action:
+        raise HTTPException(status_code=404, detail="Action not found")
+    user = _current_user(request)
+    enforce_write_access(user)
+    enforce_action_ownership(user, action)
+
+    normalized_status = (status or "OPEN").upper()
+    action.title = title
+    action.description = description or ""
+    action.status = normalized_status
+    action.champion_id = _parse_optional_int(champion_id)
+    action.owner = owner or None
+    action.due_date = _parse_optional_date(due_date)
+    action.project_id = _parse_optional_int(project_id)
+    action.priority = (priority or "").strip() or None
+
+    if normalized_status == "CLOSED" and action.closed_at is None:
+        action.closed_at = datetime.utcnow()
+    if normalized_status != "CLOSED":
+        action.closed_at = None
+
+    actions_repo.update_action(db, action)
+    return RedirectResponse(url=f"/ui/actions/{action_id}", status_code=303)
 
 
 @router.post("/actions", response_model=None)
