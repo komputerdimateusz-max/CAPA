@@ -41,6 +41,7 @@ def build_action_rows(actions: list[Action], subtasks: list[Subtask]) -> list[di
                 "owner_display": f"{owner} / {champion}" if owner != "—" else champion,
                 "project": action.project.name if action.project else "—",
                 "due_date": format_date(action.due_date),
+                "created_at": format_date(action.created_at),
                 "closed_at": format_date(action.closed_at),
                 "days_late": days_late,
                 "tags": [{"id": tag.id, "name": tag.name, "color": tag.color} for tag in action.tags],

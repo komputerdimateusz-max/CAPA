@@ -1,0 +1,31 @@
+<div id="project-actions-manager">
+  <form
+    class="filter-grid"
+    hx-post="/ui/projects/{{ project.id }}/actions"
+    hx-target="#project-actions-manager"
+    hx-swap="outerHTML"
+  >
+    <label>
+      Search unassigned actions
+      <input type="text" name="action_search" value="{{ action_search }}" placeholder="Search title or description" />
+    </label>
+    <label>
+      Action
+      <select name="action_id" required>
+        <option value="">Select action</option>
+        {% for option in assignment_options %}
+          <option value="{{ option.id }}">#{{ option.id }} · {{ option.title }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <div class="form-actions">
+      <button class="button" type="submit">Add action</button>
+    </div>
+  </form>
+
+  {% if assignment_feedback %}
+    <p class="toast {{ assignment_feedback_level }}" style="margin-top: 0.5rem;">{{ assignment_feedback }}</p>
+  {% endif %}
+
+  {% include "partials/project_actions_table.html" %}
+</div>

@@ -270,6 +270,12 @@ th {
   border: 1px solid #a7f3d0;
 }
 
+.toast.error {
+  background: #fef2f2;
+  color: #991b1b;
+  border: 1px solid #fecaca;
+}
+
 .status-badge {
   display: inline-block;
   padding: 4px 10px;

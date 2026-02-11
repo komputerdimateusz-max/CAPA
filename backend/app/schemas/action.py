@@ -48,6 +48,7 @@ class ActionRead(BaseModel):
     owner: str | None = None
     status: str
     created_at: datetime | None = None
+    updated_at: datetime | None = None
     due_date: date | None = None
     closed_at: datetime | None = None
     tags: list[TagRead] = Field(default_factory=list)
