@@ -20,34 +20,43 @@ def _table_columns(table_name: str) -> set[str]:
     return {column["name"] for column in inspector.get_columns(table_name)}
 
 
+def _has_table(table_name: str) -> bool:
+    inspector = inspect(op.get_bind())
+    return table_name in inspector.get_table_names()
+
+
 def upgrade() -> None:
-    op.create_table(
-        "analyses",
-        sa.Column("id", sa.String(length=64), primary_key=True),
-        sa.Column("type", sa.String(length=20), nullable=False),
-        sa.Column("title", sa.String(length=255), nullable=False),
-        sa.Column("description", sa.Text(), nullable=True),
-        sa.Column("champion", sa.String(length=255), nullable=True),
-        sa.Column("status", sa.String(length=50), nullable=False),
-        sa.Column("created_at", sa.Date(), nullable=False),
-        sa.Column("closed_at", sa.Date(), nullable=True),
-    )
-    op.create_table(
-        "tags",
-        sa.Column("id", sa.Integer(), primary_key=True),
-        sa.Column("name", sa.String(length=64), nullable=False, unique=True),
-        sa.Column("color", sa.String(length=32), nullable=True),
-    )
-    op.create_table(
-        "action_tags",
-        sa.Column("action_id", sa.Integer(), sa.ForeignKey("actions.id", ondelete="CASCADE"), primary_key=True),
-        sa.Column("tag_id", sa.Integer(), sa.ForeignKey("tags.id", ondelete="CASCADE"), primary_key=True),
-    )
-    op.create_table(
-        "analysis_tags",
-        sa.Column("analysis_id", sa.String(length=64), sa.ForeignKey("analyses.id", ondelete="CASCADE"), primary_key=True),
-        sa.Column("tag_id", sa.Integer(), sa.ForeignKey("tags.id", ondelete="CASCADE"), primary_key=True),
-    )
+    if not _has_table("analyses"):
+        op.create_table(
+            "analyses",
+            sa.Column("id", sa.String(length=64), primary_key=True),
+            sa.Column("type", sa.String(length=20), nullable=False),
+            sa.Column("title", sa.String(length=255), nullable=False),
+            sa.Column("description", sa.Text(), nullable=True),
+            sa.Column("champion", sa.String(length=255), nullable=True),
+            sa.Column("status", sa.String(length=50), nullable=False),
+            sa.Column("created_at", sa.Date(), nullable=False),
+            sa.Column("closed_at", sa.Date(), nullable=True),
+        )
+    if not _has_table("tags"):
+        op.create_table(
+            "tags",
+            sa.Column("id", sa.Integer(), primary_key=True),
+            sa.Column("name", sa.String(length=64), nullable=False, unique=True),
+            sa.Column("color", sa.String(length=32), nullable=True),
+        )
+    if not _has_table("action_tags"):
+        op.create_table(
+            "action_tags",
+            sa.Column("action_id", sa.Integer(), sa.ForeignKey("actions.id", ondelete="CASCADE"), primary_key=True),
+            sa.Column("tag_id", sa.Integer(), sa.ForeignKey("tags.id", ondelete="CASCADE"), primary_key=True),
+        )
+    if not _has_table("analysis_tags"):
+        op.create_table(
+            "analysis_tags",
+            sa.Column("analysis_id", sa.String(length=64), sa.ForeignKey("analyses.id", ondelete="CASCADE"), primary_key=True),
+            sa.Column("tag_id", sa.Integer(), sa.ForeignKey("tags.id", ondelete="CASCADE"), primary_key=True),
+        )
 
     if "tags" in _table_columns("actions"):
         bind = op.get_bind()
