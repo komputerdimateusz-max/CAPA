@@ -1,14 +1,33 @@
 <div id="project-actions-manager">
   <form
+    class="form-inline"
+    style="margin-bottom: 0.75rem;"
+    hx-get="/ui/projects/{{ project.id }}/actions-manager"
+    hx-target="#project-actions-manager"
+    hx-swap="outerHTML"
+  >
+    <input type="hidden" name="only_open" value="{{ 1 if filters.only_open else 0 }}" />
+    <input type="hidden" name="only_overdue" value="{{ 1 if filters.only_overdue else 0 }}" />
+    <input type="hidden" name="page_size" value="{{ filters.page_size }}" />
+    <label>
+      Search unassigned actions
+      <input type="text" name="action_search" value="{{ action_search }}" placeholder="Search title or description" />
+    </label>
+    <div class="form-actions">
+      <button class="button secondary" type="submit">Search</button>
+    </div>
+  </form>
+
+  <form
     class="filter-grid"
     hx-post="/ui/projects/{{ project.id }}/actions"
     hx-target="#project-actions-manager"
     hx-swap="outerHTML"
   >
-    <label>
-      Search unassigned actions
-      <input type="text" name="action_search" value="{{ action_search }}" placeholder="Search title or description" />
-    </label>
+    <input type="hidden" name="action_search" value="{{ action_search }}" />
+    <input type="hidden" name="only_open" value="{{ 1 if filters.only_open else 0 }}" />
+    <input type="hidden" name="only_overdue" value="{{ 1 if filters.only_overdue else 0 }}" />
+    <input type="hidden" name="page_size" value="{{ filters.page_size }}" />
     <label>
       Action
       <select name="action_id" required>

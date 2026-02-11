@@ -12,7 +12,7 @@ from app.db.session import get_db
 from app.repositories import actions as actions_repo
 from app.repositories import projects as projects_repo
 from app.services import projects as projects_service
-from app.ui.utils import build_query_params, format_date, build_action_rows
+from app.ui.utils import build_action_rows, build_query_params, format_date
 
 router = APIRouter(prefix="/ui", tags=["ui"])
 
@@ -66,6 +66,43 @@ def _load_unassigned_actions(db: Session, query: str | None, limit: int = 25):
         offset=0,
     )
     return actions
+
+
+def _manager_context(
+    request: Request,
+    db: Session,
+    *,
+    project_id: int,
+    action_search: str | None,
+    only_open: bool,
+    only_overdue: bool,
+    page_size: int,
+    assignment_feedback: str | None = None,
+    assignment_feedback_level: str = "success",
+) -> dict[str, object]:
+    project = projects_repo.get_project(db, project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    table_data = _load_project_actions_table(db, project_id, only_open, only_overdue, 1, page_size)
+    filters = {
+        "only_open": 1 if only_open else None,
+        "only_overdue": 1 if only_overdue else None,
+        "page_size": page_size,
+    }
+    return {
+        "request": request,
+        "project": project,
+        "actions": table_data["actions"],
+        "pagination": table_data,
+        "filters": filters,
+        "query_builder": build_query_params,
+        "table_endpoint": f"/ui/projects/{project_id}/_table",
+        "assignment_options": _load_unassigned_actions(db, action_search),
+        "action_search": action_search or "",
+        "assignment_feedback": assignment_feedback,
+        "assignment_feedback_level": assignment_feedback_level,
+    }
 
 
 @router.get("/projects", response_class=HTMLResponse, response_model=None)
@@ -210,12 +247,44 @@ def project_detail(
     )
 
 
+@router.get("/projects/{project_id}/actions-manager", response_class=HTMLResponse, response_model=None)
+def project_actions_manager(
+    project_id: int,
+    request: Request,
+    action_search: str | None = None,
+    only_open: bool = False,
+    only_overdue: bool = False,
+    page_size: int = Query(default=25, ge=1, le=200),
+    db: Session = Depends(get_db),
+):
+    return templates.TemplateResponse(
+        "partials/project_actions_manager.html",
+        _manager_context(
+            request,
+            db,
+            project_id=project_id,
+            action_search=action_search,
+            only_open=only_open,
+            only_overdue=only_overdue,
+            page_size=page_size,
+        ),
+    )
+
+
+# Manual smoke checklist for regression protection:
+# 1) Edit action -> set project -> save -> project shows on action.
+# 2) Project screen -> add unassigned action -> it appears in list.
+# 3) Remove action from project -> action project becomes null.
+# 4) Tags still work, subtasks still work.
 @router.post("/projects/{project_id}/actions", response_class=HTMLResponse, response_model=None)
 def add_project_action(
     project_id: int,
     request: Request,
     action_id: int = Form(...),
     action_search: str | None = Form(None),
+    only_open: bool = Form(False),
+    only_overdue: bool = Form(False),
+    page_size: int = Form(25),
     db: Session = Depends(get_db),
 ):
     project = projects_repo.get_project(db, project_id)
@@ -238,22 +307,19 @@ def add_project_action(
         feedback = "Action assigned to project."
         level = "success"
 
-    table_data = _load_project_actions_table(db, project_id, False, False, 1, 25)
     return templates.TemplateResponse(
         "partials/project_actions_manager.html",
-        {
-            "request": request,
-            "project": project,
-            "actions": table_data["actions"],
-            "pagination": table_data,
-            "filters": {"only_open": None, "only_overdue": None, "page_size": 25},
-            "query_builder": build_query_params,
-            "table_endpoint": f"/ui/projects/{project_id}/_table",
-            "assignment_options": _load_unassigned_actions(db, action_search),
-            "action_search": action_search or "",
-            "assignment_feedback": feedback,
-            "assignment_feedback_level": level,
-        },
+        _manager_context(
+            request,
+            db,
+            project_id=project_id,
+            action_search=action_search,
+            only_open=only_open,
+            only_overdue=only_overdue,
+            page_size=page_size,
+            assignment_feedback=feedback,
+            assignment_feedback_level=level,
+        ),
     )
 
 
@@ -263,6 +329,9 @@ def remove_project_action(
     action_id: int,
     request: Request,
     action_search: str | None = Form(None),
+    only_open: bool = Form(False),
+    only_overdue: bool = Form(False),
+    page_size: int = Form(25),
     db: Session = Depends(get_db),
 ):
     project = projects_repo.get_project(db, project_id)
@@ -283,22 +352,19 @@ def remove_project_action(
         feedback = "Action unassigned from project."
         level = "success"
 
-    table_data = _load_project_actions_table(db, project_id, False, False, 1, 25)
     return templates.TemplateResponse(
         "partials/project_actions_manager.html",
-        {
-            "request": request,
-            "project": project,
-            "actions": table_data["actions"],
-            "pagination": table_data,
-            "filters": {"only_open": None, "only_overdue": None, "page_size": 25},
-            "query_builder": build_query_params,
-            "table_endpoint": f"/ui/projects/{project_id}/_table",
-            "assignment_options": _load_unassigned_actions(db, action_search),
-            "action_search": action_search or "",
-            "assignment_feedback": feedback,
-            "assignment_feedback_level": level,
-        },
+        _manager_context(
+            request,
+            db,
+            project_id=project_id,
+            action_search=action_search,
+            only_open=only_open,
+            only_overdue=only_overdue,
+            page_size=page_size,
+            assignment_feedback=feedback,
+            assignment_feedback_level=level,
+        ),
     )
 
 

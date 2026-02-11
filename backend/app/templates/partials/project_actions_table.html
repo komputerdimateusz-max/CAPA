@@ -31,6 +31,9 @@
                 hx-confirm="Remove action from project? This will not delete the action."
               >
                 <input type="hidden" name="action_search" value="{{ action_search }}" />
+                <input type="hidden" name="only_open" value="{{ 1 if filters.only_open else 0 }}" />
+                <input type="hidden" name="only_overdue" value="{{ 1 if filters.only_overdue else 0 }}" />
+                <input type="hidden" name="page_size" value="{{ filters.page_size }}" />
                 <button type="submit" class="button secondary">Unassign</button>
               </form>
             </td>

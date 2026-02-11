@@ -130,3 +130,30 @@ def test_unassigned_actions_search_filter(client, db_session):
     payload = response.json()
     assert payload["total"] == 1
     assert payload["items"][0]["title"] == "Pump maintenance"
+
+
+def test_patch_action_project_assignment_and_clear(client, db_session):
+    project = Project(name="Project One", status="OPEN")
+    db_session.add(project)
+    db_session.flush()
+
+    action = Action(
+        title="Assignable action",
+        description="Test",
+        status="OPEN",
+        created_at=datetime.utcnow(),
+    )
+    db_session.add(action)
+    db_session.commit()
+
+    assign_response = client.patch(f"/api/actions/{action.id}", json={"project_id": project.id})
+    assert assign_response.status_code == 200
+    payload = assign_response.json()
+    assert payload["project_id"] == project.id
+    assert payload["project"]["id"] == project.id
+    assert payload["project"]["name"] == project.name
+
+    unassign_response = client.patch(f"/api/actions/{action.id}", json={"project_id": None})
+    assert unassign_response.status_code == 200
+    assert unassign_response.json()["project_id"] is None
+    assert unassign_response.json()["project"] is None
