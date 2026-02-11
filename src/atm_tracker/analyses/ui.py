@@ -295,20 +295,37 @@ def _render_list() -> None:
             champion_options = ["All"] + sorted({value for value in champion_options if value})
 
             with st.expander("🔍 Filters", expanded=True):
-                filter_col1, filter_col2, filter_col3, filter_col4 = st.columns(4)
-                with filter_col1:
-                    st.selectbox("Type", type_options, key="analysis_filter_type")
-                with filter_col2:
-                    st.selectbox("Champion", champion_options, key="analysis_filter_champion")
-                with filter_col3:
-                    st.selectbox("Status", status_options, key="analysis_filter_status")
-                with filter_col4:
+                row1 = st.columns(5)
+                with row1[0]:
                     st.text_input(
-                        "Search (ID or title)",
+                        "Search",
                         placeholder="e.g. A3-001 or coating defect",
                         key="analysis_filter_search",
                     )
-                st.button("Add analysis", on_click=_queue_add_analysis, use_container_width=True)
+                with row1[1]:
+                    st.selectbox("Status", status_options, key="analysis_filter_status")
+                with row1[2]:
+                    st.selectbox("Project", ["All"], key="analysis_filter_project")
+                with row1[3]:
+                    st.selectbox("Champion", champion_options, key="analysis_filter_champion")
+                with row1[4]:
+                    st.selectbox("Tags", ["All"], key="analysis_filter_tags")
+
+                with st.expander("Advanced filters", expanded=False):
+                    row2 = st.columns(4)
+                    with row2[0]:
+                        st.date_input("Date from", value=None, key="analysis_filter_date_from")
+                    with row2[1]:
+                        st.date_input("Date to", value=None, key="analysis_filter_date_to")
+                    with row2[2]:
+                        st.selectbox("Sort", ["Newest", "Oldest"], key="analysis_filter_sort")
+                    with row2[3]:
+                        st.selectbox("Page size", [25, 50, 100], key="analysis_filter_page_size")
+                    _, add_col, apply_col = st.columns([3, 1, 1])
+                    with add_col:
+                        st.button("Add analysis", on_click=_queue_add_analysis, use_container_width=True)
+                    with apply_col:
+                        st.button("Apply filters", key="analysis_apply_filters", use_container_width=True)
 
             filtered = analyses_df.copy()
             selected_type = st.session_state.get("analysis_filter_type", "All")
@@ -338,6 +355,15 @@ def _render_list() -> None:
                 )
                 filtered = filtered[id_matches | title_matches]
 
+            date_from = st.session_state.get("analysis_filter_date_from")
+            date_to = st.session_state.get("analysis_filter_date_to")
+            if (date_from or date_to) and "created_at" in filtered.columns:
+                created_series = pd.to_datetime(filtered["created_at"], errors="coerce").dt.date
+                if date_from:
+                    filtered = filtered[created_series >= date_from]
+                if date_to:
+                    filtered = filtered[created_series <= date_to]
+
             if analyses_df.empty:
                 st.markdown(muted("📭 No analyses available yet."), unsafe_allow_html=True)
                 st.caption("Showing 0 of 0 analyses")
@@ -352,9 +378,10 @@ def _render_list() -> None:
 
             section("Analyses")
 
+            page_size = int(st.session_state.get("analysis_filter_page_size", 50))
             display_df = filtered[
                 ["analysis_id", "type", "title", "champion", "status"]
-            ].copy()
+            ].head(page_size).copy()
             display_df["linked_actions"] = display_df["analysis_id"].map(linked_counts).fillna(0).astype(int)
 
             column_labels = {

@@ -16,18 +16,23 @@ from atm_tracker.actions.ui import render_actions_module  # noqa: E402
 from atm_tracker.analyses.ui import render_analyses_module  # noqa: E402
 from atm_tracker.champions.ui import render_champions_dashboard  # noqa: E402
 from atm_tracker.kpi_dashboard.ui import render_kpi_dashboard  # noqa: E402
+from atm_tracker.projects.ui import render_projects_module  # noqa: E402
 from atm_tracker.settings.ui import render_global_settings  # noqa: E402
+from atm_tracker.explorer.ui import render_explorer_module  # noqa: E402
+from atm_tracker.ui.layout import page_layout  # noqa: E402
 
 
-NAV_OPTIONS = ["Actions", "Analyses", "KPI Dashboard", "Champions", "Global Settings"]
+NAV_OPTIONS = ["Actions", "Projects", "Champions", "Analyses", "KPI", "Explorer", "Settings"]
 NAV_LOOKUP = {
     "actions": "Actions",
     "analyses": "Analyses",
-    "kpi": "KPI Dashboard",
-    "kpi dashboard": "KPI Dashboard",
+    "kpi": "KPI",
+    "kpi dashboard": "KPI",
     "champions": "Champions",
-    "settings": "Global Settings",
-    "global settings": "Global Settings",
+    "projects": "Projects",
+    "explorer": "Explorer",
+    "settings": "Settings",
+    "global settings": "Settings",
 }
 
 
@@ -68,16 +73,21 @@ def main() -> None:
 
     page = st.sidebar.radio("Go to", NAV_OPTIONS, key="nav_page_selector")
 
-    if page == "Global Settings":
-        render_global_settings()
-    elif page == "KPI Dashboard":
-        render_kpi_dashboard()
-    elif page == "Champions":
-        render_champions_dashboard()
-    elif page == "Analyses":
-        render_analyses_module()
-    else:
-        render_actions_module()
+    with page_layout():
+        if page == "Settings":
+            render_global_settings()
+        elif page == "KPI":
+            render_kpi_dashboard()
+        elif page == "Projects":
+            render_projects_module()
+        elif page == "Explorer":
+            render_explorer_module()
+        elif page == "Champions":
+            render_champions_dashboard()
+        elif page == "Analyses":
+            render_analyses_module()
+        else:
+            render_actions_module()
 
 
 if __name__ == "__main__":
