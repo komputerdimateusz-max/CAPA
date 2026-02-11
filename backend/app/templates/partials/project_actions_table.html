@@ -4,35 +4,35 @@
       <thead>
         <tr>
           <th>Title</th>
-          <th>Project</th>
           <th>Status</th>
+          <th>Owner</th>
+          <th>Champion</th>
           <th>Due date</th>
           <th>Days late</th>
-          <th>Owner / Champion</th>
-          <th>Closed at</th>
-          <th>Tags</th>
+          <th>Created at</th>
+          <th></th>
         </tr>
       </thead>
       <tbody>
         {% for action in actions %}
           <tr>
             <td><a href="/ui/actions/{{ action.id }}">{{ action.title }}</a></td>
-            <td>{{ action.project }}</td>
             <td><span class="status-badge status-{{ action.status|lower }}">{{ action.status }}</span></td>
+            <td>{{ action.owner }}</td>
+            <td>{{ action.champion }}</td>
             <td>{{ action.due_date }}</td>
             <td>{{ action.days_late }}</td>
-            <td>{{ action.owner_display }}</td>
-            <td>{{ action.closed_at }}</td>
+            <td>{{ action.created_at }}</td>
             <td>
-              {% if action.tags %}
-                <div class="tag-list">
-                  {% for tag in action.tags %}
-                    <span class="tag-chip" {% if tag.color %}style="--tag-color: {{ tag.color }}"{% endif %}>{{ tag.name }}</span>
-                  {% endfor %}
-                </div>
-              {% else %}
-                <span class="muted">—</span>
-              {% endif %}
+              <form
+                hx-post="/ui/projects/{{ project.id }}/actions/{{ action.id }}/remove"
+                hx-target="#project-actions-manager"
+                hx-swap="outerHTML"
+                hx-confirm="Remove action from project? This will not delete the action."
+              >
+                <input type="hidden" name="action_search" value="{{ action_search }}" />
+                <button type="submit" class="button secondary">Unassign</button>
+              </form>
             </td>
           </tr>
         {% endfor %}

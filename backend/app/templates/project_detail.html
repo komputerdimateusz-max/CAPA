@@ -22,7 +22,7 @@
     {% include "partials/kpi_cards.html" %}
     <div class="card">
       <div class="card-header">
-        <h3>Related actions</h3>
+        <h3>Actions in this project</h3>
         <div class="button-row">
           <button
             class="button secondary"
@@ -57,7 +57,7 @@
           <button class="button secondary" type="submit">Apply filters</button>
         </div>
       {% endcall %}
-      {% include "partials/project_actions_table.html" %}
+      {% include "partials/project_actions_manager.html" %}
     </div>
   </section>
 {% endblock %}

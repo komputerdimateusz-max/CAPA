@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+
+from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
@@ -54,6 +55,17 @@ def _load_project_actions_table(
         "page": page,
         "page_size": page_size,
     }
+
+
+def _load_unassigned_actions(db: Session, query: str | None, limit: int = 25):
+    actions, _ = actions_repo.list_actions(
+        db,
+        unassigned=True,
+        query=query,
+        limit=limit,
+        offset=0,
+    )
+    return actions
 
 
 @router.get("/projects", response_class=HTMLResponse, response_model=None)
@@ -151,6 +163,7 @@ def project_detail(
     request: Request,
     only_open: bool = False,
     only_overdue: bool = False,
+    action_search: str | None = None,
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=25, ge=1, le=200),
     db: Session = Depends(get_db),
@@ -189,6 +202,102 @@ def project_detail(
             "query_builder": build_query_params,
             "format_date": format_date,
             "table_endpoint": f"/ui/projects/{project_id}/_table",
+            "assignment_options": _load_unassigned_actions(db, action_search),
+            "action_search": action_search or "",
+            "assignment_feedback": None,
+            "assignment_feedback_level": "success",
+        },
+    )
+
+
+@router.post("/projects/{project_id}/actions", response_class=HTMLResponse, response_model=None)
+def add_project_action(
+    project_id: int,
+    request: Request,
+    action_id: int = Form(...),
+    action_search: str | None = Form(None),
+    db: Session = Depends(get_db),
+):
+    project = projects_repo.get_project(db, project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    action = actions_repo.get_action(db, action_id)
+    if not action:
+        raise HTTPException(status_code=404, detail="Action not found")
+
+    if action.project_id and action.project_id != project_id:
+        existing_project = projects_repo.get_project(db, action.project_id)
+        project_label = f"{existing_project.name} ({existing_project.id})" if existing_project else str(action.project_id)
+        feedback = f"Action is already assigned to project {project_label}"
+        level = "error"
+    else:
+        action.project_id = project_id
+        action.updated_at = datetime.utcnow()
+        actions_repo.update_action(db, action)
+        feedback = "Action assigned to project."
+        level = "success"
+
+    table_data = _load_project_actions_table(db, project_id, False, False, 1, 25)
+    return templates.TemplateResponse(
+        "partials/project_actions_manager.html",
+        {
+            "request": request,
+            "project": project,
+            "actions": table_data["actions"],
+            "pagination": table_data,
+            "filters": {"only_open": None, "only_overdue": None, "page_size": 25},
+            "query_builder": build_query_params,
+            "table_endpoint": f"/ui/projects/{project_id}/_table",
+            "assignment_options": _load_unassigned_actions(db, action_search),
+            "action_search": action_search or "",
+            "assignment_feedback": feedback,
+            "assignment_feedback_level": level,
+        },
+    )
+
+
+@router.post("/projects/{project_id}/actions/{action_id}/remove", response_class=HTMLResponse, response_model=None)
+def remove_project_action(
+    project_id: int,
+    action_id: int,
+    request: Request,
+    action_search: str | None = Form(None),
+    db: Session = Depends(get_db),
+):
+    project = projects_repo.get_project(db, project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    action = actions_repo.get_action(db, action_id)
+    if not action:
+        raise HTTPException(status_code=404, detail="Action not found")
+
+    if action.project_id != project_id:
+        feedback = "Action is not assigned to this project."
+        level = "error"
+    else:
+        action.project_id = None
+        action.updated_at = datetime.utcnow()
+        actions_repo.update_action(db, action)
+        feedback = "Action unassigned from project."
+        level = "success"
+
+    table_data = _load_project_actions_table(db, project_id, False, False, 1, 25)
+    return templates.TemplateResponse(
+        "partials/project_actions_manager.html",
+        {
+            "request": request,
+            "project": project,
+            "actions": table_data["actions"],
+            "pagination": table_data,
+            "filters": {"only_open": None, "only_overdue": None, "page_size": 25},
+            "query_builder": build_query_params,
+            "table_endpoint": f"/ui/projects/{project_id}/_table",
+            "assignment_options": _load_unassigned_actions(db, action_search),
+            "action_search": action_search or "",
+            "assignment_feedback": feedback,
+            "assignment_feedback_level": level,
         },
     )
 
@@ -225,5 +334,6 @@ def project_actions_table(
             "filters": filters,
             "query_builder": build_query_params,
             "table_endpoint": f"/ui/projects/{project_id}/_table",
+            "project": projects_repo.get_project(db, project_id),
         },
     )

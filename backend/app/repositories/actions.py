@@ -23,6 +23,7 @@ def list_actions(
     project_id: int | None = None,
     project_name: str | None = None,
     query: str | None = None,
+    unassigned: bool = False,
     tags: list[str] | None = None,
     due_from: date | None = None,
     due_to: date | None = None,
@@ -46,6 +47,8 @@ def list_actions(
         stmt = stmt.where(Action.owner == owner)
     if project_id is not None:
         stmt = stmt.where(Action.project_id == project_id)
+    elif unassigned:
+        stmt = stmt.where(Action.project_id.is_(None))
     if project_name:
         stmt = stmt.join(Project, isouter=True).where(func.lower(Project.name) == project_name.lower())
     if query:
@@ -117,6 +120,16 @@ def list_actions_created_between(
 def get_action(db: Session, action_id: int) -> Action | None:
     stmt = select(Action).options(selectinload(Action.project), selectinload(Action.champion), selectinload(Action.tags)).where(Action.id == action_id)
     return db.scalar(stmt)
+
+
+def list_actions_by_project(db: Session, project_id: int) -> list[Action]:
+    stmt = (
+        select(Action)
+        .options(selectinload(Action.project), selectinload(Action.champion), selectinload(Action.tags))
+        .where(Action.project_id == project_id)
+        .order_by(Action.id.desc())
+    )
+    return list(db.scalars(stmt).all())
 
 
 def create_action(db: Session, action: Action) -> Action:
