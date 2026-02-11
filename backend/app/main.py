@@ -26,6 +26,7 @@ from app.ui import routes_analyses, routes_auth, routes_champions, routes_metric
 
 REQUIRED_CHAMPION_COLUMNS = {"first_name", "last_name", "email", "position", "birth_date"}
 REQUIRED_USERS_COLUMNS = {"username", "password_hash", "role", "is_active", "email"}
+REQUIRED_ACTION_COLUMNS = {"updated_at"}
 
 
 logger = logging.getLogger("app.request")
@@ -178,6 +179,12 @@ def validate_dev_schema(engine) -> SchemaValidationResult:
         missing_users = sorted(REQUIRED_USERS_COLUMNS - users_columns)
         if missing_users:
             missing_by_table["users"] = missing_users
+
+    if inspector.has_table("actions"):
+        action_columns = {column["name"] for column in inspector.get_columns("actions")}
+        missing_actions = sorted(REQUIRED_ACTION_COLUMNS - action_columns)
+        if missing_actions:
+            missing_by_table["actions"] = missing_actions
 
     result = SchemaValidationResult(
         is_valid=not (missing_revisions or missing_by_table),
