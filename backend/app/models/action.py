@@ -20,9 +20,9 @@ class Action(Base):
     owner: Mapped[str | None] = mapped_column(String(255), nullable=True)
     status: Mapped[str] = mapped_column(String(50), nullable=False, default="OPEN")
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
-    updated_at: Mapped[datetime] = mapped_column(
+    updated_at: Mapped[datetime | None] = mapped_column(
         DateTime,
-        nullable=False,
+        nullable=True,
         default=datetime.utcnow,
         onupdate=datetime.utcnow,
     )

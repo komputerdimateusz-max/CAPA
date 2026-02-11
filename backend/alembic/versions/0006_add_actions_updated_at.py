@@ -15,6 +15,9 @@ depends_on = None
 
 def upgrade() -> None:
     inspector = inspect(op.get_bind())
+    if not inspector.has_table("actions"):
+        return
+
     columns = {column["name"] for column in inspector.get_columns("actions")}
     if "updated_at" not in columns:
         op.add_column("actions", sa.Column("updated_at", sa.DateTime(), nullable=True))
@@ -29,6 +32,9 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     inspector = inspect(op.get_bind())
+    if not inspector.has_table("actions"):
+        return
+
     columns = {column["name"] for column in inspector.get_columns("actions")}
     if "updated_at" in columns:
         op.drop_column("actions", "updated_at")
