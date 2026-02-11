@@ -6,13 +6,24 @@ from contextlib import contextmanager
 import streamlit as st
 
 
+@contextmanager
+def page_layout() -> Iterator[None]:
+    """Wrap a page in the shared centered layout container."""
+    st.markdown("<div class='ds-page-layout'>", unsafe_allow_html=True)
+    try:
+        yield
+    finally:
+        st.markdown("</div>", unsafe_allow_html=True)
+
+
 def page_header(
     title: str,
     subtitle: str = "",
     actions: Callable[[], None] | None = None,
 ) -> None:
     """Render a standard page header with optional actions."""
-    col_title, col_actions = st.columns([3, 1], vertical_alignment="bottom")
+    st.markdown("<div class='ds-page-header'>", unsafe_allow_html=True)
+    col_title, col_actions = st.columns([4, 1], vertical_alignment="bottom")
     with col_title:
         st.markdown(f"## {title}")
         if subtitle:
@@ -20,6 +31,7 @@ def page_header(
     with col_actions:
         if actions:
             actions()
+    st.markdown("</div>", unsafe_allow_html=True)
 
 
 def kpi_row(items: list[tuple[str, str | int | float]]) -> None:
@@ -58,4 +70,4 @@ def footer(text: str) -> None:
     st.caption(text)
 
 
-__all__ = ["page_header", "kpi_row", "main_grid", "section", "footer"]
+__all__ = ["page_layout", "page_header", "kpi_row", "main_grid", "section", "footer"]

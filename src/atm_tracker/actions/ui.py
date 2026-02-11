@@ -550,9 +550,6 @@ def _render_add() -> None:
         "Create a corrective action using quick templates or a guided wizard.",
         actions=_render_view_selector,
     )
-    st.divider()
-    kpi_row([])
-    st.divider()
 
     champions_df = list_champions(active_only=True)
     champion_options = _build_champion_options(champions_df)
@@ -986,37 +983,35 @@ def _render_list() -> None:
         with main:
             if not use_api:
                 with st.expander("🔍 Filters", expanded=True):
-                    filter_col1, filter_col2, filter_col3, filter_col4 = st.columns(4)
-                    with filter_col1:
-                        st.multiselect(
-                            "Status",
-                            options=status_options,
-                            key="actions_filter_statuses",
-                        )
-                    with filter_col2:
-                        st.selectbox(
-                            "Champion",
-                            options=["All"] + champion_options,
-                            key="actions_filter_champion",
-                        )
-                    with filter_col3:
-                        st.selectbox(
-                            "Project",
-                            options=["All"] + project_options,
-                            key="actions_filter_project",
-                        )
-                    with filter_col4:
+                    row1 = st.columns(5)
+                    with row1[0]:
                         st.text_input(
-                            "Search (ID or title)",
+                            "Search",
                             placeholder="e.g. 42 or reduce defects",
                             key="actions_filter_search",
                         )
+                    with row1[1]:
+                        st.multiselect("Status", options=status_options, key="actions_filter_statuses")
+                    with row1[2]:
+                        st.selectbox("Project", options=["All"] + project_options, key="actions_filter_project")
+                    with row1[3]:
+                        st.selectbox("Champion", options=["All"] + champion_options, key="actions_filter_champion")
+                    with row1[4]:
+                        st.text_input("Tags", key="actions_filter_tags")
 
-                    date_col1, date_col2 = st.columns(2)
-                    with date_col1:
-                        st.date_input("Due date from", value=None, key="actions_filter_due_from")
-                    with date_col2:
-                        st.date_input("Due date to", value=None, key="actions_filter_due_to")
+                    with st.expander("Advanced filters", expanded=False):
+                        row2 = st.columns(4)
+                        with row2[0]:
+                            st.date_input("Date from", value=None, key="actions_filter_due_from")
+                        with row2[1]:
+                            st.date_input("Date to", value=None, key="actions_filter_due_to")
+                        with row2[2]:
+                            st.selectbox("Sort", ["Days late", "Due date"], key="actions_filter_sort")
+                        with row2[3]:
+                            st.selectbox("Page size", [25, 50, 100], key="actions_filter_page_size")
+                        _, apply_col = st.columns([4, 1])
+                        with apply_col:
+                            st.button("Apply filters", key="actions_apply_filters", use_container_width=True)
 
             if df.empty:
                 st.markdown(muted("📭 No actions available."), unsafe_allow_html=True)
@@ -1046,6 +1041,9 @@ def _render_list() -> None:
                     filtered_df = filtered_df.sort_values(by=sort_columns, ascending=sort_ascending)
 
             section("Actions")
+
+            page_size = int(st.session_state.get("actions_filter_page_size", 50))
+            filtered_df = filtered_df.head(page_size)
 
             table_columns = []
             column_labels = {
