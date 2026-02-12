@@ -31,7 +31,7 @@
     <h3>{{ analysis.title or 'Untitled analysis' }}</h3>
     <p>{{ analysis.description or 'No description yet.' }}</p>
 
-    <div class="card" style="margin-top:16px;">
+    <div class="card mt-16">
       <h4>Template sections</h4>
       {% if analysis.type == '5WHY' %}
         <p class="muted">Placeholder for 5 Why prompts (problem statement, why ladder, root cause).</p>
@@ -47,7 +47,7 @@
     </div>
 
 
-    <div class="card" style="margin-top:16px;">
+    <div class="card mt-16">
       <h4>Tags</h4>
       {% if analysis.tags %}
         <div class="tag-list">
@@ -73,7 +73,7 @@
       </form>
     </div>
 
-    <div class="card" style="margin-top:16px;">
+    <div class="card mt-16">
       <h4>Linked actions</h4>
       <p class="muted">No linked actions yet. TODO: link actions to analyses for traceability.</p>
     </div>

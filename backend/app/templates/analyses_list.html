@@ -11,7 +11,7 @@
 
     <div class="detail-grid">
       {% for template in templates %}
-        <div class="card" style="padding:16px;">
+        <div class="card card-compact">
           <h4>{{ template.label }}</h4>
           <p class="muted">{{ template.description }}</p>
           <a class="button secondary" href="/ui/analyses/new?type={{ template.code }}">Start {{ template.label }}</a>
@@ -49,7 +49,7 @@
       <div class="form-actions"><button class="button secondary" type="submit">Apply filters</button></div>
     </form>
 
-    <h3 style="margin-top:24px;">Recent analyses</h3>
+    <h3 class="mt-24">Recent analyses</h3>
     {% include "partials/analyses_table.html" %}
   </section>
 {% endblock %}
