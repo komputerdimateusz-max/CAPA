@@ -8,7 +8,8 @@
           <th>Status</th>
           <th>Due date</th>
           <th>Days late</th>
-          <th>Owner / Champion</th>
+          <th>Action Owner</th>
+          <th>Project Champion</th>
           <th>Closed at</th>
           <th>Tags</th>
         </tr>
@@ -21,7 +22,8 @@
             <td><span class="status-badge status-{{ action.status|lower }}">{{ action.status }}</span></td>
             <td>{{ action.due_date }}</td>
             <td>{{ action.days_late }}</td>
-            <td>{{ action.owner_display }}</td>
+            <td>{{ action.owner }}</td>
+            <td>{{ action.champion }}</td>
             <td>{{ action.closed_at }}</td>
             <td>
               {% if action.tags %}
