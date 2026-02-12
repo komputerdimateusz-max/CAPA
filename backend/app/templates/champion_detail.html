@@ -11,39 +11,42 @@
       </div>
     </div>
     {% from "partials/filters_bar.html" import filter_bar %}
-    {% call filter_bar("/ui/champions/" ~ champion.id) %}
-      <label>
-        From
-        <input type="date" name="from" value="{{ filters.from }}" />
-      </label>
-      <label>
-        To
-        <input type="date" name="to" value="{{ filters.to }}" />
-      </label>
-      <label>
-        Project
-        <select name="project_id">
-          <option value="">All projects</option>
-          {% for project in projects %}
-            <option value="{{ project.id }}" {% if filters.project_id == project.id %}selected{% endif %}>
-              {{ project.name }}
-            </option>
-          {% endfor %}
-        </select>
-      </label>
-      <label>
-        Status scope
-        <select name="status_scope">
-          {% for value, label in status_scope_options %}
-            <option value="{{ value }}" {% if filters.status_scope == value %}selected{% endif %}>
-              {{ label }}
-            </option>
-          {% endfor %}
-        </select>
-      </label>
-      <div class="form-actions">
-        <button class="button secondary" type="submit">Apply filters</button>
-      </div>
+    {% call(section) filter_bar("/ui/champions/" ~ champion.id) %}
+      {% if section == 'primary' %}
+        <label>
+          From
+          <input type="date" name="from" value="{{ filters.from }}" />
+        </label>
+        <label>
+          To
+          <input type="date" name="to" value="{{ filters.to }}" />
+        </label>
+        <label>
+          Project
+          <select name="project_id">
+            <option value="">All projects</option>
+            {% for project in projects %}
+              <option value="{{ project.id }}" {% if filters.project_id == project.id %}selected{% endif %}>
+                {{ project.name }}
+              </option>
+            {% endfor %}
+          </select>
+        </label>
+        <label>
+          Status scope
+          <select name="status_scope">
+            {% for value, label in status_scope_options %}
+              <option value="{{ value }}" {% if filters.status_scope == value %}selected{% endif %}>
+                {{ label }}
+              </option>
+            {% endfor %}
+          </select>
+        </label>
+      {% else %}
+        <div class="form-actions form-actions-end">
+          <button class="button" type="submit">Apply filters</button>
+        </div>
+      {% endif %}
     {% endcall %}
     {% if summary %}
       {% set kpi_cards = [

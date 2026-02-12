@@ -1,49 +1,78 @@
 <div id="project-actions-manager">
-  <form
-    class="form-inline"
-    hx-get="/ui/projects/{{ project.id }}/actions-manager"
-    hx-target="#project-actions-manager"
-    hx-swap="outerHTML"
-  >
-    <input type="hidden" name="only_open" value="{{ 1 if filters.only_open else 0 }}" />
-    <input type="hidden" name="only_overdue" value="{{ 1 if filters.only_overdue else 0 }}" />
-    <input type="hidden" name="page_size" value="{{ filters.page_size }}" />
-    <label>
-      Search unassigned actions
-      <input type="text" name="action_search" value="{{ action_search }}" placeholder="Search title or description" />
-    </label>
-    <div class="form-actions">
-      <button class="button secondary" type="submit">Search</button>
+  <section class="card project-add-action-panel">
+    <div class="card-header">
+      <div>
+        <h4>Add action to project</h4>
+        <p class="muted">Find an unassigned action and attach it to this project.</p>
+      </div>
     </div>
-  </form>
 
-  <form
-    class="filter-grid"
-    hx-post="/ui/projects/{{ project.id }}/actions"
-    hx-target="#project-actions-manager"
-    hx-swap="outerHTML"
-  >
-    <input type="hidden" name="action_search" value="{{ action_search }}" />
-    <input type="hidden" name="only_open" value="{{ 1 if filters.only_open else 0 }}" />
-    <input type="hidden" name="only_overdue" value="{{ 1 if filters.only_overdue else 0 }}" />
-    <input type="hidden" name="page_size" value="{{ filters.page_size }}" />
-    <label>
-      Action
-      <select name="action_id" required>
-        <option value="">Select action</option>
-        {% for option in assignment_options %}
-          <option value="{{ option.id }}">#{{ option.id }} · {{ option.title }}</option>
-        {% endfor %}
-      </select>
-    </label>
-    <div class="form-actions">
-      <button class="button" type="submit">Add action</button>
-    </div>
-  </form>
+    <form
+      class="filter-bar project-add-action-form"
+      hx-get="/ui/projects/{{ project.id }}/actions-manager"
+      hx-target="#project-actions-manager"
+      hx-swap="outerHTML"
+    >
+      <input type="hidden" name="only_open" value="{{ 1 if filters.only_open else 0 }}" />
+      <input type="hidden" name="only_overdue" value="{{ 1 if filters.only_overdue else 0 }}" />
+      <input type="hidden" name="page_size" value="{{ filters.page_size }}" />
+      <div class="filter-bar__primary project-add-action-search">
+        <label class="full-row">
+          Search unassigned actions
+          <input type="text" name="action_search" value="{{ action_search }}" placeholder="Search title or description" />
+        </label>
+      </div>
+      <div class="filter-bar__secondary project-add-action-controls">
+        <div class="project-add-action-select">
+          <label>
+            Action
+            <select name="action_id" form="project-add-action-submit" required>
+              <option value="">Select action</option>
+              {% for option in assignment_options %}
+                <option value="{{ option.id }}">#{{ option.id }} · {{ option.title }}</option>
+              {% endfor %}
+            </select>
+          </label>
+        </div>
+        <div class="form-actions form-actions-end">
+          <button class="button secondary" type="submit">Search</button>
+          <button class="button" type="submit" form="project-add-action-submit">Add action</button>
+        </div>
+      </div>
+    </form>
+
+    <form
+      id="project-add-action-submit"
+      hx-post="/ui/projects/{{ project.id }}/actions"
+      hx-target="#project-actions-manager"
+      hx-swap="outerHTML"
+    >
+      <input type="hidden" name="action_search" value="{{ action_search }}" />
+      <input type="hidden" name="only_open" value="{{ 1 if filters.only_open else 0 }}" />
+      <input type="hidden" name="only_overdue" value="{{ 1 if filters.only_overdue else 0 }}" />
+      <input type="hidden" name="page_size" value="{{ filters.page_size }}" />
+      <input type="hidden" name="action_id" value="" data-selected-action-id />
+    </form>
+  </section>
 
   {% if assignment_feedback %}
     <p class="toast {{ assignment_feedback_level }} mt-8">{{ assignment_feedback }}</p>
   {% endif %}
 
   {% include "partials/project_actions_table.html" %}
+
+  <script>
+    (() => {
+      const container = document.getElementById("project-actions-manager");
+      const sourceSelect = container?.querySelector("select[name='action_id'][form='project-add-action-submit']");
+      const hiddenAction = container?.querySelector("[data-selected-action-id]");
+      if (!sourceSelect || !hiddenAction) {
+        return;
+      }
+      hiddenAction.value = sourceSelect.value;
+      sourceSelect.addEventListener("change", () => {
+        hiddenAction.value = sourceSelect.value;
+      });
+    })();
+  </script>
 </div>

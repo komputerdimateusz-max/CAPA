@@ -35,27 +35,38 @@
         </div>
       </div>
       {% from "partials/filters_bar.html" import filter_bar %}
-      {% call filter_bar("/ui/projects/" ~ project.id, "#project-actions-table", "/ui/projects/" ~ project.id ~ "/_table") %}
-        <input type="hidden" name="page" value="1" />
-        <label class="checkbox">
-          <input type="checkbox" name="only_open" value="1" {% if filters.only_open %}checked{% endif %} />
-          Only open
-        </label>
-        <label class="checkbox">
-          <input type="checkbox" name="only_overdue" value="1" {% if filters.only_overdue %}checked{% endif %} />
-          Only overdue
-        </label>
-        <label>
-          Page size
-          <select name="page_size">
-            {% for size in [10, 25, 50, 100] %}
-              <option value="{{ size }}" {% if filters.page_size == size %}selected{% endif %}>{{ size }}</option>
-            {% endfor %}
-          </select>
-        </label>
-        <div class="form-actions">
-          <button class="button secondary" type="submit">Apply filters</button>
-        </div>
+      {% call(section) filter_bar("/ui/projects/" ~ project.id, "#project-actions-table", "/ui/projects/" ~ project.id ~ "/_table", false) %}
+        {% if section == 'primary' %}
+          <input type="hidden" name="page" value="1" />
+          <label class="toggle-field">
+            <span>Status scope</span>
+            <span class="toggle-control">
+              <input type="checkbox" name="only_open" value="1" {% if filters.only_open %}checked{% endif %} />
+              <span>Open actions only</span>
+            </span>
+          </label>
+          <label class="toggle-field">
+            <span>Due scope</span>
+            <span class="toggle-control">
+              <input type="checkbox" name="only_overdue" value="1" {% if filters.only_overdue %}checked{% endif %} />
+              <span>Overdue only</span>
+            </span>
+          </label>
+          <div class="filter-placeholder" aria-hidden="true"></div>
+          <div class="filter-placeholder" aria-hidden="true"></div>
+        {% else %}
+          <label>
+            Page size
+            <select name="page_size">
+              {% for size in [10, 25, 50, 100] %}
+                <option value="{{ size }}" {% if filters.page_size == size %}selected{% endif %}>{{ size }}</option>
+              {% endfor %}
+            </select>
+          </label>
+          <div class="form-actions form-actions-end">
+            <button class="button" type="submit">Apply filters</button>
+          </div>
+        {% endif %}
       {% endcall %}
       {% include "partials/project_actions_manager.html" %}
     </div>

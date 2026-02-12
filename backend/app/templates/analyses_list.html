@@ -19,35 +19,44 @@
       {% endfor %}
     </div>
 
-
-    <form
-      class="filter-grid"
-      method="get"
-      action="/ui/analyses"
-      hx-get="/ui/analyses/_table"
-      hx-target="#analyses-table"
-      hx-swap="outerHTML"
-      hx-push-url="true"
-    >
-      <input type="hidden" name="page" value="1" />
-      <label>
-        Tags
-        <select name="tags" multiple>
-          {% for tag in all_tags %}
-            <option value="{{ tag.name }}" {% if tag.name in filters.tags %}selected{% endif %}>{{ tag.name }}</option>
-          {% endfor %}
-        </select>
-      </label>
-      <label>
-        Page size
-        <select name="page_size">
-          {% for size in [10, 25, 50, 100] %}
-            <option value="{{ size }}" {% if filters.page_size == size %}selected{% endif %}>{{ size }}</option>
-          {% endfor %}
-        </select>
-      </label>
-      <div class="form-actions"><button class="button secondary" type="submit">Apply filters</button></div>
-    </form>
+    {% from "partials/filters_bar.html" import filter_bar %}
+    {% call(section) filter_bar("/ui/analyses", "#analyses-table", "/ui/analyses/_table") %}
+      {% if section == 'primary' %}
+        <input type="hidden" name="page" value="1" />
+        <div class="multi-select-field">
+          <span class="field-label">Tags</span>
+          <details class="multi-select-menu">
+            <summary>
+              {% if filters.tags %}
+                {{ filters.tags|join(", ") }}
+              {% else %}
+                All tags
+              {% endif %}
+            </summary>
+            <div class="multi-select-options">
+              {% for tag in all_tags %}
+                <label class="multi-select-option">
+                  <input type="checkbox" name="tags" value="{{ tag.name }}" {% if tag.name in filters.tags %}checked{% endif %} />
+                  <span>{{ tag.name }}</span>
+                </label>
+              {% endfor %}
+            </div>
+          </details>
+        </div>
+      {% else %}
+        <label>
+          Page size
+          <select name="page_size">
+            {% for size in [10, 25, 50, 100] %}
+              <option value="{{ size }}" {% if filters.page_size == size %}selected{% endif %}>{{ size }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <div class="form-actions form-actions-end">
+          <button class="button" type="submit">Apply filters</button>
+        </div>
+      {% endif %}
+    {% endcall %}
 
     <h3 class="mt-24">Recent analyses</h3>
     {% include "partials/analyses_table.html" %}
