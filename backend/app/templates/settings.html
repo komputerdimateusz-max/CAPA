@@ -145,6 +145,9 @@
               <tr>
                 <th>Name</th>
                 <th>Status</th>
+                <th>Max Volume</th>
+                <th>Flex</th>
+                <th>Process Engineer</th>
                 <th>Due</th>
                 <th></th>
               </tr>
@@ -154,6 +157,9 @@
                 <tr>
                   <td>{{ project.name }}</td>
                   <td>{{ project.status or '—' }}</td>
+                  <td>{{ project.max_volume if project.max_volume is not none else '—' }}</td>
+                  <td>{% if project.flex_percent is not none %}{{ project.flex_percent }}%{% else %}—{% endif %}</td>
+                  <td>{{ project.process_engineer.full_name if project.process_engineer else '—' }}</td>
                   <td>{{ format_date(project.due_date) }}</td>
                   <td>
                     <a class="button secondary" href="/ui/settings?project_id={{ project.id }}">Edit</a>
@@ -180,11 +186,31 @@
               </label>
               <label>
                 Status
-                <input
-                  type="text"
-                  name="status"
-                  value="{{ form.project_status or selected_project.status or '' }}"
-                />
+                <select name="status" required>
+                  <option value="">Select status</option>
+                  {% set selected_status = form.project_status or selected_project.status or '' %}
+                  {% for option in project_status_options %}
+                    <option value="{{ option }}" {% if selected_status == option %}selected{% endif %}>{{ option }}</option>
+                  {% endfor %}
+                </select>
+              </label>
+              <label>
+                Max Volume [parts/year]
+                <input type="number" name="max_volume" min="0" step="1" required value="{{ form.project_max_volume or (selected_project.max_volume if selected_project.max_volume is not none else '') }}" />
+              </label>
+              <label>
+                Flex [%]
+                <input type="number" name="flex_percent" min="0" max="100" step="0.01" required value="{{ form.project_flex_percent or (selected_project.flex_percent if selected_project.flex_percent is not none else '') }}" />
+              </label>
+              <label>
+                Process Engineer
+                {% set selected_engineer = form.project_process_engineer_id or (selected_project.process_engineer_id|string if selected_project.process_engineer_id else '') %}
+                <select name="process_engineer_id" required>
+                  <option value="">Select process engineer</option>
+                  {% for champion in champions %}
+                    <option value="{{ champion.id }}" {% if selected_engineer == champion.id|string %}selected{% endif %}>{{ champion.full_name }}</option>
+                  {% endfor %}
+                </select>
               </label>
               <label>
                 Due date
@@ -278,7 +304,29 @@
         </label>
         <label>
           Status
-          <input type="text" name="status" placeholder="Open / On Hold" value="{{ form.project_status or '' }}" />
+          <select name="status" required>
+            <option value="">Select status</option>
+            {% for option in project_status_options %}
+              <option value="{{ option }}" {% if (form.project_status or '') == option %}selected{% endif %}>{{ option }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label>
+          Max Volume [parts/year]
+          <input type="number" name="max_volume" min="0" step="1" required value="{{ form.project_max_volume or '' }}" />
+        </label>
+        <label>
+          Flex [%]
+          <input type="number" name="flex_percent" min="0" max="100" step="0.01" required value="{{ form.project_flex_percent or '' }}" />
+        </label>
+        <label>
+          Process Engineer
+          <select name="process_engineer_id" required>
+            <option value="">Select process engineer</option>
+            {% for champion in champions %}
+              <option value="{{ champion.id }}" {% if (form.project_process_engineer_id or '') == champion.id|string %}selected{% endif %}>{{ champion.full_name }}</option>
+            {% endfor %}
+          </select>
         </label>
         <label>
           Due date
