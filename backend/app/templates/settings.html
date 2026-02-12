@@ -8,57 +8,32 @@
     {% include "partials/flash_message.html" %}
 
     <div class="detail-grid">
-      <div>
-        <h3>Champions</h3>
-        <form class="form-grid" method="post" action="/ui/settings/champions">
-          <label>
-            First name
-            <input
-              type="text"
-              name="first_name"
-              required
-              placeholder="e.g. Alex"
-              value="{{ form.champion_first_name or '' }}"
-            />
-          </label>
-          <label>
-            Last name
-            <input
-              type="text"
-              name="last_name"
-              required
-              placeholder="e.g. Martin"
-              value="{{ form.champion_last_name or '' }}"
-            />
-          </label>
-          <label>
-            Email
-            <input
-              type="email"
-              name="email"
-              placeholder="alex@example.com"
-              value="{{ form.champion_email or '' }}"
-            />
-          </label>
-          <label>
-            Position
-            <input
-              type="text"
-              name="position"
-              placeholder="Process Engineer"
-              value="{{ form.champion_position or '' }}"
-            />
-          </label>
-          <label>
-            Birth date
-            <input type="date" name="birth_date" value="{{ form.champion_birth_date or '' }}" />
-          </label>
-          <div class="form-actions">
-            <button class="button" type="submit">Add champion</button>
+      <div class="card card-compact">
+        <div class="card-header">
+          <h3>Champions</h3>
+          <div class="button-row">
+            <button class="button" type="button" data-open-modal="champion">Add champion</button>
           </div>
-        </form>
+        </div>
 
         {% if champions %}
+          <form class="form-grid" method="get" action="/ui/settings">
+            <label>
+              Select champion to edit
+              <select name="champion_id" onchange="this.form.submit()">
+                <option value="">Choose champion</option>
+                {% for champion in champions %}
+                  <option value="{{ champion.id }}" {% if selected_champion and selected_champion.id == champion.id %}selected{% endif %}>
+                    {{ champion.full_name }}
+                  </option>
+                {% endfor %}
+              </select>
+            </label>
+            {% if selected_project %}
+              <input type="hidden" name="project_id" value="{{ selected_project.id }}" />
+            {% endif %}
+          </form>
+
           <table class="table">
             <thead>
               <tr>
@@ -82,7 +57,7 @@
             </tbody>
           </table>
         {% else %}
-          <p class="muted">No champions yet. Add one above.</p>
+          <p class="muted">No champions yet. Use Add champion to create one.</p>
         {% endif %}
 
         {% if selected_champion %}
@@ -139,27 +114,32 @@
         {% endif %}
       </div>
 
-      <div>
-        <h3>Projects</h3>
-        <form class="form-grid" method="post" action="/ui/settings/projects">
-          <label>
-            Project name
-            <input type="text" name="name" placeholder="e.g. Line 2 Upgrade" value="{{ form.project_name or '' }}" />
-          </label>
-          <label>
-            Status
-            <input type="text" name="status" placeholder="Open / On Hold" value="{{ form.project_status or '' }}" />
-          </label>
-          <label>
-            Due date
-            <input type="date" name="due_date" value="{{ form.project_due_date or '' }}" />
-          </label>
-          <div class="form-actions">
-            <button class="button" type="submit">Add project</button>
+      <div class="card card-compact">
+        <div class="card-header">
+          <h3>Projects</h3>
+          <div class="button-row">
+            <button class="button" type="button" data-open-modal="project">Add project</button>
           </div>
-        </form>
+        </div>
 
         {% if projects %}
+          <form class="form-grid" method="get" action="/ui/settings">
+            <label>
+              Select project to edit
+              <select name="project_id" onchange="this.form.submit()">
+                <option value="">Choose project</option>
+                {% for project in projects %}
+                  <option value="{{ project.id }}" {% if selected_project and selected_project.id == project.id %}selected{% endif %}>
+                    {{ project.name }}
+                  </option>
+                {% endfor %}
+              </select>
+            </label>
+            {% if selected_champion %}
+              <input type="hidden" name="champion_id" value="{{ selected_champion.id }}" />
+            {% endif %}
+          </form>
+
           <table class="table">
             <thead>
               <tr>
@@ -183,7 +163,7 @@
             </tbody>
           </table>
         {% else %}
-          <p class="muted">No projects yet. Add one above.</p>
+          <p class="muted">No projects yet. Use Add project to create one.</p>
         {% endif %}
 
         {% if selected_project %}
@@ -223,4 +203,141 @@
       </div>
     </div>
   </section>
+
+  <div class="modal-shell" id="champion-modal" hidden>
+    <div class="modal-backdrop" data-close-modal="champion"></div>
+    <aside class="create-action-panel" role="dialog" aria-modal="true" aria-labelledby="champion-modal-title">
+      <div class="create-action-header">
+        <h3 id="champion-modal-title">Add champion</h3>
+        <button class="button secondary" type="button" data-close-modal="champion">Cancel</button>
+      </div>
+      <p class="muted">Create a new champion for ownership and assignments.</p>
+      <form class="form-grid" method="post" action="/ui/settings/champions">
+        <label>
+          First name
+          <input
+            type="text"
+            name="first_name"
+            required
+            placeholder="e.g. Alex"
+            value="{{ form.champion_first_name or '' }}"
+          />
+        </label>
+        <label>
+          Last name
+          <input
+            type="text"
+            name="last_name"
+            required
+            placeholder="e.g. Martin"
+            value="{{ form.champion_last_name or '' }}"
+          />
+        </label>
+        <label>
+          Email
+          <input
+            type="email"
+            name="email"
+            placeholder="alex@example.com"
+            value="{{ form.champion_email or '' }}"
+          />
+        </label>
+        <label>
+          Position
+          <input
+            type="text"
+            name="position"
+            placeholder="Process Engineer"
+            value="{{ form.champion_position or '' }}"
+          />
+        </label>
+        <label>
+          Birth date
+          <input type="date" name="birth_date" value="{{ form.champion_birth_date or '' }}" />
+        </label>
+        <div class="form-actions">
+          <button class="button" type="submit">Save champion</button>
+          <button class="button secondary" type="button" data-close-modal="champion">Cancel</button>
+        </div>
+      </form>
+    </aside>
+  </div>
+
+  <div class="modal-shell" id="project-modal" hidden>
+    <div class="modal-backdrop" data-close-modal="project"></div>
+    <aside class="create-action-panel" role="dialog" aria-modal="true" aria-labelledby="project-modal-title">
+      <div class="create-action-header">
+        <h3 id="project-modal-title">Add project</h3>
+        <button class="button secondary" type="button" data-close-modal="project">Cancel</button>
+      </div>
+      <p class="muted">Create a project to group and track related CAPA actions.</p>
+      <form class="form-grid" method="post" action="/ui/settings/projects">
+        <label>
+          Project name
+          <input type="text" name="name" required placeholder="e.g. Line 2 Upgrade" value="{{ form.project_name or '' }}" />
+        </label>
+        <label>
+          Status
+          <input type="text" name="status" placeholder="Open / On Hold" value="{{ form.project_status or '' }}" />
+        </label>
+        <label>
+          Due date
+          <input type="date" name="due_date" value="{{ form.project_due_date or '' }}" />
+        </label>
+        <div class="form-actions">
+          <button class="button" type="submit">Save project</button>
+          <button class="button secondary" type="button" data-close-modal="project">Cancel</button>
+        </div>
+      </form>
+    </aside>
+  </div>
+
+  <script>
+    (() => {
+      const championModal = document.getElementById("champion-modal");
+      const projectModal = document.getElementById("project-modal");
+      const modalLookup = {
+        champion: championModal,
+        project: projectModal,
+      };
+
+      const openModal = (key) => {
+        const modal = modalLookup[key];
+        if (!modal) return;
+        modal.hidden = false;
+        document.body.classList.add("no-scroll");
+      };
+
+      const closeModal = (key) => {
+        const modal = modalLookup[key];
+        if (!modal) return;
+        modal.hidden = true;
+        if (Object.values(modalLookup).every((current) => !current || current.hidden)) {
+          document.body.classList.remove("no-scroll");
+        }
+      };
+
+      document.querySelectorAll("[data-open-modal]").forEach((button) => {
+        button.addEventListener("click", () => openModal(button.dataset.openModal));
+      });
+
+      document.querySelectorAll("[data-close-modal]").forEach((button) => {
+        button.addEventListener("click", () => closeModal(button.dataset.closeModal));
+      });
+
+      document.addEventListener("keydown", (event) => {
+        if (event.key !== "Escape") return;
+        Object.entries(modalLookup).forEach(([key, modal]) => {
+          if (modal && !modal.hidden) {
+            closeModal(key);
+          }
+        });
+      });
+
+      const openOnLoad = {{ (open_modal or "") | tojson }};
+      if (openOnLoad === "champion" || openOnLoad === "project") {
+        openModal(openOnLoad);
+      }
+    })();
+  </script>
 {% endblock %}
