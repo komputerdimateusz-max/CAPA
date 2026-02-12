@@ -801,8 +801,23 @@ th {
 }
 
 .filter-field--page-size {
-  width: 120px;
-  flex: 0 0 120px;
+  width: 100px;
+  flex: 0 0 100px;
+}
+
+.filter-bar-v2__apply-wrap {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  min-height: 40px;
+}
+
+.filter-bar-v2__apply {
+  min-height: 40px;
+  height: 40px;
+  padding: 0 16px;
+  white-space: nowrap;
 }
 
 .filter-bar-v2 select,
