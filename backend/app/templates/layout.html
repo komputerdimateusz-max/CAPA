@@ -26,7 +26,7 @@
       {% if request.state.user %}
       <div class="auth-meta">
         <span class="muted">Signed in as {{ request.state.user.username }} ({{ request.state.user.role }})</span>
-        <form method="post" action="/ui/logout" style="display:inline;">
+        <form method="post" action="/ui/logout" class="inline-block">
           <button type="submit">Logout</button>
         </form>
       </div>

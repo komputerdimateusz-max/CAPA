@@ -1,7 +1,6 @@
 <div id="project-actions-manager">
   <form
     class="form-inline"
-    style="margin-bottom: 0.75rem;"
     hx-get="/ui/projects/{{ project.id }}/actions-manager"
     hx-target="#project-actions-manager"
     hx-swap="outerHTML"
@@ -43,7 +42,7 @@
   </form>
 
   {% if assignment_feedback %}
-    <p class="toast {{ assignment_feedback_level }}" style="margin-top: 0.5rem;">{{ assignment_feedback }}</p>
+    <p class="toast {{ assignment_feedback_level }} mt-8">{{ assignment_feedback }}</p>
   {% endif %}
 
   {% include "partials/project_actions_table.html" %}

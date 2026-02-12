@@ -15,11 +15,11 @@
     {% if edit_mode %}
       <form method="post" action="/ui/actions/{{ action.id }}/edit">
         <div class="form-grid">
-          <label style="grid-column: 1 / -1;">
+          <label class="full-row">
             Title
             <input type="text" name="title" value="{{ action.title }}" required />
           </label>
-          <label style="grid-column: 1 / -1;">
+          <label class="full-row">
             Description
             <textarea name="description" rows="3">{{ action.description or "" }}</textarea>
           </label>
@@ -72,7 +72,7 @@
           <div><strong>Closed at</strong><p>{{ format_date(action.closed_at) }}</p></div>
           <div><strong>Days late</strong><p>{{ days_late }}</p></div>
         </div>
-        <div class="button-row" style="margin-top: 8px;">
+        <div class="button-row mt-8">
           <button class="button" type="submit">Save</button>
           <a class="button secondary" href="/ui/actions/{{ action.id }}">Cancel</a>
         </div>
@@ -93,7 +93,7 @@
       </div>
     {% endif %}
 
-    <div class="card" style="padding:16px;margin-top:12px;">
+    <div class="card card-compact mt-16">
       <h4>Tags</h4>
       {% if action.tags %}
         <div class="tag-list">
@@ -107,7 +107,7 @@
       {% else %}
         <p class="muted">No tags yet.</p>
       {% endif %}
-      <form method="post" action="/ui/actions/{{ action.id }}/tags" class="form-inline" style="margin-top:8px;">
+      <form method="post" action="/ui/actions/{{ action.id }}/tags" class="form-inline mt-8">
         <label>
           Add tag
           <input type="text" name="tag_name" list="action-tags-list" placeholder="Type or create tag" required />
