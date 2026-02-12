@@ -1,14 +1,15 @@
 {% extends "layout.html" %}
 {% block content %}
-  <section class="card">
-    <div class="card-header">
-      <h2>⚙️ Global Settings</h2>
-      <p class="muted">Manage shared reference data for actions, projects, and champions.</p>
-    </div>
-    {% include "partials/flash_message.html" %}
+  <div class="settings-page">
+    <section class="card">
+      <div class="card-header">
+        <h2>⚙️ Global Settings</h2>
+        <p class="muted">Manage shared reference data for actions, projects, and champions.</p>
+      </div>
+      {% include "partials/flash_message.html" %}
 
-    <div class="detail-grid settings-grid">
-      <div class="card card-compact settings-card">
+      <div class="detail-grid settings-grid">
+        <div class="card card-compact settings-card">
         <div class="card-header">
           <h3>Champions</h3>
           <div class="button-row">
@@ -116,7 +117,7 @@
         {% endif %}
       </div>
 
-      <div class="card card-compact settings-card">
+        <div class="card card-compact settings-card">
         <div class="card-header">
           <h3>Projects</h3>
           <div class="button-row">
@@ -232,7 +233,7 @@
         {% endif %}
       </div>
 
-      <div class="card card-compact settings-card">
+        <div class="card card-compact settings-card">
         <div class="card-header">
           <h3>Users</h3>
         </div>
@@ -274,8 +275,9 @@
           <p class="muted">No users found.</p>
         {% endif %}
       </div>
-    </div>
-  </section>
+      </div>
+    </section>
+  </div>
 
   <div class="modal-shell" id="champion-modal" hidden>
     <div class="modal-backdrop" data-close-modal="champion"></div>
