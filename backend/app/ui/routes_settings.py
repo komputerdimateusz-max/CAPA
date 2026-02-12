@@ -27,6 +27,30 @@ def _parse_optional_date(value: str | None) -> date | None:
     return date.fromisoformat(value)
 
 
+def _parse_optional_int(value: str | None, label: str) -> int | None:
+    if value is None:
+        return None
+    cleaned = value.strip()
+    if not cleaned:
+        return None
+    try:
+        return int(cleaned)
+    except ValueError as exc:
+        raise ValueError(f"{label} must be an integer.") from exc
+
+
+def _parse_optional_float(value: str | None, label: str) -> float | None:
+    if value is None:
+        return None
+    cleaned = value.strip()
+    if not cleaned:
+        return None
+    try:
+        return float(cleaned)
+    except ValueError as exc:
+        raise ValueError(f"{label} must be a number.") from exc
+
+
 def _current_user(request: Request):
     return getattr(request.state, "user", None)
 
@@ -58,6 +82,7 @@ def _render_settings(
             "form": form or {},
             "format_date": format_date,
             "open_modal": open_modal,
+            "project_status_options": settings_service.ALLOWED_PROJECT_STATUSES,
         },
     )
 
@@ -176,12 +201,23 @@ def add_project(
     request: Request,
     name: str = Form(...),
     status: str | None = Form(default=None),
+    max_volume: str | None = Form(default=None),
+    flex_percent: str | None = Form(default=None),
+    process_engineer_id: str | None = Form(default=None),
     due_date: str | None = Form(default=None),
     db: Session = Depends(get_db),
 ):
     enforce_admin(_current_user(request))
     try:
-        project = settings_service.create_project(db, name, status, _parse_optional_date(due_date))
+        project = settings_service.create_project(
+            db,
+            name,
+            status,
+            _parse_optional_int(max_volume, "Max Volume [parts/year]"),
+            _parse_optional_float(flex_percent, "Flex [%]"),
+            _parse_optional_int(process_engineer_id, "Process Engineer"),
+            _parse_optional_date(due_date),
+        )
     except ValueError as exc:
         return _render_settings(
             request,
@@ -192,6 +228,9 @@ def add_project(
             form={
                 "project_name": name,
                 "project_status": status or "",
+                "project_max_volume": max_volume or "",
+                "project_flex_percent": flex_percent or "",
+                "project_process_engineer_id": process_engineer_id or "",
                 "project_due_date": due_date or "",
             },
             open_modal="project",
@@ -208,12 +247,24 @@ def update_project(
     request: Request,
     name: str = Form(...),
     status: str | None = Form(default=None),
+    max_volume: str | None = Form(default=None),
+    flex_percent: str | None = Form(default=None),
+    process_engineer_id: str | None = Form(default=None),
     due_date: str | None = Form(default=None),
     db: Session = Depends(get_db),
 ):
     enforce_admin(_current_user(request))
     try:
-        project = settings_service.update_project(db, project_id, name, status, _parse_optional_date(due_date))
+        project = settings_service.update_project(
+            db,
+            project_id,
+            name,
+            status,
+            _parse_optional_int(max_volume, "Max Volume [parts/year]"),
+            _parse_optional_float(flex_percent, "Flex [%]"),
+            _parse_optional_int(process_engineer_id, "Process Engineer"),
+            _parse_optional_date(due_date),
+        )
     except ValueError as exc:
         return _render_settings(
             request,
@@ -224,6 +275,9 @@ def update_project(
             form={
                 "project_name": name,
                 "project_status": status or "",
+                "project_max_volume": max_volume or "",
+                "project_flex_percent": flex_percent or "",
+                "project_process_engineer_id": process_engineer_id or "",
                 "project_due_date": due_date or "",
             },
         )

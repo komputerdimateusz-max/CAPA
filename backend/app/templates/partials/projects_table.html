@@ -5,6 +5,9 @@
         <tr>
           <th>Project</th>
           <th>Status</th>
+          <th>Max Volume</th>
+          <th>Flex</th>
+          <th>Process Engineer</th>
           <th>Due date</th>
           <th>Open actions</th>
           <th>Overdue actions</th>
@@ -16,6 +19,9 @@
           <tr>
             <td><a href="/ui/projects/{{ rollup.project.id }}">{{ rollup.project.name }}</a></td>
             <td>{{ rollup.project.status or "—" }}</td>
+            <td>{{ rollup.project.max_volume if rollup.project.max_volume is not none else "—" }}</td>
+            <td>{% if rollup.project.flex_percent is not none %}{{ rollup.project.flex_percent }}%{% else %}—{% endif %}</td>
+            <td>{{ rollup.project.process_engineer.full_name if rollup.project.process_engineer else "—" }}</td>
             <td>{{ format_date(rollup.project.due_date) }}</td>
             <td>{{ rollup.open_actions }}</td>
             <td>{{ rollup.overdue_actions }}</td>
