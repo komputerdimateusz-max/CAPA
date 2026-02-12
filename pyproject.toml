@@ -3,7 +3,7 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "action-to-money-tracker"
+name = "atm_tracker"
 version = "0.1.0"
 description = "Decision intelligence layer linking CAPA actions with production data and real financial impact (€)"
 readme = "README.md"
@@ -35,6 +35,7 @@ dev = [
 
 [tool.setuptools]
 package-dir = {"" = "src"}
+include-package-data = true
 
 [tool.setuptools.packages.find]
 where = ["src"]
