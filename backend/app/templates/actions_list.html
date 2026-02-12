@@ -49,37 +49,52 @@
     </section>
 
     <section class="actions-section filters-panel">
-      {% from "partials/filters_bar.html" import filter_bar %}
-      {% call(section) filter_bar("/ui/actions", "#actions-table", "/ui/actions/_table", true, "More filters") %}
-        {% if section == 'primary' %}
-          <input type="hidden" name="page" value="1" />
-          <label>
-            Search
-            <input type="text" name="q" value="{{ filters.q }}" placeholder="Title or description" />
-          </label>
-          <div class="multi-select-field">
-            <span class="field-label">Status</span>
-            <details class="multi-select-menu">
-              <summary>
-                {% if filters.status %}
-                  {{ filters.status|join(", ") }}
-                {% else %}
-                  All statuses
-                {% endif %}
-              </summary>
-              <div class="multi-select-options">
-                {% for status in status_options %}
-                  <label class="multi-select-option">
-                    <input type="checkbox" name="status" value="{{ status }}" {% if status in filters.status %}checked{% endif %} />
-                    <span>{{ status }}</span>
-                  </label>
-                {% endfor %}
-              </div>
-            </details>
+      <form
+        class="filter-bar filter-bar-v2"
+        method="get"
+        action="/ui/actions"
+        hx-get="/ui/actions/_table"
+        hx-target="#actions-table"
+        hx-swap="outerHTML"
+        hx-push-url="true"
+      >
+        <input type="hidden" name="page" value="1" />
+        {% for status in filters.status %}
+          <input type="hidden" name="status" value="{{ status }}" />
+        {% endfor %}
+
+        <div class="filter-bar-v2__row filter-bar-v2__row--quick">
+          <input
+            type="text"
+            name="q"
+            value="{{ filters.q }}"
+            placeholder="Search by title or description"
+            class="filter-bar-v2__search"
+            data-filter-search
+          />
+          <div class="status-segmented" role="group" aria-label="Status filters">
+            {% set status_scope = 'all' %}
+            {% if filters.status|length == 1 and 'OPEN' in filters.status %}{% set status_scope = 'open' %}{% endif %}
+            {% if filters.status|length == 1 and 'IN_PROGRESS' in filters.status %}{% set status_scope = 'in_progress' %}{% endif %}
+            {% if filters.status|length == 1 and 'BLOCKED' in filters.status %}{% set status_scope = 'blocked' %}{% endif %}
+            {% if filters.status|length == 1 and 'CLOSED' in filters.status %}{% set status_scope = 'closed' %}{% endif %}
+            {% for key, label in [('all', 'All'), ('open', 'Open'), ('in_progress', 'In progress'), ('blocked', 'Blocked'), ('closed', 'Closed')] %}
+              <button
+                type="button"
+                class="status-segment {% if status_scope == key %}is-active{% endif %}"
+                data-status-scope="{{ key }}"
+              >
+                {{ label }}
+              </button>
+            {% endfor %}
           </div>
+          <button class="button secondary filter-bar-v2__clear" type="button" data-clear-filters>Clear</button>
+        </div>
+
+        <div class="filter-bar-v2__row filter-bar-v2__row--scope">
           <label>
-            Project
-            <select name="project_id">
+            <span class="sr-only">Project</span>
+            <select name="project_id" data-auto-submit>
               <option value="">All projects</option>
               {% for project in projects %}
                 <option value="{{ project.id }}" {% if filters.project_id == project.id %}selected{% endif %}>{{ project.name }}</option>
@@ -87,65 +102,60 @@
             </select>
           </label>
           <label>
-            Champion
-            <select name="champion_id">
+            <span class="sr-only">Champion</span>
+            <select name="champion_id" data-auto-submit>
               <option value="">All champions</option>
               {% for champion in champions %}
                 <option value="{{ champion.id }}" {% if filters.champion_id == champion.id %}selected{% endif %}>{{ champion.full_name }}</option>
               {% endfor %}
             </select>
           </label>
-          <div class="multi-select-field">
-            <span class="field-label">Tags</span>
-            <details class="multi-select-menu">
-              <summary>
-                {% if filters.tags %}
-                  {{ filters.tags|join(", ") }}
-                {% else %}
-                  All tags
-                {% endif %}
-              </summary>
-              <div class="multi-select-options">
+          <div class="tag-picker" data-tag-picker>
+            <div class="tag-picker__chips" data-tag-chip-list>
+              {% for tag in filters.tags %}
+                <button type="button" class="tag-chip tag-chip--selected" data-remove-tag="{{ tag }}">{{ tag }} ×</button>
+                <input type="hidden" name="tags" value="{{ tag }}" data-tag-input="{{ tag }}" />
+              {% endfor %}
+            </div>
+            <label>
+              <span class="sr-only">Add tag</span>
+              <select data-add-tag>
+                <option value="">Add tag…</option>
                 {% for tag in all_tags %}
-                  <label class="multi-select-option">
-                    <input type="checkbox" name="tags" value="{{ tag.name }}" {% if tag.name in filters.tags %}checked{% endif %} />
-                    <span>{{ tag.name }}</span>
-                  </label>
+                  {% if tag.name not in filters.tags %}
+                    <option value="{{ tag.name }}">{{ tag.name }}</option>
+                  {% endif %}
                 {% endfor %}
-              </div>
-            </details>
+              </select>
+            </label>
           </div>
-        {% else %}
           <label>
-            Date from
-            <input type="date" name="from" value="{{ filters.from }}" />
+            <span class="sr-only">Due from</span>
+            <input type="date" name="from" value="{{ filters.from }}" data-auto-submit />
           </label>
           <label>
-            Date to
-            <input type="date" name="to" value="{{ filters.to }}" />
+            <span class="sr-only">Due to</span>
+            <input type="date" name="to" value="{{ filters.to }}" data-auto-submit />
           </label>
           <label>
-            Sort
-            <select name="sort">
-              <option value="">Default</option>
+            <span class="sr-only">Sort</span>
+            <select name="sort" data-auto-submit>
+              <option value="">Default sort</option>
               {% for value, label in sort_options %}
                 <option value="{{ value }}" {% if filters.sort == value %}selected{% endif %}>{{ label }}</option>
               {% endfor %}
             </select>
           </label>
           <label>
-            Page size
-            <select name="page_size">
+            <span class="sr-only">Page size</span>
+            <select name="page_size" data-auto-submit>
               {% for size in [10, 25, 50, 100] %}
                 <option value="{{ size }}" {% if filters.page_size == size %}selected{% endif %}>{{ size }}</option>
               {% endfor %}
             </select>
           </label>
-          <div class="form-actions form-actions-end">
-            <button class="button" type="submit">Apply filters</button>
-          </div>
-        {% endif %}
-      {% endcall %}
+        </div>
+      </form>
     </section>
 
     <section class="actions-section actions-table-panel">
@@ -222,6 +232,61 @@
       const closeButtons = document.querySelectorAll("[data-close-create-action]");
       const createForm = document.getElementById("create-action-form");
       const filtersForm = document.querySelector(".filters-panel .filter-bar");
+      const statusSegments = filtersForm ? filtersForm.querySelectorAll("[data-status-scope]") : [];
+      const searchInput = filtersForm?.querySelector("[data-filter-search]");
+      const clearFiltersButton = filtersForm?.querySelector("[data-clear-filters]");
+
+      const statusMap = {
+        all: [],
+        open: ["OPEN"],
+        in_progress: ["IN_PROGRESS"],
+        blocked: ["BLOCKED"],
+        closed: ["CLOSED"],
+      };
+
+      const submitFilters = () => {
+        if (!filtersForm) return;
+        if (window.htmx) {
+          window.htmx.trigger(filtersForm, "submit");
+        } else {
+          filtersForm.submit();
+        }
+      };
+
+      const setStatusScope = (scope) => {
+        if (!filtersForm) return;
+        filtersForm.querySelectorAll('input[name="status"]').forEach((node) => node.remove());
+        (statusMap[scope] || []).forEach((value) => {
+          const input = document.createElement("input");
+          input.type = "hidden";
+          input.name = "status";
+          input.value = value;
+          filtersForm.appendChild(input);
+        });
+        statusSegments.forEach((segment) => {
+          segment.classList.toggle("is-active", segment.dataset.statusScope === scope);
+        });
+      };
+
+      const clearFilters = () => {
+        if (!filtersForm) return;
+        filtersForm.querySelectorAll('input[name="status"], input[name="tags"]').forEach((node) => node.remove());
+        if (searchInput) searchInput.value = "";
+        filtersForm.querySelectorAll('select[name="project_id"], select[name="champion_id"], select[name="sort"]').forEach((select) => {
+          select.value = "";
+        });
+        filtersForm.querySelectorAll('input[name="from"], input[name="to"]').forEach((input) => {
+          input.value = "";
+        });
+        const pageSize = filtersForm.querySelector('select[name="page_size"]');
+        if (pageSize) pageSize.value = "25";
+        const chipList = filtersForm.querySelector("[data-tag-chip-list]");
+        if (chipList) chipList.innerHTML = "";
+        const addTagSelect = filtersForm.querySelector("[data-add-tag]");
+        if (addTagSelect) addTagSelect.value = "";
+        setStatusScope("all");
+        submitFilters();
+      };
 
       const openModal = () => {
         modal.hidden = false;
@@ -239,6 +304,69 @@
         if (event.key === "Escape" && !modal.hidden) {
           closeModal();
         }
+      });
+
+
+      statusSegments.forEach((segment) => {
+        segment.addEventListener("click", () => {
+          setStatusScope(segment.dataset.statusScope || "all");
+          submitFilters();
+        });
+      });
+
+      filtersForm?.querySelectorAll("[data-auto-submit]").forEach((field) => {
+        field.addEventListener("change", submitFilters);
+      });
+
+      if (searchInput) {
+        let timer = null;
+        searchInput.addEventListener("input", () => {
+          window.clearTimeout(timer);
+          timer = window.setTimeout(submitFilters, 300);
+        });
+      }
+
+      clearFiltersButton?.addEventListener("click", clearFilters);
+
+      const addTagSelect = filtersForm?.querySelector("[data-add-tag]");
+      const chipList = filtersForm?.querySelector("[data-tag-chip-list]");
+
+      const appendTagChip = (tag) => {
+        if (!filtersForm || !chipList || !tag) return;
+        const existingTagInput = Array.from(filtersForm.querySelectorAll("[data-tag-input]")).find((node) => node.dataset.tagInput === tag);
+        if (existingTagInput) return;
+        const chip = document.createElement("button");
+        chip.type = "button";
+        chip.className = "tag-chip tag-chip--selected";
+        chip.dataset.removeTag = tag;
+        chip.textContent = `${tag} ×`;
+
+        const hidden = document.createElement("input");
+        hidden.type = "hidden";
+        hidden.name = "tags";
+        hidden.value = tag;
+        hidden.dataset.tagInput = tag;
+
+        chipList.appendChild(chip);
+        chipList.appendChild(hidden);
+      };
+
+      addTagSelect?.addEventListener("change", () => {
+        const tag = addTagSelect.value;
+        if (!tag) return;
+        appendTagChip(tag);
+        addTagSelect.value = "";
+        submitFilters();
+      });
+
+      chipList?.addEventListener("click", (event) => {
+        const button = event.target.closest("[data-remove-tag]");
+        if (!button || !filtersForm) return;
+        const tag = button.dataset.removeTag;
+        button.remove();
+        const hidden = Array.from(filtersForm.querySelectorAll("[data-tag-input]")).find((node) => node.dataset.tagInput === tag);
+        hidden?.remove();
+        submitFilters();
       });
 
       createForm?.addEventListener("submit", async (event) => {
