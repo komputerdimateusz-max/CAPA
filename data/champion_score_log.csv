@@ -1,0 +1,10 @@
+champion,item_type,item_id,rule_code,points,as_of_date,details
+Mateusz Rausz,ACTION,5,ACT_CREATE,1,2026-02-02,created_at=2026-01-07
+Ktos Takiż,ACTION,4,ACT_CREATE,1,2026-02-02,created_at=2026-02-01
+Mateusz Rausz,ACTION,3,ACT_CREATE,1,2026-02-02,created_at=2026-02-01
+Mateusz Rausz,ACTION,2,ACT_CREATE,1,2026-02-02,created_at=2026-01-31
+Mateusz Rausz,ACTION,2,ACT_CLOSE_BASE,3,2026-02-02,status=closed
+Mateusz Rausz,ACTION,2,ACT_LATE_PENALTY,-2,2026-02-02,"closed_at=2026-02-01, due_date=2026-01-31"
+Mateusz,ACTION,1,ACT_CREATE,1,2026-02-02,created_at=2026-01-29
+Ktos Takiż,ANALYSIS,5WHY-2026-0001,AN_5WHY_CLOSE_BASE,5,2026-02-02,status=closed
+Ktos Takiż,ANALYSIS,5WHY-2026-0001,AN_5WHY_ON_TIME_BONUS,2,2026-02-02,"closed_at=2026-02-01, sla_days=14"
