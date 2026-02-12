@@ -1,13 +1,14 @@
 from __future__ import annotations
 
-from sqlalchemy import select, func
-from sqlalchemy.orm import Session
+from sqlalchemy import func, select
+from sqlalchemy.orm import Session, joinedload
 
 from app.models.project import Project
+from app.services.settings import ALLOWED_PROJECT_STATUSES
 
 
 def list_projects(db: Session, query: str | None = None, status: str | None = None) -> list[Project]:
-    stmt = select(Project)
+    stmt = select(Project).options(joinedload(Project.process_engineer))
     if query:
         like_query = f"%{query.lower()}%"
         stmt = stmt.where(func.lower(Project.name).like(like_query))
@@ -18,14 +19,9 @@ def list_projects(db: Session, query: str | None = None, status: str | None = No
 
 
 def get_project(db: Session, project_id: int) -> Project | None:
-    return db.get(Project, project_id)
+    stmt = select(Project).options(joinedload(Project.process_engineer)).where(Project.id == project_id)
+    return db.scalar(stmt)
 
 
-def list_project_statuses(db: Session) -> list[str]:
-    stmt = (
-        select(Project.status)
-        .where(Project.status.isnot(None))
-        .distinct()
-        .order_by(Project.status.asc())
-    )
-    return [status for status in db.scalars(stmt).all() if status]
+def list_project_statuses(_db: Session) -> list[str]:
+    return list(ALLOWED_PROJECT_STATUSES)

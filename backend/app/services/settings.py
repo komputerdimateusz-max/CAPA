@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date
+
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -68,6 +69,43 @@ def _ensure_unique_email(db: Session, email: str | None, exclude_id: int | None 
         raise ValueError("Champion email already exists.")
 
 
+
+ALLOWED_PROJECT_STATUSES = ("Serial production", "Spare Parts")
+
+
+def _normalize_project_status(value: str | None) -> str:
+    cleaned = _normalize_optional(value)
+    if cleaned is None:
+        raise ValueError("Project status is required.")
+    if cleaned not in ALLOWED_PROJECT_STATUSES:
+        raise ValueError(f"Project status must be one of: {', '.join(ALLOWED_PROJECT_STATUSES)}.")
+    return cleaned
+
+
+def _normalize_project_max_volume(value: int | None) -> int:
+    if value is None:
+        raise ValueError("Max Volume [parts/year] is required.")
+    if value < 0:
+        raise ValueError("Max Volume [parts/year] must be greater than or equal to 0.")
+    return value
+
+
+def _normalize_project_flex(value: float | None) -> float:
+    if value is None:
+        raise ValueError("Flex [%] is required.")
+    if value < 0 or value > 100:
+        raise ValueError("Flex [%] must be between 0 and 100.")
+    return value
+
+
+def _normalize_process_engineer_id(db: Session, value: int | None) -> int:
+    if value is None:
+        raise ValueError("Process Engineer is required.")
+    champion = db.get(Champion, value)
+    if champion is None:
+        raise ValueError("Selected Process Engineer does not exist.")
+    return value
+
 def create_champion(
     db: Session,
     first_name: str,
@@ -128,6 +166,9 @@ def create_project(
     db: Session,
     name: str,
     status: str | None,
+    max_volume: int | None,
+    flex_percent: float | None,
+    process_engineer_id: int | None,
     due_date: date | None,
 ) -> Project:
     cleaned = _normalize_name(name)
@@ -138,7 +179,10 @@ def create_project(
         raise ValueError("Project already exists.")
     project = Project(
         name=cleaned,
-        status=_normalize_optional(status),
+        status=_normalize_project_status(status),
+        max_volume=_normalize_project_max_volume(max_volume),
+        flex_percent=_normalize_project_flex(flex_percent),
+        process_engineer_id=_normalize_process_engineer_id(db, process_engineer_id),
         due_date=_normalize_date(due_date),
     )
     db.add(project)
@@ -152,6 +196,9 @@ def update_project(
     project_id: int,
     name: str,
     status: str | None,
+    max_volume: int | None,
+    flex_percent: float | None,
+    process_engineer_id: int | None,
     due_date: date | None,
 ) -> Project:
     cleaned = _normalize_name(name)
@@ -168,7 +215,10 @@ def update_project(
     if existing:
         raise ValueError("Project already exists.")
     project.name = cleaned
-    project.status = _normalize_optional(status)
+    project.status = _normalize_project_status(status)
+    project.max_volume = _normalize_project_max_volume(max_volume)
+    project.flex_percent = _normalize_project_flex(flex_percent)
+    project.process_engineer_id = _normalize_process_engineer_id(db, process_engineer_id)
     project.due_date = _normalize_date(due_date)
     db.add(project)
     db.commit()

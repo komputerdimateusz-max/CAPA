@@ -18,6 +18,7 @@ class Champion(Base):
 
     actions = relationship("Action", back_populates="champion")
     users = relationship("User", back_populates="champion")
+    process_engineer_projects = relationship("Project", back_populates="process_engineer")
 
     @property
     def full_name(self) -> str:
