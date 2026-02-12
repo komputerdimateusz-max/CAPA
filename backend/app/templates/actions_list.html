@@ -54,10 +54,6 @@
         class="card filterbar {{ filter_debug_class }} filter-bar filter-bar-v2"
         method="get"
         action="/ui/actions"
-        hx-get="/ui/actions/_table"
-        hx-target="#actions-table"
-        hx-swap="outerHTML"
-        hx-push-url="true"
       >
         <input type="hidden" name="page" value="1" />
         {% for status in filters.status %}
@@ -94,7 +90,7 @@
 
         <div class="filterrow filter-bar-v2__row filter-bar-v2__row--scope">
           <div class="filter-field filter-field--project">
-            <select name="project_id" data-auto-submit aria-label="Project" class="select">
+            <select name="project_id" aria-label="Project" class="select">
               <option value="">All projects</option>
               {% for project in projects %}
                 <option value="{{ project.id }}" {% if filters.project_id == project.id %}selected{% endif %}>{{ project.name }}</option>
@@ -102,7 +98,7 @@
             </select>
           </div>
           <div class="filter-field filter-field--champion">
-            <select name="champion_id" data-auto-submit aria-label="Champion" class="select">
+            <select name="champion_id" aria-label="Champion" class="select">
               <option value="">All champions</option>
               {% for champion in champions %}
                 <option value="{{ champion.id }}" {% if filters.champion_id == champion.id %}selected{% endif %}>{{ champion.full_name }}</option>
@@ -126,13 +122,13 @@
             </select>
           </div>
           <div class="filter-field filter-field--date">
-            <input type="date" name="from" value="{{ filters.from }}" data-auto-submit aria-label="Due from"  class="input" />
+            <input type="date" name="from" value="{{ filters.from }}" aria-label="Due from"  class="input" />
           </div>
           <div class="filter-field filter-field--date">
-            <input type="date" name="to" value="{{ filters.to }}" data-auto-submit aria-label="Due to"  class="input" />
+            <input type="date" name="to" value="{{ filters.to }}" aria-label="Due to"  class="input" />
           </div>
           <div class="filter-field filter-field--sort">
-            <select name="sort" data-auto-submit aria-label="Sort" class="select">
+            <select name="sort" aria-label="Sort" class="select">
               <option value="created_at_desc">Created (newest first)</option>
               {% for value, label in sort_options %}
                 <option value="{{ value }}" {% if filters.sort == value %}selected{% endif %}>{{ label }}</option>
@@ -140,12 +136,14 @@
             </select>
           </div>
           <div class="filter-field filter-field--page-size">
-            <button class="btn btn-primary button" type="button" data-apply-filters>Apply filters</button>
-            <select name="page_size" data-auto-submit aria-label="Page size" class="select">
+            <select name="page_size" aria-label="Page size" class="select">
               {% for size in [10, 25, 50, 100] %}
                 <option value="{{ size }}" {% if filters.page_size == size %}selected{% endif %}>{{ size }}</option>
               {% endfor %}
             </select>
+          </div>
+          <div class="filter-bar-v2__apply-wrap">
+            <button class="btn btn-primary button filter-bar-v2__apply" type="button" data-apply-filters>Apply filters</button>
           </div>
         </div>
       </form>
@@ -230,9 +228,36 @@
       const clearFiltersButton = filtersForm?.querySelector("[data-clear-filters]");
       const applyFiltersButton = filtersForm?.querySelector("[data-apply-filters]");
       const sortSelect = filtersForm?.querySelector('select[name="sort"]');
-      const appliedFilters = {
-        sort: sortSelect?.value || "created_at_desc",
+      const pageInput = filtersForm?.querySelector('input[name="page"]');
+      const tagInputNodes = () => (filtersForm ? Array.from(filtersForm.querySelectorAll('input[name="tags"]')) : []);
+
+      const getFiltersFromForm = () => {
+        if (!filtersForm) return null;
+        return {
+          q: filtersForm.querySelector('input[name="q"]')?.value.trim() || "",
+          status: Array.from(filtersForm.querySelectorAll('input[name="status"]')).map((node) => node.value),
+          project_id: filtersForm.querySelector('select[name="project_id"]')?.value || "",
+          champion_id: filtersForm.querySelector('select[name="champion_id"]')?.value || "",
+          tags: tagInputNodes().map((node) => node.value),
+          from: filtersForm.querySelector('input[name="from"]')?.value || "",
+          to: filtersForm.querySelector('input[name="to"]')?.value || "",
+          sort: sortSelect?.value || "created_at_desc",
+          page_size: filtersForm.querySelector('select[name="page_size"]')?.value || "25",
+        };
       };
+
+      let draftFilters = getFiltersFromForm() || {
+        q: "",
+        status: [],
+        project_id: "",
+        champion_id: "",
+        tags: [],
+        from: "",
+        to: "",
+        sort: "created_at_desc",
+        page_size: "25",
+      };
+      let appliedFilters = { ...draftFilters };
 
       const statusMap = {
         all: [],
@@ -242,16 +267,25 @@
         closed: ["CLOSED"],
       };
 
-      const submitFilters = () => {
-        if (sortSelect) {
-          sortSelect.value = appliedFilters.sort || "created_at_desc";
-        }
+      const buildUrl = (filters) => {
+        const params = new URLSearchParams();
+        if (filters.q) params.set("q", filters.q);
+        filters.status.forEach((status) => params.append("status", status));
+        if (filters.project_id) params.set("project_id", filters.project_id);
+        if (filters.champion_id) params.set("champion_id", filters.champion_id);
+        filters.tags.forEach((tag) => params.append("tags", tag));
+        if (filters.from) params.set("from", filters.from);
+        if (filters.to) params.set("to", filters.to);
+        params.set("sort", filters.sort || "created_at_desc");
+        params.set("page_size", filters.page_size || "25");
+        params.set("page", "1");
+        return `${filtersForm.action}?${params.toString()}`;
+      };
+
+      const navigateWithFilters = (filters) => {
         if (!filtersForm) return;
-        if (window.htmx) {
-          window.htmx.trigger(filtersForm, "submit");
-        } else {
-          filtersForm.submit();
-        }
+        const nextUrl = buildUrl(filters);
+        window.location.assign(nextUrl);
       };
 
       const setStatusScope = (scope) => {
@@ -267,6 +301,7 @@
         statusSegments.forEach((segment) => {
           segment.classList.toggle("is-active", segment.dataset.statusScope === scope);
         });
+        draftFilters = getFiltersFromForm() || draftFilters;
       };
 
       const clearFilters = () => {
@@ -277,7 +312,7 @@
           select.value = "";
         });
         if (sortSelect) {
-          appliedFilters.sort = "created_at_desc";
+          draftFilters.sort = "created_at_desc";
           sortSelect.value = "created_at_desc";
         }
         filtersForm.querySelectorAll('input[name="from"], input[name="to"]').forEach((input) => {
@@ -290,7 +325,10 @@
         const addTagSelect = filtersForm.querySelector("[data-add-tag]");
         if (addTagSelect) addTagSelect.value = "";
         setStatusScope("all");
-        submitFilters();
+        draftFilters = getFiltersFromForm() || draftFilters;
+        appliedFilters = { ...draftFilters };
+        if (pageInput) pageInput.value = "1";
+        navigateWithFilters(appliedFilters);
       };
 
       const openModal = () => {
@@ -315,31 +353,32 @@
       statusSegments.forEach((segment) => {
         segment.addEventListener("click", () => {
           setStatusScope(segment.dataset.statusScope || "all");
-          submitFilters();
         });
       });
 
-      filtersForm?.querySelectorAll("[data-auto-submit]").forEach((field) => {
-        field.addEventListener("change", () => {
-          if (field === sortSelect) {
-            appliedFilters.sort = sortSelect.value || "created_at_desc";
-          }
-          submitFilters();
-        });
+      filtersForm?.addEventListener("change", () => {
+        draftFilters = getFiltersFromForm() || draftFilters;
+      });
+
+      filtersForm?.addEventListener("submit", (event) => {
+        event.preventDefault();
+        draftFilters = getFiltersFromForm() || draftFilters;
+        appliedFilters = { ...draftFilters };
+        if (pageInput) pageInput.value = "1";
+        if ({{ "true" if dev_mode else "false" }}) {
+          console.debug("[Actions] Apply filters payload", appliedFilters);
+        }
+        navigateWithFilters(appliedFilters);
       });
 
       applyFiltersButton?.addEventListener("click", () => {
-        appliedFilters.sort = sortSelect?.value || "created_at_desc";
-        submitFilters();
+        if (!filtersForm) return;
+        filtersForm.requestSubmit();
       });
 
-      if (searchInput) {
-        let timer = null;
-        searchInput.addEventListener("input", () => {
-          window.clearTimeout(timer);
-          timer = window.setTimeout(submitFilters, 300);
-        });
-      }
+      searchInput?.addEventListener("input", () => {
+        draftFilters = getFiltersFromForm() || draftFilters;
+      });
 
       clearFiltersButton?.addEventListener("click", clearFilters);
 
@@ -371,7 +410,7 @@
         if (!tag) return;
         appendTagChip(tag);
         addTagSelect.value = "";
-        submitFilters();
+        draftFilters = getFiltersFromForm() || draftFilters;
       });
 
       chipList?.addEventListener("click", (event) => {
@@ -381,7 +420,7 @@
         button.remove();
         const hidden = Array.from(filtersForm.querySelectorAll("[data-tag-input]")).find((node) => node.dataset.tagInput === tag);
         hidden?.remove();
-        submitFilters();
+        draftFilters = getFiltersFromForm() || draftFilters;
       });
 
       createForm?.addEventListener("submit", async (event) => {
