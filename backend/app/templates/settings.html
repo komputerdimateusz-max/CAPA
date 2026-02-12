@@ -7,8 +7,8 @@
     </div>
     {% include "partials/flash_message.html" %}
 
-    <div class="detail-grid">
-      <div class="card card-compact">
+    <div class="detail-grid settings-grid">
+      <div class="card card-compact settings-card">
         <div class="card-header">
           <h3>Champions</h3>
           <div class="button-row">
@@ -34,28 +34,30 @@
             {% endif %}
           </form>
 
-          <table class="table">
-            <thead>
-              <tr>
-                <th>Name</th>
-                <th>Email</th>
-                <th>Position</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {% for champion in champions %}
+          <div class="table-wrap">
+            <table class="table">
+              <thead>
                 <tr>
-                  <td>{{ champion.full_name }}</td>
-                  <td>{{ champion.email or '—' }}</td>
-                  <td>{{ champion.position or '—' }}</td>
-                  <td>
-                    <a class="button secondary" href="/ui/settings?champion_id={{ champion.id }}">Edit</a>
-                  </td>
+                  <th>Name</th>
+                  <th>Email</th>
+                  <th>Position</th>
+                  <th></th>
                 </tr>
-              {% endfor %}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {% for champion in champions %}
+                  <tr>
+                    <td>{{ champion.full_name }}</td>
+                    <td>{{ champion.email or '—' }}</td>
+                    <td>{{ champion.position or '—' }}</td>
+                    <td>
+                      <a class="button secondary" href="/ui/settings?champion_id={{ champion.id }}">Edit</a>
+                    </td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
         {% else %}
           <p class="muted">No champions yet. Use Add champion to create one.</p>
         {% endif %}
@@ -114,7 +116,7 @@
         {% endif %}
       </div>
 
-      <div class="card card-compact">
+      <div class="card card-compact settings-card">
         <div class="card-header">
           <h3>Projects</h3>
           <div class="button-row">
@@ -140,34 +142,36 @@
             {% endif %}
           </form>
 
-          <table class="table">
-            <thead>
-              <tr>
-                <th>Name</th>
-                <th>Status</th>
-                <th>Max Volume</th>
-                <th>Flex</th>
-                <th>Process Engineer</th>
-                <th>Due</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {% for project in projects %}
+          <div class="table-wrap">
+            <table class="table">
+              <thead>
                 <tr>
-                  <td>{{ project.name }}</td>
-                  <td>{{ project.status or '—' }}</td>
-                  <td>{{ project.max_volume if project.max_volume is not none else '—' }}</td>
-                  <td>{% if project.flex_percent is not none %}{{ project.flex_percent }}%{% else %}—{% endif %}</td>
-                  <td>{{ project.process_engineer.full_name if project.process_engineer else '—' }}</td>
-                  <td>{{ format_date(project.due_date) }}</td>
-                  <td>
-                    <a class="button secondary" href="/ui/settings?project_id={{ project.id }}">Edit</a>
-                  </td>
+                  <th>Name</th>
+                  <th>Status</th>
+                  <th>Max Volume</th>
+                  <th>Flex</th>
+                  <th>Process Engineer</th>
+                  <th>Due</th>
+                  <th></th>
                 </tr>
-              {% endfor %}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {% for project in projects %}
+                  <tr>
+                    <td>{{ project.name }}</td>
+                    <td>{{ project.status or '—' }}</td>
+                    <td>{{ project.max_volume if project.max_volume is not none else '—' }}</td>
+                    <td>{% if project.flex_percent is not none %}{{ project.flex_percent }}%{% else %}—{% endif %}</td>
+                    <td>{{ project.process_engineer.full_name if project.process_engineer else '—' }}</td>
+                    <td>{{ format_date(project.due_date) }}</td>
+                    <td>
+                      <a class="button secondary" href="/ui/settings?project_id={{ project.id }}">Edit</a>
+                    </td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
         {% else %}
           <p class="muted">No projects yet. Use Add project to create one.</p>
         {% endif %}
@@ -228,42 +232,44 @@
         {% endif %}
       </div>
 
-      <div class="card card-compact">
+      <div class="card card-compact settings-card">
         <div class="card-header">
           <h3>Users</h3>
         </div>
 
         {% if users %}
-          <table class="table">
-            <thead>
-              <tr>
-                <th>Email</th>
-                <th>Current role</th>
-                <th>Change role</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {% for user in users %}
+          <div class="table-wrap users-table-wrap">
+            <table class="table users-table">
+              <thead>
                 <tr>
-                  <td>{{ user.email }}</td>
-                  <td><span class="status-pill">{{ user.role }}</span></td>
-                  <td>
-                    <form id="user-role-form-{{ user.id }}" class="inline-form" method="post" action="/ui/settings/users/{{ user.id }}/role">
-                      <select name="role">
-                        {% for role in user_role_options %}
-                          <option value="{{ role }}" {% if role == user.role %}selected{% endif %}>{{ role|title }}</option>
-                        {% endfor %}
-                      </select>
-                    </form>
-                  </td>
-                  <td>
-                    <button class="button" type="submit" form="user-role-form-{{ user.id }}">Save</button>
-                  </td>
+                  <th class="users-col-email">Email</th>
+                  <th class="users-col-current-role">Current role</th>
+                  <th class="users-col-change-role">Change role</th>
+                  <th class="users-col-action"></th>
                 </tr>
-              {% endfor %}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {% for user in users %}
+                  <tr>
+                    <td>{{ user.email }}</td>
+                    <td><span class="status-pill">{{ user.role }}</span></td>
+                    <td>
+                      <form id="user-role-form-{{ user.id }}" class="inline-form users-role-form" method="post" action="/ui/settings/users/{{ user.id }}/role">
+                        <select name="role">
+                          {% for role in user_role_options %}
+                            <option value="{{ role }}" {% if role == user.role %}selected{% endif %}>{{ role|title }}</option>
+                          {% endfor %}
+                        </select>
+                      </form>
+                    </td>
+                    <td class="users-action-cell">
+                      <button class="button users-save-button" type="submit" form="user-role-form-{{ user.id }}">Save</button>
+                    </td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
         {% else %}
           <p class="muted">No users found.</p>
         {% endif %}
