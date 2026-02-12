@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib.util
 import logging
 import os
 import sys
@@ -157,6 +158,14 @@ def _log_schema_error_once(message: str) -> None:
         return
     logger.error(message)
     _schema_error_already_logged = True
+
+
+def _log_settings_ui_module_path() -> None:
+    spec = importlib.util.find_spec("atm_tracker.settings.ui")
+    if not spec or not spec.origin:
+        logger.warning("[DEV] atm_tracker.settings.ui could not be resolved.")
+        return
+    logger.info("[DEV] atm_tracker.settings.ui resolved to: %s", Path(spec.origin).resolve())
 
 
 def validate_dev_schema(engine) -> SchemaValidationResult:
@@ -392,6 +401,8 @@ app = create_app()
 
 @app.on_event("startup")
 def on_startup() -> None:
+    if settings.dev_mode:
+        _log_settings_ui_module_path()
     schema_status = validate_dev_schema(engine)
     app.state.blocked_mode = BlockedModeState(
         is_blocked=settings.dev_mode and not schema_status.is_valid,

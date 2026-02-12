@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import importlib
+import logging
 import sys
 from pathlib import Path
 
@@ -17,7 +19,6 @@ from atm_tracker.analyses.ui import render_analyses_module  # noqa: E402
 from atm_tracker.champions.ui import render_champions_dashboard  # noqa: E402
 from atm_tracker.kpi_dashboard.ui import render_kpi_dashboard  # noqa: E402
 from atm_tracker.projects.ui import render_projects_module  # noqa: E402
-from atm_tracker.settings.ui import render_global_settings  # noqa: E402
 from atm_tracker.explorer.ui import render_explorer_module  # noqa: E402
 from atm_tracker.ui.layout import page_layout  # noqa: E402
 
@@ -34,6 +35,19 @@ NAV_LOOKUP = {
     "settings": "Settings",
     "global settings": "Settings",
 }
+
+
+logger = logging.getLogger("atm_tracker.dev")
+
+
+def _load_settings_ui_renderer():
+    settings_ui_module = importlib.import_module("atm_tracker.settings.ui")
+    settings_module_path = Path(settings_ui_module.__file__).resolve()
+    logger.info("[DEV] atm_tracker.settings.ui resolved to: %s", settings_module_path)
+    return settings_ui_module.render_global_settings
+
+
+render_global_settings = _load_settings_ui_renderer()
 
 
 def _apply_nav_query_params() -> None:
@@ -58,6 +72,8 @@ def _apply_nav_query_params() -> None:
 
 
 def main() -> None:
+    if not logging.getLogger().handlers:
+        logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s [%(name)s] %(message)s")
     st.set_page_config(page_title="CAPA Actions", layout="wide")
 
     _apply_nav_query_params()

@@ -112,3 +112,31 @@ Detailed formulas live in: `docs/02_kpis_formulas.md`
 ---
 
 ## Repo Structure (planned)
+
+
+## DEV Troubleshooting: Settings UI still looks old
+
+If Settings still renders an older UI after pulling latest code, verify Python is loading the repo module (not a stale site-packages install).
+
+1. **Verify resolved module path**
+
+```bash
+python -c "import atm_tracker.settings.ui as m; print(m.__file__)"
+```
+
+Expected: path points to `<repo>/src/atm_tracker/settings/ui.py`.
+
+2. **Reinstall editable package**
+
+```bash
+pip install -e .
+```
+
+On this repo, `run_dev.bat` now auto-runs editable install when module resolution is not under the local `src/` tree.
+
+3. **Restart dev runtime**
+
+- Stop running server/process (`Ctrl+C`).
+- Start again (`run_dev.bat` for backend, or your Streamlit dev command).
+- Reload the browser page.
+
