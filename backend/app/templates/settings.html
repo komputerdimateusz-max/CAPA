@@ -227,6 +227,47 @@
           </div>
         {% endif %}
       </div>
+
+      <div class="card card-compact">
+        <div class="card-header">
+          <h3>Users</h3>
+        </div>
+
+        {% if users %}
+          <table class="table">
+            <thead>
+              <tr>
+                <th>Email</th>
+                <th>Current role</th>
+                <th>Change role</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for user in users %}
+                <tr>
+                  <td>{{ user.email }}</td>
+                  <td><span class="status-pill">{{ user.role }}</span></td>
+                  <td>
+                    <form id="user-role-form-{{ user.id }}" class="inline-form" method="post" action="/ui/settings/users/{{ user.id }}/role">
+                      <select name="role">
+                        {% for role in user_role_options %}
+                          <option value="{{ role }}" {% if role == user.role %}selected{% endif %}>{{ role|title }}</option>
+                        {% endfor %}
+                      </select>
+                    </form>
+                  </td>
+                  <td>
+                    <button class="button" type="submit" form="user-role-form-{{ user.id }}">Save</button>
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        {% else %}
+          <p class="muted">No users found.</p>
+        {% endif %}
+      </div>
     </div>
   </section>
 

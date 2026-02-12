@@ -12,7 +12,9 @@ from app.core.auth import enforce_admin
 from app.db.session import get_db
 from app.repositories import champions as champions_repo
 from app.repositories import projects as projects_repo
+from app.models.user import User
 from app.services import settings as settings_service
+from app.services import users as users_service
 from app.ui.utils import format_date
 
 router = APIRouter(prefix="/ui", tags=["ui"])
@@ -67,6 +69,7 @@ def _render_settings(
 ):
     champions = champions_repo.list_champions(db)
     projects = projects_repo.list_projects(db)
+    users = users_service.list_users(db)
     selected_champion = champions_repo.get_champion(db, champion_id) if champion_id else None
     selected_project = projects_repo.get_project(db, project_id) if project_id else None
     return templates.TemplateResponse(
@@ -75,6 +78,7 @@ def _render_settings(
             "request": request,
             "champions": champions,
             "projects": projects,
+            "users": users,
             "selected_champion": selected_champion,
             "selected_project": selected_project,
             "message": message,
@@ -83,6 +87,7 @@ def _render_settings(
             "format_date": format_date,
             "open_modal": open_modal,
             "project_status_options": settings_service.ALLOWED_PROJECT_STATUSES,
+            "user_role_options": users_service.ALLOWED_USER_ROLES,
         },
     )
 
@@ -108,6 +113,42 @@ def settings_page(
         project_id=project_id,
         message=message or created_message,
         error=error,
+    )
+
+
+@router.get("/settings/users", response_model=None)
+def list_users(db: Session = Depends(get_db)):
+    users = users_service.list_users(db)
+    return [
+        {"id": user.id, "email": user.email, "role": user.role, "created_at": user.created_at}
+        for user in users
+    ]
+
+
+@router.post("/settings/users/{user_id}/role", response_model=None)
+def update_user_role(
+    user_id: int,
+    request: Request,
+    role: str = Form(...),
+    db: Session = Depends(get_db),
+):
+    # temporary policy: any authenticated user can update any user's role
+    try:
+        user = db.get(User, user_id)
+        if user is None:
+            raise ValueError("User not found.")
+        users_service.upsert_user_role(db, user_id=user_id, email=user.email, role=role)
+    except ValueError as exc:
+        return _render_settings(
+            request,
+            db,
+            champion_id=None,
+            project_id=None,
+            error=str(exc),
+        )
+    return RedirectResponse(
+        url="/ui/settings?message=User+role+updated",
+        status_code=303,
     )
 
 

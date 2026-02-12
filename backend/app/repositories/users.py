@@ -15,6 +15,16 @@ def get_user_by_username(db: Session, username: str) -> User | None:
     return db.execute(stmt).scalar_one_or_none()
 
 
+def get_user_by_email(db: Session, email: str) -> User | None:
+    stmt = select(User).where(func.lower(User.email) == email.lower())
+    return db.execute(stmt).scalar_one_or_none()
+
+
+def list_users(db: Session) -> list[User]:
+    stmt = select(User).order_by(func.lower(User.email))
+    return list(db.execute(stmt).scalars().all())
+
+
 def count_users(db: Session) -> int:
     stmt = select(func.count(User.id))
     return db.execute(stmt).scalar_one()
