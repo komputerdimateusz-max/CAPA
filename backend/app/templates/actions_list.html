@@ -49,8 +49,9 @@
     </section>
 
     <section class="actions-section filters-panel">
+      {% set filter_debug_class = "debug-css-loaded" if dev_mode else "" %}
       <form
-        class="filter-bar filter-bar-v2"
+        class="card filterbar {{ filter_debug_class }} filter-bar filter-bar-v2"
         method="get"
         action="/ui/actions"
         hx-get="/ui/actions/_table"
@@ -63,16 +64,16 @@
           <input type="hidden" name="status" value="{{ status }}" />
         {% endfor %}
 
-        <div class="filter-bar-v2__row filter-bar-v2__row--quick">
+        <div class="filterrow filter-bar-v2__row filter-bar-v2__row--quick">
           <input
             type="text"
             name="q"
             value="{{ filters.q }}"
             placeholder="Search by title or description"
-            class="filter-bar-v2__search"
+            class="input filter-bar-v2__search"
             data-filter-search
           />
-          <div class="status-segmented" role="group" aria-label="Status filters">
+          <div class="segmented status-segmented" role="group" aria-label="Status filters">
             {% set status_scope = 'all' %}
             {% if filters.status|length == 1 and 'OPEN' in filters.status %}{% set status_scope = 'open' %}{% endif %}
             {% if filters.status|length == 1 and 'IN_PROGRESS' in filters.status %}{% set status_scope = 'in_progress' %}{% endif %}
@@ -81,19 +82,19 @@
             {% for key, label in [('all', 'All'), ('open', 'Open'), ('in_progress', 'In progress'), ('blocked', 'Blocked'), ('closed', 'Closed')] %}
               <button
                 type="button"
-                class="status-segment {% if status_scope == key %}is-active{% endif %}"
+                class="btn btn-secondary status-segment {% if status_scope == key %}is-active{% endif %}"
                 data-status-scope="{{ key }}"
               >
                 {{ label }}
               </button>
             {% endfor %}
           </div>
-          <button class="button secondary filter-bar-v2__clear" type="button" data-clear-filters>Clear</button>
+          <button class="btn btn-secondary button secondary filter-bar-v2__clear" type="button" data-clear-filters>Clear</button>
         </div>
 
-        <div class="filter-bar-v2__row filter-bar-v2__row--scope">
+        <div class="filterrow filter-bar-v2__row filter-bar-v2__row--scope">
           <div class="filter-field filter-field--project">
-            <select name="project_id" data-auto-submit aria-label="Project">
+            <select name="project_id" data-auto-submit aria-label="Project" class="select">
               <option value="">All projects</option>
               {% for project in projects %}
                 <option value="{{ project.id }}" {% if filters.project_id == project.id %}selected{% endif %}>{{ project.name }}</option>
@@ -101,7 +102,7 @@
             </select>
           </div>
           <div class="filter-field filter-field--champion">
-            <select name="champion_id" data-auto-submit aria-label="Champion">
+            <select name="champion_id" data-auto-submit aria-label="Champion" class="select">
               <option value="">All champions</option>
               {% for champion in champions %}
                 <option value="{{ champion.id }}" {% if filters.champion_id == champion.id %}selected{% endif %}>{{ champion.full_name }}</option>
@@ -111,11 +112,11 @@
           <div class="tag-picker filter-field--tags" data-tag-picker>
             <div class="tag-picker__chips" data-tag-chip-list>
               {% for tag in filters.tags %}
-                <button type="button" class="tag-chip tag-chip--selected" data-remove-tag="{{ tag }}">{{ tag }} ×</button>
+                <button type="button" class="chip tag-chip tag-chip--selected" data-remove-tag="{{ tag }}">{{ tag }} ×</button>
                 <input type="hidden" name="tags" value="{{ tag }}" data-tag-input="{{ tag }}" />
               {% endfor %}
             </div>
-            <select data-add-tag aria-label="Add tag">
+            <select data-add-tag aria-label="Add tag" class="select">
               <option value="">Add tag…</option>
               {% for tag in all_tags %}
                 {% if tag.name not in filters.tags %}
@@ -125,21 +126,22 @@
             </select>
           </div>
           <div class="filter-field filter-field--date">
-            <input type="date" name="from" value="{{ filters.from }}" data-auto-submit aria-label="Due from" />
+            <input type="date" name="from" value="{{ filters.from }}" data-auto-submit aria-label="Due from"  class="input" />
           </div>
           <div class="filter-field filter-field--date">
-            <input type="date" name="to" value="{{ filters.to }}" data-auto-submit aria-label="Due to" />
+            <input type="date" name="to" value="{{ filters.to }}" data-auto-submit aria-label="Due to"  class="input" />
           </div>
           <div class="filter-field filter-field--sort">
-            <select name="sort" data-auto-submit aria-label="Sort">
-              <option value="">Default sort</option>
+            <select name="sort" data-auto-submit aria-label="Sort" class="select">
+              <option value="created_at_desc">Created (newest first)</option>
               {% for value, label in sort_options %}
                 <option value="{{ value }}" {% if filters.sort == value %}selected{% endif %}>{{ label }}</option>
               {% endfor %}
             </select>
           </div>
           <div class="filter-field filter-field--page-size">
-            <select name="page_size" data-auto-submit aria-label="Page size">
+            <button class="btn btn-primary button" type="button" data-apply-filters>Apply filters</button>
+            <select name="page_size" data-auto-submit aria-label="Page size" class="select">
               {% for size in [10, 25, 50, 100] %}
                 <option value="{{ size }}" {% if filters.page_size == size %}selected{% endif %}>{{ size }}</option>
               {% endfor %}
@@ -226,6 +228,11 @@
       const statusSegments = filtersForm ? filtersForm.querySelectorAll("[data-status-scope]") : [];
       const searchInput = filtersForm?.querySelector("[data-filter-search]");
       const clearFiltersButton = filtersForm?.querySelector("[data-clear-filters]");
+      const applyFiltersButton = filtersForm?.querySelector("[data-apply-filters]");
+      const sortSelect = filtersForm?.querySelector('select[name="sort"]');
+      const appliedFilters = {
+        sort: sortSelect?.value || "created_at_desc",
+      };
 
       const statusMap = {
         all: [],
@@ -236,6 +243,9 @@
       };
 
       const submitFilters = () => {
+        if (sortSelect) {
+          sortSelect.value = appliedFilters.sort || "created_at_desc";
+        }
         if (!filtersForm) return;
         if (window.htmx) {
           window.htmx.trigger(filtersForm, "submit");
@@ -263,9 +273,13 @@
         if (!filtersForm) return;
         filtersForm.querySelectorAll('input[name="status"], input[name="tags"]').forEach((node) => node.remove());
         if (searchInput) searchInput.value = "";
-        filtersForm.querySelectorAll('select[name="project_id"], select[name="champion_id"], select[name="sort"]').forEach((select) => {
+        filtersForm.querySelectorAll('select[name="project_id"], select[name="champion_id"]').forEach((select) => {
           select.value = "";
         });
+        if (sortSelect) {
+          appliedFilters.sort = "created_at_desc";
+          sortSelect.value = "created_at_desc";
+        }
         filtersForm.querySelectorAll('input[name="from"], input[name="to"]').forEach((input) => {
           input.value = "";
         });
@@ -306,7 +320,17 @@
       });
 
       filtersForm?.querySelectorAll("[data-auto-submit]").forEach((field) => {
-        field.addEventListener("change", submitFilters);
+        field.addEventListener("change", () => {
+          if (field === sortSelect) {
+            appliedFilters.sort = sortSelect.value || "created_at_desc";
+          }
+          submitFilters();
+        });
+      });
+
+      applyFiltersButton?.addEventListener("click", () => {
+        appliedFilters.sort = sortSelect?.value || "created_at_desc";
+        submitFilters();
       });
 
       if (searchInput) {

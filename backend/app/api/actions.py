@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from typing import Annotated
+import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
@@ -17,8 +18,10 @@ from app.schemas.action import ActionCreate, ActionDetailResponse, ActionListRes
 from app.schemas.subtask import SubtaskCreate, SubtaskRead, SubtaskUpdate
 from app.schemas.tag import TagRead
 from app.services.metrics import build_action_metrics
+from app.core.config import settings
 
 router = APIRouter(prefix="/api/actions", tags=["actions"])
+logger = logging.getLogger("app.api")
 
 
 def _serialize_action(action: Action, metrics, include_metrics: bool = True) -> ActionRead:
@@ -64,6 +67,10 @@ def list_actions(
     limit: int = Query(default=200, ge=1, le=1000),
     offset: int = Query(default=0, ge=0),
 ) -> ActionListResponse:
+    normalized_sort = actions_repo.normalize_sort(sort)
+    if settings.dev_mode:
+        logger.info("API actions sort applied: %s", normalized_sort)
+
     actions, total = actions_repo.list_actions(
         db,
         statuses=status_filters,
@@ -77,7 +84,7 @@ def list_actions(
         tags=tags,
         due_from=from_date,
         due_to=to_date,
-        sort=sort,
+        sort=normalized_sort,
         limit=limit,
         offset=offset,
     )

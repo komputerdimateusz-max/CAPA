@@ -9,6 +9,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
 from app.core.auth import enforce_action_create_permission, enforce_action_ownership, enforce_write_access
+from app.core.config import settings
 from app.db.session import get_db
 from app.models.action import Action
 from app.models.subtask import Subtask
@@ -26,12 +27,12 @@ TEMPLATES_DIR = Path(__file__).resolve().parents[1] / "templates"
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 MAX_KPI_ACTIONS = 10000
 SORT_OPTIONS = (
-    ("due_date", "Due date (oldest first)"),
-    ("-due_date", "Due date (newest first)"),
-    ("created_at", "Created (oldest first)"),
-    ("-created_at", "Created (newest first)"),
-    ("days_late", "Days late (least first)"),
-    ("-days_late", "Days late (most first)"),
+    ("created_at_desc", "Created (newest first)"),
+    ("created_at_asc", "Created (oldest first)"),
+    ("due_date_asc", "Due date (oldest first)"),
+    ("due_date_desc", "Due date (newest first)"),
+    ("days_late_desc", "Days late (most first)"),
+    ("title_asc", "Title (A-Z)"),
 )
 STATUS_OPTIONS = ("OPEN", "IN_PROGRESS", "BLOCKED", "CLOSED")
 PRIORITY_OPTIONS = ("LOW", "MEDIUM", "HIGH", "CRITICAL")
@@ -106,43 +107,25 @@ def _load_actions_table(
     page: int,
     page_size: int,
 ) -> dict[str, object]:
-    if sort in {"days_late", "-days_late"}:
-        actions, _total = actions_repo.list_actions(
-            db,
-            statuses=status_filters,
-            champion_id=champion_id,
-            project_id=project_id,
-            query=query,
-            tags=tags,
-            due_from=due_from,
-            due_to=due_to,
-            limit=MAX_KPI_ACTIONS,
-            offset=0,
-        )
-        subtasks = actions_repo.list_subtasks_for_actions(db, [action.id for action in actions])
-        rows = build_action_rows(actions, subtasks)
-        reverse = sort == "-days_late"
-        rows.sort(key=lambda row: row["days_late"], reverse=reverse)
-        total = len(rows)
-        start = (page - 1) * page_size
-        end = start + page_size
-        page_rows = rows[start:end]
-    else:
-        actions, total = actions_repo.list_actions(
-            db,
-            statuses=status_filters,
-            champion_id=champion_id,
-            project_id=project_id,
-            query=query,
-            tags=tags,
-            due_from=due_from,
-            due_to=due_to,
-            sort=sort,
-            limit=page_size,
-            offset=(page - 1) * page_size,
-        )
-        subtasks = actions_repo.list_subtasks_for_actions(db, [action.id for action in actions])
-        page_rows = build_action_rows(actions, subtasks)
+    normalized_sort = actions_repo.normalize_sort(sort)
+    actions, total = actions_repo.list_actions(
+        db,
+        statuses=status_filters,
+        champion_id=champion_id,
+        project_id=project_id,
+        query=query,
+        tags=tags,
+        due_from=due_from,
+        due_to=due_to,
+        sort=normalized_sort,
+        limit=page_size,
+        offset=(page - 1) * page_size,
+    )
+    subtasks = actions_repo.list_subtasks_for_actions(db, [action.id for action in actions])
+    page_rows = build_action_rows(actions, subtasks)
+
+    if settings.dev_mode:
+        logger.info("UI actions sort applied: %s", normalized_sort)
 
     total_pages = max(1, (total + page_size - 1) // page_size)
     return {
@@ -234,7 +217,7 @@ def actions_list(
         "tags": tags or [],
         "from": from_date.isoformat() if from_date else "",
         "to": to_date.isoformat() if to_date else "",
-        "sort": sort or "",
+        "sort": actions_repo.normalize_sort(sort),
         "page_size": page_size,
     }
     return templates.TemplateResponse(
@@ -252,6 +235,7 @@ def actions_list(
             "all_tags": tags_repo.list_tags(db),
             "pagination": table_data,
             "query_builder": build_query_params,
+            "dev_mode": settings.dev_mode,
         },
     )
 
@@ -292,7 +276,7 @@ def actions_table(
         "tags": tags or [],
         "from": from_date.isoformat() if from_date else "",
         "to": to_date.isoformat() if to_date else "",
-        "sort": sort or "",
+        "sort": actions_repo.normalize_sort(sort),
         "page_size": page_size,
     }
     return templates.TemplateResponse(
