@@ -384,6 +384,7 @@ def seed_admin_user(db: SessionLocal) -> None:
     try:
         user = User(
             username=username,
+            email=f"{username}@local.invalid",
             password_hash=hash_password(password),
             role="admin",
             is_active=True,

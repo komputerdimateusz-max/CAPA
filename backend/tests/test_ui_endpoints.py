@@ -91,3 +91,40 @@ def test_project_detail_contains_actions_manager_controls(client, db_session):
     assert "Actions in this project" in response.text
     assert "Search unassigned actions" in response.text
     assert "Add action" in response.text
+
+
+def test_ui_settings_shows_users_section(client, db_session):
+    db_session.add(
+        User(
+            username="alice",
+            email="alice@example.com",
+            password_hash="hash",
+            role="viewer",
+            is_active=True,
+        )
+    )
+    db_session.commit()
+
+    response = client.get("/ui/settings")
+
+    assert response.status_code == 200
+    assert "Users" in response.text
+    assert "alice@example.com" in response.text
+
+
+def test_ui_settings_updates_user_role(client, db_session):
+    user = User(
+        username="alice",
+        email="alice@example.com",
+        password_hash="hash",
+        role="viewer",
+        is_active=True,
+    )
+    db_session.add(user)
+    db_session.commit()
+
+    response = client.post(f"/ui/settings/users/{user.id}/role", data={"role": "admin"}, allow_redirects=False)
+
+    assert response.status_code == 303
+    db_session.refresh(user)
+    assert user.role == "admin"
