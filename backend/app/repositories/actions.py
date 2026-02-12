@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import date
 from typing import Iterable
 
-from sqlalchemy import select, func, Date
+from sqlalchemy import Date, case, func, select
 from sqlalchemy.orm import selectinload
 from sqlalchemy.orm import Session
 
@@ -12,6 +12,33 @@ from app.models.champion import Champion
 from app.models.project import Project
 from app.models.subtask import Subtask
 from app.models.tag import Tag
+
+
+DEFAULT_SORT = "created_at_desc"
+ALLOWED_SORTS = {
+    "created_at_desc",
+    "created_at_asc",
+    "due_date_asc",
+    "due_date_desc",
+    "days_late_desc",
+    "title_asc",
+}
+
+
+def normalize_sort(sort: str | None) -> str:
+    if sort in ALLOWED_SORTS:
+        return sort
+    return DEFAULT_SORT
+
+
+def _days_late_expr():
+    return case(
+        (
+            (Action.status != "CLOSED") & Action.due_date.is_not(None),
+            func.max(func.julianday(func.current_date()) - func.julianday(Action.due_date), 0),
+        ),
+        else_=0,
+    )
 
 
 def list_actions(
@@ -66,19 +93,21 @@ def list_actions(
 
     total = db.scalar(select(func.count()).select_from(stmt.subquery())) or 0
 
-    if sort:
-        if sort == "due_date":
-            stmt = stmt.order_by(Action.due_date.asc())
-        elif sort == "-due_date":
-            stmt = stmt.order_by(Action.due_date.desc())
-        elif sort == "created_at":
-            stmt = stmt.order_by(Action.created_at.asc())
-        elif sort == "-created_at":
-            stmt = stmt.order_by(Action.created_at.desc())
-        else:
-            stmt = stmt.order_by(Action.id.desc())
+    normalized_sort = normalize_sort(sort)
+    due_date_nulls_last = case((Action.due_date.is_(None), 1), else_=0)
+
+    if normalized_sort == "created_at_asc":
+        stmt = stmt.order_by(Action.created_at.asc(), Action.id.asc())
+    elif normalized_sort == "due_date_asc":
+        stmt = stmt.order_by(due_date_nulls_last.asc(), Action.due_date.asc(), Action.id.desc())
+    elif normalized_sort == "due_date_desc":
+        stmt = stmt.order_by(due_date_nulls_last.asc(), Action.due_date.desc(), Action.id.desc())
+    elif normalized_sort == "days_late_desc":
+        stmt = stmt.order_by(_days_late_expr().desc(), Action.id.desc())
+    elif normalized_sort == "title_asc":
+        stmt = stmt.order_by(func.lower(Action.title).asc(), Action.id.asc())
     else:
-        stmt = stmt.order_by(Action.id.desc())
+        stmt = stmt.order_by(Action.created_at.desc(), Action.id.desc())
 
     stmt = stmt.limit(limit).offset(offset)
 

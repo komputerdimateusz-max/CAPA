@@ -157,3 +157,47 @@ def test_patch_action_project_assignment_and_clear(client, db_session):
     assert unassign_response.status_code == 200
     assert unassign_response.json()["project_id"] is None
     assert unassign_response.json()["project"] is None
+
+
+def test_actions_sorting_end_to_end(client, db_session):
+    actions = [
+        Action(
+            title="Beta action",
+            description="Test",
+            status="OPEN",
+            created_at=datetime(2024, 1, 3, 8, 0, 0),
+            due_date=date(2024, 1, 25),
+        ),
+        Action(
+            title="Alpha action",
+            description="Test",
+            status="OPEN",
+            created_at=datetime(2024, 1, 1, 8, 0, 0),
+            due_date=date(2024, 1, 10),
+        ),
+        Action(
+            title="Gamma action",
+            description="Test",
+            status="OPEN",
+            created_at=datetime(2024, 1, 2, 8, 0, 0),
+            due_date=None,
+        ),
+    ]
+    db_session.add_all(actions)
+    db_session.commit()
+
+    created_desc = client.get("/api/actions?sort=created_at_desc")
+    assert created_desc.status_code == 200
+    assert [item["title"] for item in created_desc.json()["items"]] == ["Beta action", "Gamma action", "Alpha action"]
+
+    due_asc = client.get("/api/actions?sort=due_date_asc")
+    assert due_asc.status_code == 200
+    assert [item["title"] for item in due_asc.json()["items"]] == ["Alpha action", "Beta action", "Gamma action"]
+
+    title_asc = client.get("/api/actions?sort=title_asc")
+    assert title_asc.status_code == 200
+    assert [item["title"] for item in title_asc.json()["items"]] == ["Alpha action", "Beta action", "Gamma action"]
+
+    invalid_sort = client.get("/api/actions?sort=not_valid")
+    assert invalid_sort.status_code == 200
+    assert [item["title"] for item in invalid_sort.json()["items"]] == ["Beta action", "Gamma action", "Alpha action"]
