@@ -31,6 +31,22 @@ It’s the missing layer that answers one question:
 
 ---
 
+## Development setup (Windows)
+
+```bat
+python -m venv .venv
+.\.venv\Scripts\activate
+pip install -r requirements.txt
+pip install -e .
+run_dev.bat
+```
+
+`pip install -e .` must make the package importable from the `src` layout:
+
+```bat
+python -c "import atm_tracker; print(atm_tracker.__file__)"
+```
+
 ## Run the backend (FastAPI)
 
 ```bash
