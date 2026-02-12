@@ -92,68 +92,59 @@
         </div>
 
         <div class="filter-bar-v2__row filter-bar-v2__row--scope">
-          <label>
-            <span class="sr-only">Project</span>
-            <select name="project_id" data-auto-submit>
+          <div class="filter-field filter-field--project">
+            <select name="project_id" data-auto-submit aria-label="Project">
               <option value="">All projects</option>
               {% for project in projects %}
                 <option value="{{ project.id }}" {% if filters.project_id == project.id %}selected{% endif %}>{{ project.name }}</option>
               {% endfor %}
             </select>
-          </label>
-          <label>
-            <span class="sr-only">Champion</span>
-            <select name="champion_id" data-auto-submit>
+          </div>
+          <div class="filter-field filter-field--champion">
+            <select name="champion_id" data-auto-submit aria-label="Champion">
               <option value="">All champions</option>
               {% for champion in champions %}
                 <option value="{{ champion.id }}" {% if filters.champion_id == champion.id %}selected{% endif %}>{{ champion.full_name }}</option>
               {% endfor %}
             </select>
-          </label>
-          <div class="tag-picker" data-tag-picker>
+          </div>
+          <div class="tag-picker filter-field--tags" data-tag-picker>
             <div class="tag-picker__chips" data-tag-chip-list>
               {% for tag in filters.tags %}
                 <button type="button" class="tag-chip tag-chip--selected" data-remove-tag="{{ tag }}">{{ tag }} ×</button>
                 <input type="hidden" name="tags" value="{{ tag }}" data-tag-input="{{ tag }}" />
               {% endfor %}
             </div>
-            <label>
-              <span class="sr-only">Add tag</span>
-              <select data-add-tag>
-                <option value="">Add tag…</option>
-                {% for tag in all_tags %}
-                  {% if tag.name not in filters.tags %}
-                    <option value="{{ tag.name }}">{{ tag.name }}</option>
-                  {% endif %}
-                {% endfor %}
-              </select>
-            </label>
+            <select data-add-tag aria-label="Add tag">
+              <option value="">Add tag…</option>
+              {% for tag in all_tags %}
+                {% if tag.name not in filters.tags %}
+                  <option value="{{ tag.name }}">{{ tag.name }}</option>
+                {% endif %}
+              {% endfor %}
+            </select>
           </div>
-          <label>
-            <span class="sr-only">Due from</span>
-            <input type="date" name="from" value="{{ filters.from }}" data-auto-submit />
-          </label>
-          <label>
-            <span class="sr-only">Due to</span>
-            <input type="date" name="to" value="{{ filters.to }}" data-auto-submit />
-          </label>
-          <label>
-            <span class="sr-only">Sort</span>
-            <select name="sort" data-auto-submit>
+          <div class="filter-field filter-field--date">
+            <input type="date" name="from" value="{{ filters.from }}" data-auto-submit aria-label="Due from" />
+          </div>
+          <div class="filter-field filter-field--date">
+            <input type="date" name="to" value="{{ filters.to }}" data-auto-submit aria-label="Due to" />
+          </div>
+          <div class="filter-field filter-field--sort">
+            <select name="sort" data-auto-submit aria-label="Sort">
               <option value="">Default sort</option>
               {% for value, label in sort_options %}
                 <option value="{{ value }}" {% if filters.sort == value %}selected{% endif %}>{{ label }}</option>
               {% endfor %}
             </select>
-          </label>
-          <label>
-            <span class="sr-only">Page size</span>
-            <select name="page_size" data-auto-submit>
+          </div>
+          <div class="filter-field filter-field--page-size">
+            <select name="page_size" data-auto-submit aria-label="Page size">
               {% for size in [10, 25, 50, 100] %}
                 <option value="{{ size }}" {% if filters.page_size == size %}selected{% endif %}>{{ size }}</option>
               {% endfor %}
             </select>
-          </label>
+          </div>
         </div>
       </form>
     </section>
