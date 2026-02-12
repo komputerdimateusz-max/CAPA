@@ -39,6 +39,7 @@ def _render_settings(
     message: str | None = None,
     error: str | None = None,
     form: dict[str, str] | None = None,
+    open_modal: str | None = None,
 ):
     champions = champions_repo.list_champions(db)
     projects = projects_repo.list_projects(db)
@@ -56,6 +57,7 @@ def _render_settings(
             "error": error,
             "form": form or {},
             "format_date": format_date,
+            "open_modal": open_modal,
         },
     )
 
@@ -66,15 +68,20 @@ def settings_page(
     champion_id: int | None = None,
     project_id: int | None = None,
     message: str | None = None,
+    created: str | None = None,
     error: str | None = None,
     db: Session = Depends(get_db),
 ):
+    created_message = {
+        "champion": "Champion added",
+        "project": "Project added",
+    }.get((created or "").strip().lower())
     return _render_settings(
         request,
         db,
         champion_id=champion_id,
         project_id=project_id,
-        message=message,
+        message=message or created_message,
         error=error,
     )
 
@@ -113,9 +120,10 @@ def add_champion(
                 "champion_position": position or "",
                 "champion_birth_date": birth_date or "",
             },
+            open_modal="champion",
         )
     return RedirectResponse(
-        url=f"/ui/settings?message=Champion+added&champion_id={champion.id}",
+        url=f"/ui/settings?created=champion&champion_id={champion.id}",
         status_code=303,
     )
 
@@ -186,9 +194,10 @@ def add_project(
                 "project_status": status or "",
                 "project_due_date": due_date or "",
             },
+            open_modal="project",
         )
     return RedirectResponse(
-        url=f"/ui/settings?message=Project+added&project_id={project.id}",
+        url=f"/ui/settings?created=project&project_id={project.id}",
         status_code=303,
     )
 
