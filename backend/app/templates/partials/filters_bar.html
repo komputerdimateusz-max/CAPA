@@ -1,6 +1,6 @@
-{% macro filter_bar(action, target_id=None, hx_action=None) %}
+{% macro filter_bar(action, target_id=None, hx_action=None, collapsible_secondary=false, secondary_title="More filters") %}
   <form
-    class="filter-grid"
+    class="filter-bar"
     method="get"
     action="{{ action }}"
     {% if target_id %}
@@ -10,6 +10,20 @@
       hx-push-url="true"
     {% endif %}
   >
-    {{ caller() }}
+    <div class="filter-bar__primary">
+      {{ caller('primary') }}
+    </div>
+    {% if collapsible_secondary %}
+      <details class="filter-bar__secondary-toggle">
+        <summary>{{ secondary_title }}</summary>
+        <div class="filter-bar__secondary">
+          {{ caller('secondary') }}
+        </div>
+      </details>
+    {% else %}
+      <div class="filter-bar__secondary">
+        {{ caller('secondary') }}
+      </div>
+    {% endif %}
   </form>
 {% endmacro %}
