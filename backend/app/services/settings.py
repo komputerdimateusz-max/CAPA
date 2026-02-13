@@ -289,6 +289,58 @@ def update_project(
     return project
 
 
+def add_project_moulding_tool(db: Session, project_id: int, tool_id: int) -> Project:
+    project = db.get(Project, project_id)
+    if not project:
+        raise ValueError("Project not found.")
+    tool = db.get(MouldingTool, tool_id)
+    if not tool:
+        raise ValueError("Selected moulding tool does not exist.")
+    if all(existing.id != tool.id for existing in project.moulding_tools):
+        project.moulding_tools.append(tool)
+    db.add(project)
+    db.commit()
+    db.refresh(project)
+    return project
+
+
+def remove_project_moulding_tool(db: Session, project_id: int, tool_id: int) -> Project:
+    project = db.get(Project, project_id)
+    if not project:
+        raise ValueError("Project not found.")
+    project.moulding_tools = [tool for tool in project.moulding_tools if tool.id != tool_id]
+    db.add(project)
+    db.commit()
+    db.refresh(project)
+    return project
+
+
+def add_project_assembly_line(db: Session, project_id: int, line_id: int) -> Project:
+    project = db.get(Project, project_id)
+    if not project:
+        raise ValueError("Project not found.")
+    line = db.get(AssemblyLine, line_id)
+    if not line:
+        raise ValueError("Selected assembly line does not exist.")
+    if all(existing.id != line.id for existing in project.assembly_lines):
+        project.assembly_lines.append(line)
+    db.add(project)
+    db.commit()
+    db.refresh(project)
+    return project
+
+
+def remove_project_assembly_line(db: Session, project_id: int, line_id: int) -> Project:
+    project = db.get(Project, project_id)
+    if not project:
+        raise ValueError("Project not found.")
+    project.assembly_lines = [line for line in project.assembly_lines if line.id != line_id]
+    db.add(project)
+    db.commit()
+    db.refresh(project)
+    return project
+
+
 
 def _normalize_required_text(value: str, label: str) -> str:
     cleaned = " ".join(value.split()).strip()

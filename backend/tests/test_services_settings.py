@@ -179,6 +179,70 @@ def test_update_project_replaces_tools_and_lines(db_session):
     assert [line.id for line in updated.assembly_lines] == [line_b.id]
 
 
+
+
+def test_add_project_assignments_is_idempotent(db_session):
+    engineer = settings_service.create_champion(
+        db_session,
+        first_name="Dana",
+        last_name="Cole",
+        email="dana.cole@example.com",
+        position="Process Engineer",
+        birth_date=None,
+    )
+    tool = settings_service.create_moulding_tool(
+        db_session,
+        MouldingToolCreate(tool_pn="IDEMP-1", description=None, ct_seconds=10),
+    )
+    line = settings_service.create_assembly_line(
+        db_session,
+        AssemblyLineCreate(line_number="IDEMP-L1", ct_seconds=9, hc=2),
+    )
+    project = settings_service.create_project(
+        db_session,
+        "Project I",
+        "Serial production",
+        100,
+        5,
+        engineer.id,
+        None,
+    )
+
+    settings_service.add_project_moulding_tool(db_session, project.id, tool.id)
+    updated = settings_service.add_project_moulding_tool(db_session, project.id, tool.id)
+    settings_service.add_project_assembly_line(db_session, project.id, line.id)
+    updated = settings_service.add_project_assembly_line(db_session, project.id, line.id)
+
+    assert [assigned_tool.id for assigned_tool in updated.moulding_tools] == [tool.id]
+    assert [assigned_line.id for assigned_line in updated.assembly_lines] == [line.id]
+
+
+def test_remove_project_assignments_is_safe_when_missing(db_session):
+    engineer = settings_service.create_champion(
+        db_session,
+        first_name="Noa",
+        last_name="Perry",
+        email="noa.perry@example.com",
+        position="Process Engineer",
+        birth_date=None,
+    )
+    project = settings_service.create_project(
+        db_session,
+        "Project Safe",
+        "Serial production",
+        80,
+        6,
+        engineer.id,
+        None,
+    )
+
+    updated = settings_service.remove_project_moulding_tool(db_session, project.id, 999)
+    updated = settings_service.remove_project_assembly_line(db_session, project.id, 999)
+
+    assert updated.moulding_tools == []
+    assert updated.assembly_lines == []
+
+
 def test_delete_project_cascades_assignment_rows(db_session):
     engineer = settings_service.create_champion(
         db_session,

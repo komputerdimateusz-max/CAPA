@@ -16,7 +16,9 @@
             <tbody>
               {% for project in projects %}
                 <tr>
-                  <td>{{ project.name }}</td><td>{{ project.status or '—' }}</td><td>{{ project.max_volume if project.max_volume is not none else '—' }}</td><td>{{ project.flex_percent if project.flex_percent is not none else '—' }}</td><td>{{ project.process_engineer.full_name if project.process_engineer else '—' }}</td><td>{{ format_date(project.due_date) }}</td><td>{{ project.moulding_tools|length }}</td><td>{{ project.assembly_lines|length }}</td>
+                  <td>{{ project.name }}</td><td>{{ project.status or '—' }}</td><td>{{ project.max_volume if project.max_volume is not none else '—' }}</td><td>{{ project.flex_percent if project.flex_percent is not none else '—' }}</td><td>{{ project.process_engineer.full_name if project.process_engineer else '—' }}</td><td>{{ format_date(project.due_date) }}</td>
+                  <td><a href="/ui/settings/projects/{{ project.id }}/assignments">{{ project.moulding_tools|length }} tool{% if project.moulding_tools|length != 1 %}s{% endif %}</a></td>
+                  <td><a href="/ui/settings/projects/{{ project.id }}/assignments">{{ project.assembly_lines|length }} line{% if project.assembly_lines|length != 1 %}s{% endif %}</a></td>
                   <td><a class="button secondary" href="/ui/settings/projects?project_id={{ project.id }}">Edit</a></td>
                 </tr>
               {% endfor %}
@@ -35,34 +37,64 @@
             <label>Flex [%]<input type="number" name="flex_percent" min="0" max="100" step="0.01" required value="{{ form.project_flex_percent or selected_project.flex_percent or '' }}" /></label>
             <label>Process Engineer<select name="process_engineer_id" required><option value="">Select process engineer</option>{% for champion in champions %}<option value="{{ champion.id }}" {% if (form.project_process_engineer_id or (selected_project.process_engineer_id|string if selected_project.process_engineer_id else '')) == champion.id|string %}selected{% endif %}>{{ champion.full_name }}</option>{% endfor %}</select></label>
             <label>Due date<input type="date" name="due_date" value="{{ form.project_due_date or (selected_project.due_date.isoformat() if selected_project.due_date else '') }}" /></label>
-            {% set selected_tool_ids = form.project_moulding_tool_ids if form.project_moulding_tool_ids is defined else selected_project.moulding_tools|map(attribute='id')|list %}
-            <label>Moulding Tools
-              <select name="moulding_tool_ids" multiple size="6" {% if not moulding_tools %}disabled{% endif %}>
-                {% for tool in moulding_tools %}
-                  <option value="{{ tool.id }}" {% if tool.id|string in selected_tool_ids|map('string')|list %}selected{% endif %}>{{ tool.tool_pn }}{% if tool.description %} — {{ tool.description }}{% endif %}</option>
-                {% endfor %}
-              </select>
-              <small class="muted">Hold Ctrl (Windows) / Cmd (Mac) to select multiple</small>
-              {% if not moulding_tools %}<small class="muted">No moulding tools defined yet. Add them in Settings → Moulding Tools.</small>{% endif %}
-            </label>
-            {% set selected_line_ids = form.project_assembly_line_ids if form.project_assembly_line_ids is defined else selected_project.assembly_lines|map(attribute='id')|list %}
-            <label>Assembly Lines
-              <select name="assembly_line_ids" multiple size="6" {% if not assembly_lines %}disabled{% endif %}>
-                {% for line in assembly_lines %}
-                  <option value="{{ line.id }}" {% if line.id|string in selected_line_ids|map('string')|list %}selected{% endif %}>Line {{ line.line_number }} (CT {{ line.ct_seconds }}s, HC {{ line.hc }})</option>
-                {% endfor %}
-              </select>
-              <small class="muted">Hold Ctrl (Windows) / Cmd (Mac) to select multiple</small>
-              {% if not assembly_lines %}<small class="muted">No assembly lines defined yet. Add them in Settings → Assembly Lines.</small>{% endif %}
-            </label>
             <div class="form-actions"><button class="button" type="submit">Save project</button></div>
           </form>
+
+          <div class="assignment-widget">
+            <h5>Moulding Tools</h5>
+            <form class="assignment-add-form" method="post" action="/ui/settings/projects/{{ selected_project.id }}/tools/add">
+              <input name="tool_id" list="tool-options" placeholder="Search Tool P/N" required />
+              <datalist id="tool-options">
+                {% for tool in moulding_tools %}
+                  <option value="{{ tool.tool_pn }}">{{ tool.tool_pn }}{% if tool.description %} — {{ tool.description }}{% endif %}</option>
+                {% endfor %}
+              </datalist>
+              <button class="button secondary" type="submit">Add</button>
+            </form>
+            <div class="assignment-chips">
+              {% for tool in selected_project.moulding_tools %}
+                <span class="chip assignment-chip">{{ tool.tool_pn }}{% if tool.description %} · {{ tool.description }}{% endif %}
+                  <form method="post" action="/ui/settings/projects/{{ selected_project.id }}/tools/remove">
+                    <input type="hidden" name="tool_id" value="{{ tool.id }}" />
+                    <button class="assignment-remove" type="submit" aria-label="Remove tool">×</button>
+                  </form>
+                </span>
+              {% else %}
+                <small class="muted">No moulding tools assigned.</small>
+              {% endfor %}
+            </div>
+          </div>
+
+          <div class="assignment-widget">
+            <h5>Assembly Lines</h5>
+            <form class="assignment-add-form" method="post" action="/ui/settings/projects/{{ selected_project.id }}/lines/add">
+              <input name="line_id" list="line-options" placeholder="Search line number" required />
+              <datalist id="line-options">
+                {% for line in assembly_lines %}
+                  <option value="{{ line.line_number }}">{{ line.line_number }}</option>
+                {% endfor %}
+              </datalist>
+              <button class="button secondary" type="submit">Add</button>
+            </form>
+            <div class="assignment-chips">
+              {% for line in selected_project.assembly_lines %}
+                <span class="chip assignment-chip">Line {{ line.line_number }}
+                  <form method="post" action="/ui/settings/projects/{{ selected_project.id }}/lines/remove">
+                    <input type="hidden" name="line_id" value="{{ line.id }}" />
+                    <button class="assignment-remove" type="submit" aria-label="Remove line">×</button>
+                  </form>
+                </span>
+              {% else %}
+                <small class="muted">No assembly lines assigned.</small>
+              {% endfor %}
+            </div>
+          </div>
         </div>
       {% endif %}
     </section>
   </div>
 
-  <div class="modal-shell" id="project-modal" hidden><div class="modal-backdrop settings-modal-backdrop" data-close-modal="project"></div><aside class="create-action-panel settings-modal-panel"><div class="create-action-header"><h3>Add project</h3><button class="button secondary" type="button" data-close-modal="project">Cancel</button></div><form class="form-grid" method="post" action="/ui/settings/projects"><label>Project name<input type="text" name="name" required value="{{ form.project_name or '' }}" /></label><label>Status<select name="status" required><option value="">Select status</option>{% for option in project_status_options %}<option value="{{ option }}" {% if (form.project_status or '') == option %}selected{% endif %}>{{ option }}</option>{% endfor %}</select></label><label>Max Volume [parts/year]<input type="number" name="max_volume" min="0" step="1" required value="{{ form.project_max_volume or '' }}" /></label><label>Flex [%]<input type="number" name="flex_percent" min="0" max="100" step="0.01" required value="{{ form.project_flex_percent or '' }}" /></label><label>Process Engineer<select name="process_engineer_id" required><option value="">Select process engineer</option>{% for champion in champions %}<option value="{{ champion.id }}" {% if (form.project_process_engineer_id or '') == champion.id|string %}selected{% endif %}>{{ champion.full_name }}</option>{% endfor %}</select></label><label>Due date<input type="date" name="due_date" value="{{ form.project_due_date or '' }}" /></label><label>Moulding Tools<select name="moulding_tool_ids" multiple size="6" {% if not moulding_tools %}disabled{% endif %}>{% for tool in moulding_tools %}<option value="{{ tool.id }}" {% if tool.id|string in (form.project_moulding_tool_ids|default([])|map('string')|list) %}selected{% endif %}>{{ tool.tool_pn }}{% if tool.description %} — {{ tool.description }}{% endif %}</option>{% endfor %}</select><small class="muted">Hold Ctrl (Windows) / Cmd (Mac) to select multiple</small>{% if not moulding_tools %}<small class="muted">No moulding tools defined yet. Add them in Settings → Moulding Tools.</small>{% endif %}</label><label>Assembly Lines<select name="assembly_line_ids" multiple size="6" {% if not assembly_lines %}disabled{% endif %}>{% for line in assembly_lines %}<option value="{{ line.id }}" {% if line.id|string in (form.project_assembly_line_ids|default([])|map('string')|list) %}selected{% endif %}>Line {{ line.line_number }} (CT {{ line.ct_seconds }}s, HC {{ line.hc }})</option>{% endfor %}</select><small class="muted">Hold Ctrl (Windows) / Cmd (Mac) to select multiple</small>{% if not assembly_lines %}<small class="muted">No assembly lines defined yet. Add them in Settings → Assembly Lines.</small>{% endif %}</label><div class="form-actions"><button class="button" type="submit">Save project</button><button class="button secondary" type="button" data-close-modal="project">Cancel</button></div></form></aside></div>
+  <div class="modal-shell" id="project-modal" hidden><div class="modal-backdrop settings-modal-backdrop" data-close-modal="project"></div><aside class="create-action-panel settings-modal-panel"><div class="create-action-header"><h3>Add project</h3><button class="button secondary" type="button" data-close-modal="project">Cancel</button></div><form class="form-grid" method="post" action="/ui/settings/projects"><label>Project name<input type="text" name="name" required value="{{ form.project_name or '' }}" /></label><label>Status<select name="status" required><option value="">Select status</option>{% for option in project_status_options %}<option value="{{ option }}" {% if (form.project_status or '') == option %}selected{% endif %}>{{ option }}</option>{% endfor %}</select></label><label>Max Volume [parts/year]<input type="number" name="max_volume" min="0" step="1" required value="{{ form.project_max_volume or '' }}" /></label><label>Flex [%]<input type="number" name="flex_percent" min="0" max="100" step="0.01" required value="{{ form.project_flex_percent or '' }}" /></label><label>Process Engineer<select name="process_engineer_id" required><option value="">Select process engineer</option>{% for champion in champions %}<option value="{{ champion.id }}" {% if (form.project_process_engineer_id or '') == champion.id|string %}selected{% endif %}>{{ champion.full_name }}</option>{% endfor %}</select></label><label>Due date<input type="date" name="due_date" value="{{ form.project_due_date or '' }}" /></label><p class="muted">Create the project first, then add tools and lines from the Edit panel.</p><div class="form-actions"><button class="button" type="submit">Save project</button><button class="button secondary" type="button" data-close-modal="project">Cancel</button></div></form></aside></div>
 
   <script>
     (() => {

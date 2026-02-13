@@ -1,0 +1,41 @@
+{% extends "layout.html" %}
+{% block content %}
+  <div class="settings-page">
+    <section class="card settings-section-card">
+      <div class="settings-subpage-header">
+        <a class="button secondary" href="/ui/settings/projects">← Back to Projects</a>
+        <a class="button" href="/ui/settings/projects?project_id={{ project.id }}">Edit project</a>
+      </div>
+      <h2>Project Assignments</h2>
+      <p class="muted">{{ project.name }}</p>
+
+      <h4>Assigned Moulding Tools</h4>
+      <div class="table-wrap">
+        <table class="table">
+          <thead><tr><th>Tool P/N</th><th>Description</th><th>CT(s)</th></tr></thead>
+          <tbody>
+            {% for tool in project.moulding_tools %}
+              <tr><td>{{ tool.tool_pn }}</td><td>{{ tool.description or '—' }}</td><td>{{ tool.ct_seconds }}</td></tr>
+            {% else %}
+              <tr><td colspan="3" class="muted">No tools assigned.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      <h4>Assigned Assembly Lines</h4>
+      <div class="table-wrap">
+        <table class="table">
+          <thead><tr><th>Line number</th><th>CT(s)</th><th>HC</th></tr></thead>
+          <tbody>
+            {% for line in project.assembly_lines %}
+              <tr><td>{{ line.line_number }}</td><td>{{ line.ct_seconds }}</td><td>{{ line.hc }}</td></tr>
+            {% else %}
+              <tr><td colspan="3" class="muted">No assembly lines assigned.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+{% endblock %}

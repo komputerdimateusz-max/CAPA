@@ -8,6 +8,9 @@ from app.core.config import settings
 from app.models.action import Action
 from app.models.project import Project
 from app.models.user import User
+from app.schemas.assembly_line import AssemblyLineCreate
+from app.schemas.moulding import MouldingToolCreate
+from app.services import settings as settings_service
 
 
 def test_ui_settings_page(client):
@@ -147,3 +150,90 @@ def test_ui_settings_assembly_lines_subpage(client):
     assert response.status_code == 200
     assert "Assembly Lines" in response.text
     assert "Add assembly line" in response.text
+
+
+def test_ui_project_assignment_endpoints_and_assignments_page(client, db_session):
+    engineer = settings_service.create_champion(
+        db_session,
+        first_name="Kai",
+        last_name="Long",
+        email="kai.long@example.com",
+        position="Process Engineer",
+        birth_date=None,
+    )
+    tool = settings_service.create_moulding_tool(
+        db_session,
+        MouldingToolCreate(tool_pn="UI-T1", description="Lens", ct_seconds=10),
+    )
+    line = settings_service.create_assembly_line(
+        db_session,
+        AssemblyLineCreate(line_number="UI-L1", ct_seconds=8, hc=3),
+    )
+    project = settings_service.create_project(
+        db_session,
+        "UI Project",
+        "Serial production",
+        100,
+        10,
+        engineer.id,
+        None,
+    )
+
+    add_tool_resp = client.post(
+        f"/ui/settings/projects/{project.id}/tools/add",
+        data={"tool_id": str(tool.id)},
+        allow_redirects=False,
+    )
+    add_line_resp = client.post(
+        f"/ui/settings/projects/{project.id}/lines/add",
+        data={"line_id": str(line.id)},
+        allow_redirects=False,
+    )
+
+    assert add_tool_resp.status_code == 303
+    assert add_line_resp.status_code == 303
+
+    assignments_resp = client.get(f"/ui/settings/projects/{project.id}/assignments")
+    assert assignments_resp.status_code == 200
+    assert "Project Assignments" in assignments_resp.text
+    assert "UI-T1" in assignments_resp.text
+    assert "UI-L1" in assignments_resp.text
+
+    remove_tool_resp = client.post(
+        f"/ui/settings/projects/{project.id}/tools/remove",
+        data={"tool_id": str(tool.id)},
+        allow_redirects=False,
+    )
+    remove_line_resp = client.post(
+        f"/ui/settings/projects/{project.id}/lines/remove",
+        data={"line_id": str(line.id)},
+        allow_redirects=False,
+    )
+
+    assert remove_tool_resp.status_code == 303
+    assert remove_line_resp.status_code == 303
+
+
+def test_ui_settings_projects_table_has_assignments_links(client, db_session):
+    engineer = settings_service.create_champion(
+        db_session,
+        first_name="Mia",
+        last_name="Stone",
+        email="mia.stone@example.com",
+        position="Process Engineer",
+        birth_date=None,
+    )
+    project = settings_service.create_project(
+        db_session,
+        "Linked Project",
+        "Serial production",
+        50,
+        7,
+        engineer.id,
+        None,
+    )
+
+    response = client.get("/ui/settings/projects")
+
+    assert response.status_code == 200
+    assert f'/ui/settings/projects/{project.id}/assignments' in response.text
