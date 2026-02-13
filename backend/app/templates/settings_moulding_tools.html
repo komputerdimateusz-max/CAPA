@@ -14,17 +14,18 @@
     <div class="table-wrap">
       <table class="table">
         <thead>
-          <tr><th>Tool P/N</th><th>Description</th><th>CT (s)</th><th>HC total</th><th>Unit labour cost [PLN]</th><th></th></tr>
+          <tr><th>Tool P/N</th><th>Description</th><th class="num-col">CT (s)</th><th class="num-col">HC total</th><th class="num-col">Unit labour cost [PLN]</th><th class="num-col">Material cost [PLN]</th><th class="action-col">Edit</th></tr>
         </thead>
         <tbody>
           {% for tool in moulding_tools %}
           <tr>
             <td>{{ tool.tool_pn }}</td>
             <td>{{ tool.description or '—' }}</td>
-            <td>{{ tool.ct_seconds }}</td>
-            <td>{{ '%.2f'|format(tool.hc_total or 0) }}</td>
-            <td>{{ '%.2f'|format(tool.unit_labour_cost or 0) }}</td>
-            <td><a class="button secondary" href="/ui/settings/moulding-tools?tool_id={{ tool.id }}">Edit</a></td>
+            <td class="num-col">{{ '%.2f'|format(tool.ct_seconds or 0) }}</td>
+            <td class="num-col">{{ '%.2f'|format(tool.hc_total or 0) }}</td>
+            <td class="num-col">{{ '%.2f'|format(tool.unit_labour_cost or 0) }}</td>
+            <td class="num-col">{{ '%.2f'|format(tool.material_cost or 0) }}</td>
+            <td class="action-col"><a class="button secondary" href="/ui/settings/moulding-tools?tool_id={{ tool.id }}">Edit</a></td>
           </tr>
           {% endfor %}
         </tbody>

@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session, selectinload
 
+from app.models.material import Material
 from app.models.moulding import MouldingMachine, MouldingTool, MouldingToolHC, MouldingToolMaterial
 
 
@@ -73,6 +74,27 @@ def list_materials_for_tool(db: Session, tool_id: int) -> list[MouldingToolMater
         .order_by(MouldingToolMaterial.material_id.asc())
     )
     return list(db.scalars(stmt).all())
+
+
+def material_cost_map_for_tools(db: Session) -> dict[int, float]:
+    stmt = (
+        select(
+            MouldingToolMaterial.tool_id,
+            func.coalesce(func.sum(MouldingToolMaterial.qty_per_piece * Material.price_per_unit), 0.0),
+        )
+        .join(Material, Material.id == MouldingToolMaterial.material_id)
+        .group_by(MouldingToolMaterial.tool_id)
+    )
+    return {tool_id: float(total or 0.0) for tool_id, total in db.execute(stmt).all()}
+
+
+def compute_material_cost_for_tool(db: Session, tool_id: int) -> float:
+    stmt = (
+        select(func.coalesce(func.sum(MouldingToolMaterial.qty_per_piece * Material.price_per_unit), 0.0))
+        .join(Material, Material.id == MouldingToolMaterial.material_id)
+        .where(MouldingToolMaterial.tool_id == tool_id)
+    )
+    return float(db.scalar(stmt) or 0.0)
 
 
 def get_tool_material(db: Session, tool_id: int, material_id: int) -> MouldingToolMaterial | None:

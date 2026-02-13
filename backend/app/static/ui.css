@@ -363,6 +363,17 @@ th {
   white-space: nowrap;
 }
 
+.settings-page th.num-col,
+.settings-page td.num-col {
+  text-align: right;
+}
+
+.settings-page th.action-col,
+.settings-page td.action-col {
+  width: 90px;
+  text-align: right;
+}
+
 .settings-page .users-table th:nth-child(1),
 .settings-page .users-table td:nth-child(1) {
   width: 55%;

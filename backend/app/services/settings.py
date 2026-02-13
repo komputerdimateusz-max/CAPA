@@ -520,19 +520,23 @@ def _compute_unit_labour_cost(ct_seconds: float | None, hc_map: dict[str, float]
 
 def _attach_tool_cost_fields(db: Session, tools: list[MouldingTool]) -> list[MouldingTool]:
     labour_cost_map = _labour_cost_map(db)
+    material_cost_map = moulding_repo.material_cost_map_for_tools(db)
     for tool in tools:
         hc_map = moulding_repo.get_tool_hc_map(db, tool.id)
         tool.hc_total = sum(hc_map.get(worker_type, 0) for worker_type in LABOUR_COST_WORKER_TYPES)
         tool.unit_labour_cost = _compute_unit_labour_cost(tool.ct_seconds, hc_map, labour_cost_map)
+        tool.material_cost = material_cost_map.get(tool.id, 0.0)
     return tools
 
 
 def _attach_mask_cost_fields(db: Session, masks: list[MetalizationMask]) -> list[MetalizationMask]:
     labour_cost_map = _labour_cost_map(db)
+    material_cost_map = metalization_repo.material_cost_map_for_masks(db)
     for mask in masks:
         hc_map = metalization_repo.get_mask_hc_map(db, mask.id)
         mask.hc_total = sum(hc_map.get(worker_type, 0) for worker_type in LABOUR_COST_WORKER_TYPES)
         mask.unit_labour_cost = _compute_unit_labour_cost(mask.ct_seconds, hc_map, labour_cost_map)
+        mask.material_cost = material_cost_map.get(mask.id, 0.0)
     return masks
 
 
@@ -566,6 +570,14 @@ def compute_tool_unit_cost(db: Session, tool: MouldingTool, hc_map: dict[str, fl
 
 def compute_mask_unit_cost(db: Session, mask: MetalizationMask, hc_map: dict[str, float] | None = None) -> float:
     return _compute_unit_labour_cost(mask.ct_seconds, _normalize_hc_map(hc_map), _labour_cost_map(db))
+
+
+def compute_material_cost_for_tool(db: Session, tool_id: int) -> float:
+    return moulding_repo.compute_material_cost_for_tool(db, tool_id)
+
+
+def compute_material_cost_for_mask(db: Session, mask_id: int) -> float:
+    return metalization_repo.compute_material_cost_for_mask(db, mask_id)
 
 
 def list_moulding_tools(db: Session) -> list[MouldingTool]:

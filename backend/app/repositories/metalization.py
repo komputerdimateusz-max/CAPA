@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session, selectinload
 
+from app.models.material import Material
 from app.models.metalization import MetalizationChamber, MetalizationMask, MetalizationMaskHC, MetalizationMaskMaterial
 
 
@@ -73,6 +74,27 @@ def list_materials_for_mask(db: Session, mask_id: int) -> list[MetalizationMaskM
         .order_by(MetalizationMaskMaterial.material_id.asc())
     )
     return list(db.scalars(stmt).all())
+
+
+def material_cost_map_for_masks(db: Session) -> dict[int, float]:
+    stmt = (
+        select(
+            MetalizationMaskMaterial.mask_id,
+            func.coalesce(func.sum(MetalizationMaskMaterial.qty_per_piece * Material.price_per_unit), 0.0),
+        )
+        .join(Material, Material.id == MetalizationMaskMaterial.material_id)
+        .group_by(MetalizationMaskMaterial.mask_id)
+    )
+    return {mask_id: float(total or 0.0) for mask_id, total in db.execute(stmt).all()}
+
+
+def compute_material_cost_for_mask(db: Session, mask_id: int) -> float:
+    stmt = (
+        select(func.coalesce(func.sum(MetalizationMaskMaterial.qty_per_piece * Material.price_per_unit), 0.0))
+        .join(Material, Material.id == MetalizationMaskMaterial.material_id)
+        .where(MetalizationMaskMaterial.mask_id == mask_id)
+    )
+    return float(db.scalar(stmt) or 0.0)
 
 
 def get_mask_material(db: Session, mask_id: int, material_id: int) -> MetalizationMaskMaterial | None:
