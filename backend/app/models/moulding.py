@@ -65,6 +65,12 @@ class MouldingTool(Base):
         cascade="all, delete-orphan",
         passive_deletes=True,
     )
+    material_out_rows = relationship(
+        "MouldingToolMaterialOut",
+        back_populates="tool",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
 
 
 class MouldingMachine(Base):
@@ -109,4 +115,21 @@ class MouldingToolMaterial(Base):
     qty_per_piece: Mapped[float] = mapped_column(Float, nullable=False)
 
     tool = relationship("MouldingTool", back_populates="material_rows")
+    material = relationship("Material")
+
+
+class MouldingToolMaterialOut(Base):
+    __tablename__ = "moulding_tool_materials_out"
+
+    tool_id: Mapped[int] = mapped_column(
+        ForeignKey("moulding_tools.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    material_id: Mapped[int] = mapped_column(
+        ForeignKey("materials.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    qty_per_piece: Mapped[float] = mapped_column(Float, nullable=False)
+
+    tool = relationship("MouldingTool", back_populates="material_out_rows")
     material = relationship("Material")

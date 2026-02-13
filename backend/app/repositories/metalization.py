@@ -4,13 +4,23 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.models.material import Material
-from app.models.metalization import MetalizationChamber, MetalizationMask, MetalizationMaskHC, MetalizationMaskMaterial
+from app.models.metalization import (
+    MetalizationChamber,
+    MetalizationMask,
+    MetalizationMaskHC,
+    MetalizationMaskMaterial,
+    MetalizationMaskMaterialOut,
+)
 
 
 def list_metalization_masks(db: Session) -> list[MetalizationMask]:
     stmt = (
         select(MetalizationMask)
-        .options(selectinload(MetalizationMask.hc_rows), selectinload(MetalizationMask.material_rows).selectinload(MetalizationMaskMaterial.material))
+        .options(
+            selectinload(MetalizationMask.hc_rows),
+            selectinload(MetalizationMask.material_rows).selectinload(MetalizationMaskMaterial.material),
+            selectinload(MetalizationMask.material_out_rows).selectinload(MetalizationMaskMaterialOut.material),
+        )
         .order_by(MetalizationMask.mask_pn.asc())
     )
     return list(db.scalars(stmt).all())
@@ -19,7 +29,11 @@ def list_metalization_masks(db: Session) -> list[MetalizationMask]:
 def get_metalization_mask(db: Session, mask_id: int) -> MetalizationMask | None:
     stmt = (
         select(MetalizationMask)
-        .options(selectinload(MetalizationMask.hc_rows), selectinload(MetalizationMask.material_rows).selectinload(MetalizationMaskMaterial.material))
+        .options(
+            selectinload(MetalizationMask.hc_rows),
+            selectinload(MetalizationMask.material_rows).selectinload(MetalizationMaskMaterial.material),
+            selectinload(MetalizationMask.material_out_rows).selectinload(MetalizationMaskMaterialOut.material),
+        )
         .where(MetalizationMask.id == mask_id)
     )
     return db.scalar(stmt)
@@ -76,31 +90,65 @@ def list_materials_for_mask(db: Session, mask_id: int) -> list[MetalizationMaskM
     return list(db.scalars(stmt).all())
 
 
-def material_cost_map_for_masks(db: Session) -> dict[int, float]:
+def list_materials_out_for_mask(db: Session, mask_id: int) -> list[MetalizationMaskMaterialOut]:
+    stmt = (
+        select(MetalizationMaskMaterialOut)
+        .options(selectinload(MetalizationMaskMaterialOut.material))
+        .where(MetalizationMaskMaterialOut.mask_id == mask_id)
+        .order_by(MetalizationMaskMaterialOut.material_id.asc())
+    )
+    return list(db.scalars(stmt).all())
+
+
+def _material_cost_map(db: Session, model) -> dict[int, float]:
     stmt = (
         select(
-            MetalizationMaskMaterial.mask_id,
-            func.coalesce(func.sum(MetalizationMaskMaterial.qty_per_piece * Material.price_per_unit), 0.0),
+            model.mask_id,
+            func.coalesce(func.sum(model.qty_per_piece * Material.price_per_unit), 0.0),
         )
-        .join(Material, Material.id == MetalizationMaskMaterial.material_id)
-        .group_by(MetalizationMaskMaterial.mask_id)
+        .join(Material, Material.id == model.material_id)
+        .group_by(model.mask_id)
     )
     return {mask_id: float(total or 0.0) for mask_id, total in db.execute(stmt).all()}
 
 
-def compute_material_cost_for_mask(db: Session, mask_id: int) -> float:
+def material_cost_map_for_masks(db: Session) -> dict[int, float]:
+    return _material_cost_map(db, MetalizationMaskMaterial)
+
+
+def material_out_cost_map_for_masks(db: Session) -> dict[int, float]:
+    return _material_cost_map(db, MetalizationMaskMaterialOut)
+
+
+def _compute_material_cost(db: Session, mask_id: int, model) -> float:
     stmt = (
-        select(func.coalesce(func.sum(MetalizationMaskMaterial.qty_per_piece * Material.price_per_unit), 0.0))
-        .join(Material, Material.id == MetalizationMaskMaterial.material_id)
-        .where(MetalizationMaskMaterial.mask_id == mask_id)
+        select(func.coalesce(func.sum(model.qty_per_piece * Material.price_per_unit), 0.0))
+        .join(Material, Material.id == model.material_id)
+        .where(model.mask_id == mask_id)
     )
     return float(db.scalar(stmt) or 0.0)
+
+
+def compute_material_cost_for_mask(db: Session, mask_id: int) -> float:
+    return _compute_material_cost(db, mask_id, MetalizationMaskMaterial)
+
+
+def compute_material_out_cost_for_mask(db: Session, mask_id: int) -> float:
+    return _compute_material_cost(db, mask_id, MetalizationMaskMaterialOut)
 
 
 def get_mask_material(db: Session, mask_id: int, material_id: int) -> MetalizationMaskMaterial | None:
     stmt = select(MetalizationMaskMaterial).where(
         MetalizationMaskMaterial.mask_id == mask_id,
         MetalizationMaskMaterial.material_id == material_id,
+    )
+    return db.scalar(stmt)
+
+
+def get_mask_material_out(db: Session, mask_id: int, material_id: int) -> MetalizationMaskMaterialOut | None:
+    stmt = select(MetalizationMaskMaterialOut).where(
+        MetalizationMaskMaterialOut.mask_id == mask_id,
+        MetalizationMaskMaterialOut.material_id == material_id,
     )
     return db.scalar(stmt)
 
@@ -117,8 +165,34 @@ def upsert_mask_material(db: Session, *, mask_id: int, material_id: int, qty_per
     return row
 
 
+def upsert_mask_material_out(
+    db: Session,
+    *,
+    mask_id: int,
+    material_id: int,
+    qty_per_piece: float,
+) -> MetalizationMaskMaterialOut:
+    row = get_mask_material_out(db, mask_id, material_id)
+    if row is None:
+        row = MetalizationMaskMaterialOut(mask_id=mask_id, material_id=material_id, qty_per_piece=qty_per_piece)
+    else:
+        row.qty_per_piece = qty_per_piece
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return row
+
+
 def delete_mask_material(db: Session, *, mask_id: int, material_id: int) -> None:
     row = get_mask_material(db, mask_id, material_id)
+    if row is None:
+        return
+    db.delete(row)
+    db.commit()
+
+
+def delete_mask_material_out(db: Session, *, mask_id: int, material_id: int) -> None:
+    row = get_mask_material_out(db, mask_id, material_id)
     if row is None:
         return
     db.delete(row)

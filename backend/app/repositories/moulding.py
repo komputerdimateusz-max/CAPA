@@ -4,13 +4,23 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.models.material import Material
-from app.models.moulding import MouldingMachine, MouldingTool, MouldingToolHC, MouldingToolMaterial
+from app.models.moulding import (
+    MouldingMachine,
+    MouldingTool,
+    MouldingToolHC,
+    MouldingToolMaterial,
+    MouldingToolMaterialOut,
+)
 
 
 def list_moulding_tools(db: Session) -> list[MouldingTool]:
     stmt = (
         select(MouldingTool)
-        .options(selectinload(MouldingTool.hc_rows), selectinload(MouldingTool.material_rows).selectinload(MouldingToolMaterial.material))
+        .options(
+            selectinload(MouldingTool.hc_rows),
+            selectinload(MouldingTool.material_rows).selectinload(MouldingToolMaterial.material),
+            selectinload(MouldingTool.material_out_rows).selectinload(MouldingToolMaterialOut.material),
+        )
         .order_by(MouldingTool.tool_pn.asc())
     )
     return list(db.scalars(stmt).all())
@@ -19,7 +29,11 @@ def list_moulding_tools(db: Session) -> list[MouldingTool]:
 def get_moulding_tool(db: Session, tool_id: int) -> MouldingTool | None:
     stmt = (
         select(MouldingTool)
-        .options(selectinload(MouldingTool.hc_rows), selectinload(MouldingTool.material_rows).selectinload(MouldingToolMaterial.material))
+        .options(
+            selectinload(MouldingTool.hc_rows),
+            selectinload(MouldingTool.material_rows).selectinload(MouldingToolMaterial.material),
+            selectinload(MouldingTool.material_out_rows).selectinload(MouldingToolMaterialOut.material),
+        )
         .where(MouldingTool.id == tool_id)
     )
     return db.scalar(stmt)
@@ -76,31 +90,65 @@ def list_materials_for_tool(db: Session, tool_id: int) -> list[MouldingToolMater
     return list(db.scalars(stmt).all())
 
 
-def material_cost_map_for_tools(db: Session) -> dict[int, float]:
+def list_materials_out_for_tool(db: Session, tool_id: int) -> list[MouldingToolMaterialOut]:
+    stmt = (
+        select(MouldingToolMaterialOut)
+        .options(selectinload(MouldingToolMaterialOut.material))
+        .where(MouldingToolMaterialOut.tool_id == tool_id)
+        .order_by(MouldingToolMaterialOut.material_id.asc())
+    )
+    return list(db.scalars(stmt).all())
+
+
+def _material_cost_map(db: Session, model) -> dict[int, float]:
     stmt = (
         select(
-            MouldingToolMaterial.tool_id,
-            func.coalesce(func.sum(MouldingToolMaterial.qty_per_piece * Material.price_per_unit), 0.0),
+            model.tool_id,
+            func.coalesce(func.sum(model.qty_per_piece * Material.price_per_unit), 0.0),
         )
-        .join(Material, Material.id == MouldingToolMaterial.material_id)
-        .group_by(MouldingToolMaterial.tool_id)
+        .join(Material, Material.id == model.material_id)
+        .group_by(model.tool_id)
     )
     return {tool_id: float(total or 0.0) for tool_id, total in db.execute(stmt).all()}
 
 
-def compute_material_cost_for_tool(db: Session, tool_id: int) -> float:
+def material_cost_map_for_tools(db: Session) -> dict[int, float]:
+    return _material_cost_map(db, MouldingToolMaterial)
+
+
+def material_out_cost_map_for_tools(db: Session) -> dict[int, float]:
+    return _material_cost_map(db, MouldingToolMaterialOut)
+
+
+def _compute_material_cost(db: Session, tool_id: int, model) -> float:
     stmt = (
-        select(func.coalesce(func.sum(MouldingToolMaterial.qty_per_piece * Material.price_per_unit), 0.0))
-        .join(Material, Material.id == MouldingToolMaterial.material_id)
-        .where(MouldingToolMaterial.tool_id == tool_id)
+        select(func.coalesce(func.sum(model.qty_per_piece * Material.price_per_unit), 0.0))
+        .join(Material, Material.id == model.material_id)
+        .where(model.tool_id == tool_id)
     )
     return float(db.scalar(stmt) or 0.0)
+
+
+def compute_material_cost_for_tool(db: Session, tool_id: int) -> float:
+    return _compute_material_cost(db, tool_id, MouldingToolMaterial)
+
+
+def compute_material_out_cost_for_tool(db: Session, tool_id: int) -> float:
+    return _compute_material_cost(db, tool_id, MouldingToolMaterialOut)
 
 
 def get_tool_material(db: Session, tool_id: int, material_id: int) -> MouldingToolMaterial | None:
     stmt = select(MouldingToolMaterial).where(
         MouldingToolMaterial.tool_id == tool_id,
         MouldingToolMaterial.material_id == material_id,
+    )
+    return db.scalar(stmt)
+
+
+def get_tool_material_out(db: Session, tool_id: int, material_id: int) -> MouldingToolMaterialOut | None:
+    stmt = select(MouldingToolMaterialOut).where(
+        MouldingToolMaterialOut.tool_id == tool_id,
+        MouldingToolMaterialOut.material_id == material_id,
     )
     return db.scalar(stmt)
 
@@ -117,8 +165,28 @@ def upsert_tool_material(db: Session, *, tool_id: int, material_id: int, qty_per
     return row
 
 
+def upsert_tool_material_out(db: Session, *, tool_id: int, material_id: int, qty_per_piece: float) -> MouldingToolMaterialOut:
+    row = get_tool_material_out(db, tool_id, material_id)
+    if row is None:
+        row = MouldingToolMaterialOut(tool_id=tool_id, material_id=material_id, qty_per_piece=qty_per_piece)
+    else:
+        row.qty_per_piece = qty_per_piece
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return row
+
+
 def delete_tool_material(db: Session, *, tool_id: int, material_id: int) -> None:
     row = get_tool_material(db, tool_id, material_id)
+    if row is None:
+        return
+    db.delete(row)
+    db.commit()
+
+
+def delete_tool_material_out(db: Session, *, tool_id: int, material_id: int) -> None:
+    row = get_tool_material_out(db, tool_id, material_id)
     if row is None:
         return
     db.delete(row)

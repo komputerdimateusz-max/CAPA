@@ -33,3 +33,68 @@ class AssemblyLine(Base):
         back_populates="assembly_lines",
         passive_deletes=True,
     )
+    hc_rows = relationship(
+        "AssemblyLineHC",
+        back_populates="line",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+    material_in_rows = relationship(
+        "AssemblyLineMaterialIn",
+        back_populates="line",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+    material_out_rows = relationship(
+        "AssemblyLineMaterialOut",
+        back_populates="line",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+
+
+class AssemblyLineHC(Base):
+    __tablename__ = "assembly_line_hc"
+
+    line_id: Mapped[int] = mapped_column(
+        ForeignKey("assembly_lines.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    worker_type: Mapped[str] = mapped_column(String(100), primary_key=True)
+    hc: Mapped[float] = mapped_column(Float, nullable=False, default=0)
+
+    line = relationship("AssemblyLine", back_populates="hc_rows")
+
+
+class AssemblyLineMaterialIn(Base):
+    __tablename__ = "assembly_line_materials_in"
+
+    line_id: Mapped[int] = mapped_column(
+        ForeignKey("assembly_lines.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    material_id: Mapped[int] = mapped_column(
+        ForeignKey("materials.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    qty_per_piece: Mapped[float] = mapped_column(Float, nullable=False)
+
+    line = relationship("AssemblyLine", back_populates="material_in_rows")
+    material = relationship("Material")
+
+
+class AssemblyLineMaterialOut(Base):
+    __tablename__ = "assembly_line_materials_out"
+
+    line_id: Mapped[int] = mapped_column(
+        ForeignKey("assembly_lines.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    material_id: Mapped[int] = mapped_column(
+        ForeignKey("materials.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    qty_per_piece: Mapped[float] = mapped_column(Float, nullable=False)
+
+    line = relationship("AssemblyLine", back_populates="material_out_rows")
+    material = relationship("Material")
