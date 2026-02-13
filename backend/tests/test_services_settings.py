@@ -3,7 +3,10 @@ from __future__ import annotations
 from datetime import date
 
 import pytest
+from sqlalchemy import select
 
+from app.models.assembly_line import ProjectAssemblyLine
+from app.models.moulding import ProjectMouldingTool
 from app.schemas.assembly_line import AssemblyLineCreate
 from app.schemas.moulding import MouldingMachineCreate, MouldingMachineUpdate, MouldingToolCreate
 from app.services import settings as settings_service
@@ -93,6 +96,154 @@ def test_create_project_validates_required_fields(db_session):
     with pytest.raises(ValueError, match="does not exist"):
         settings_service.create_project(db_session, "Line", "Serial production", 1, 10, 9999, None)
 
+
+
+def test_create_project_with_tools_and_lines(db_session):
+    engineer = settings_service.create_champion(
+        db_session,
+        first_name="Jordan",
+        last_name="Miles",
+        email="jordan.miles@example.com",
+        position="Process Engineer",
+        birth_date=None,
+    )
+    tool_a = settings_service.create_moulding_tool(
+        db_session,
+        MouldingToolCreate(tool_pn="P-100", description="A", ct_seconds=10),
+    )
+    tool_b = settings_service.create_moulding_tool(
+        db_session,
+        MouldingToolCreate(tool_pn="P-200", description="B", ct_seconds=12),
+    )
+    line = settings_service.create_assembly_line(
+        db_session,
+        AssemblyLineCreate(line_number="L-100", ct_seconds=8, hc=3),
+    )
+
+    project = settings_service.create_project(
+        db_session,
+        "Project A",
+        "Serial production",
+        100,
+        10,
+        engineer.id,
+        None,
+        moulding_tool_ids=[tool_a.id, tool_b.id, tool_a.id],
+        assembly_line_ids=[line.id],
+    )
+
+    assert {tool.id for tool in project.moulding_tools} == {tool_a.id, tool_b.id}
+    assert [assigned_line.id for assigned_line in project.assembly_lines] == [line.id]
+
+
+def test_update_project_replaces_tools_and_lines(db_session):
+    engineer = settings_service.create_champion(
+        db_session,
+        first_name="Taylor",
+        last_name="Ray",
+        email="taylor.ray@example.com",
+        position="Process Engineer",
+        birth_date=None,
+    )
+    tool_a = settings_service.create_moulding_tool(db_session, MouldingToolCreate(tool_pn="U-1", description=None, ct_seconds=10))
+    tool_b = settings_service.create_moulding_tool(db_session, MouldingToolCreate(tool_pn="U-2", description=None, ct_seconds=12))
+    line_a = settings_service.create_assembly_line(db_session, AssemblyLineCreate(line_number="UL-1", ct_seconds=9, hc=2))
+    line_b = settings_service.create_assembly_line(db_session, AssemblyLineCreate(line_number="UL-2", ct_seconds=7, hc=4))
+
+    project = settings_service.create_project(
+        db_session,
+        "Project B",
+        "Serial production",
+        100,
+        10,
+        engineer.id,
+        None,
+        moulding_tool_ids=[tool_a.id],
+        assembly_line_ids=[line_a.id],
+    )
+
+    updated = settings_service.update_project(
+        db_session,
+        project.id,
+        "Project B",
+        "Spare Parts",
+        100,
+        11,
+        engineer.id,
+        None,
+        moulding_tool_ids=[tool_b.id],
+        assembly_line_ids=[line_b.id],
+    )
+
+    assert [tool.id for tool in updated.moulding_tools] == [tool_b.id]
+    assert [line.id for line in updated.assembly_lines] == [line_b.id]
+
+
+def test_delete_project_cascades_assignment_rows(db_session):
+    engineer = settings_service.create_champion(
+        db_session,
+        first_name="Robin",
+        last_name="Lee",
+        email="robin.lee@example.com",
+        position="Process Engineer",
+        birth_date=None,
+    )
+    tool = settings_service.create_moulding_tool(db_session, MouldingToolCreate(tool_pn="C-1", description=None, ct_seconds=10))
+    line = settings_service.create_assembly_line(db_session, AssemblyLineCreate(line_number="CL-1", ct_seconds=8, hc=2))
+    project = settings_service.create_project(
+        db_session,
+        "Project C",
+        "Serial production",
+        120,
+        5,
+        engineer.id,
+        None,
+        moulding_tool_ids=[tool.id],
+        assembly_line_ids=[line.id],
+    )
+
+    db_session.delete(project)
+    db_session.commit()
+
+    assert db_session.scalars(select(ProjectMouldingTool)).all() == []
+    assert db_session.scalars(select(ProjectAssemblyLine)).all() == []
+
+
+def test_project_assignment_validation_rejects_non_existing_ids(db_session):
+    engineer = settings_service.create_champion(
+        db_session,
+        first_name="Ari",
+        last_name="Chen",
+        email="ari.chen@example.com",
+        position="Process Engineer",
+        birth_date=None,
+    )
+
+    with pytest.raises(ValueError, match="moulding tools do not exist"):
+        settings_service.create_project(
+            db_session,
+            "Project D",
+            "Serial production",
+            200,
+            5,
+            engineer.id,
+            None,
+            moulding_tool_ids=[999],
+            assembly_line_ids=[],
+        )
+
+    with pytest.raises(ValueError, match="assembly lines do not exist"):
+        settings_service.create_project(
+            db_session,
+            "Project E",
+            "Serial production",
+            200,
+            5,
+            engineer.id,
+            None,
+            moulding_tool_ids=[],
+            assembly_line_ids=[999],
+        )
 
 def test_create_and_list_moulding_tool(db_session):
     created = settings_service.create_moulding_tool(

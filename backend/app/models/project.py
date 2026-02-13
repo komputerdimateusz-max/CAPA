@@ -21,3 +21,15 @@ class Project(Base):
 
     actions = relationship("Action", back_populates="project")
     process_engineer = relationship("Champion", back_populates="process_engineer_projects")
+    moulding_tools = relationship(
+        "MouldingTool",
+        secondary="project_moulding_tools",
+        back_populates="projects",
+        passive_deletes=True,
+    )
+    assembly_lines = relationship(
+        "AssemblyLine",
+        secondary="project_assembly_lines",
+        back_populates="projects",
+        passive_deletes=True,
+    )
