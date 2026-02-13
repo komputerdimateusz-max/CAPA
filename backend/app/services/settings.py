@@ -173,6 +173,40 @@ def update_champion(
     return champion
 
 
+def _normalize_project_assignment_ids(ids: list[int] | None, label: str) -> list[int]:
+    normalized = ids or []
+    deduplicated = list(dict.fromkeys(normalized))
+    if any(value <= 0 for value in deduplicated):
+        raise ValueError(f"{label} must contain positive IDs.")
+    return deduplicated
+
+
+def _resolve_project_moulding_tools(db: Session, tool_ids: list[int]) -> list[MouldingTool]:
+    if not tool_ids:
+        return []
+    stmt = select(MouldingTool).where(MouldingTool.id.in_(tool_ids))
+    tools = list(db.scalars(stmt).all())
+    found_ids = {tool.id for tool in tools}
+    missing_ids = [tool_id for tool_id in tool_ids if tool_id not in found_ids]
+    if missing_ids:
+        raise ValueError("Selected moulding tools do not exist.")
+    tools_by_id = {tool.id: tool for tool in tools}
+    return [tools_by_id[tool_id] for tool_id in tool_ids]
+
+
+def _resolve_project_assembly_lines(db: Session, line_ids: list[int]) -> list[AssemblyLine]:
+    if not line_ids:
+        return []
+    stmt = select(AssemblyLine).where(AssemblyLine.id.in_(line_ids))
+    lines = list(db.scalars(stmt).all())
+    found_ids = {line.id for line in lines}
+    missing_ids = [line_id for line_id in line_ids if line_id not in found_ids]
+    if missing_ids:
+        raise ValueError("Selected assembly lines do not exist.")
+    lines_by_id = {line.id: line for line in lines}
+    return [lines_by_id[line_id] for line_id in line_ids]
+
+
 def create_project(
     db: Session,
     name: str,
@@ -181,6 +215,8 @@ def create_project(
     flex_percent: float | None,
     process_engineer_id: int | None,
     due_date: date | None,
+    moulding_tool_ids: list[int] | None = None,
+    assembly_line_ids: list[int] | None = None,
 ) -> Project:
     cleaned = _normalize_name(name)
     if not cleaned:
@@ -188,6 +224,11 @@ def create_project(
     existing = db.scalar(select(Project).where(func.lower(Project.name) == cleaned.lower()))
     if existing:
         raise ValueError("Project already exists.")
+    tool_ids = _normalize_project_assignment_ids(moulding_tool_ids, "Moulding tools")
+    line_ids = _normalize_project_assignment_ids(assembly_line_ids, "Assembly lines")
+    tools = _resolve_project_moulding_tools(db, tool_ids)
+    lines = _resolve_project_assembly_lines(db, line_ids)
+
     project = Project(
         name=cleaned,
         status=_normalize_project_status(status),
@@ -196,6 +237,8 @@ def create_project(
         process_engineer_id=_normalize_process_engineer_id(db, process_engineer_id),
         due_date=_normalize_date(due_date),
     )
+    project.moulding_tools = tools
+    project.assembly_lines = lines
     db.add(project)
     db.commit()
     db.refresh(project)
@@ -211,6 +254,8 @@ def update_project(
     flex_percent: float | None,
     process_engineer_id: int | None,
     due_date: date | None,
+    moulding_tool_ids: list[int] | None = None,
+    assembly_line_ids: list[int] | None = None,
 ) -> Project:
     cleaned = _normalize_name(name)
     if not cleaned:
@@ -225,12 +270,19 @@ def update_project(
     )
     if existing:
         raise ValueError("Project already exists.")
+    tool_ids = _normalize_project_assignment_ids(moulding_tool_ids, "Moulding tools")
+    line_ids = _normalize_project_assignment_ids(assembly_line_ids, "Assembly lines")
+    tools = _resolve_project_moulding_tools(db, tool_ids)
+    lines = _resolve_project_assembly_lines(db, line_ids)
+
     project.name = cleaned
     project.status = _normalize_project_status(status)
     project.max_volume = _normalize_project_max_volume(max_volume)
     project.flex_percent = _normalize_project_flex(flex_percent)
     project.process_engineer_id = _normalize_process_engineer_id(db, process_engineer_id)
     project.due_date = _normalize_date(due_date)
+    project.moulding_tools = tools
+    project.assembly_lines = lines
     db.add(project)
     db.commit()
     db.refresh(project)

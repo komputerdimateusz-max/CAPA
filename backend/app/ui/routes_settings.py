@@ -387,6 +387,8 @@ def add_project(
     flex_percent: str | None = Form(default=None),
     process_engineer_id: str | None = Form(default=None),
     due_date: str | None = Form(default=None),
+    moulding_tool_ids: list[str] | None = Form(default=None),
+    assembly_line_ids: list[str] | None = Form(default=None),
     db: Session = Depends(get_db),
 ):
     enforce_admin(_current_user(request))
@@ -399,6 +401,8 @@ def add_project(
             _parse_optional_float(flex_percent, "Flex [%]"),
             _parse_optional_int(process_engineer_id, "Process Engineer"),
             _parse_optional_date(due_date),
+            _parse_int_list(moulding_tool_ids, "Moulding tools"),
+            _parse_int_list(assembly_line_ids, "Assembly lines"),
         )
     except ValueError as exc:
         return _render_settings(
@@ -415,6 +419,8 @@ def add_project(
                 "project_flex_percent": flex_percent or "",
                 "project_process_engineer_id": process_engineer_id or "",
                 "project_due_date": due_date or "",
+                "project_moulding_tool_ids": [value for value in (moulding_tool_ids or []) if value.strip().isdigit()],
+                "project_assembly_line_ids": [value for value in (assembly_line_ids or []) if value.strip().isdigit()],
             },
             open_modal="project",
         )
@@ -431,6 +437,8 @@ def update_project(
     flex_percent: str | None = Form(default=None),
     process_engineer_id: str | None = Form(default=None),
     due_date: str | None = Form(default=None),
+    moulding_tool_ids: list[str] | None = Form(default=None),
+    assembly_line_ids: list[str] | None = Form(default=None),
     db: Session = Depends(get_db),
 ):
     enforce_admin(_current_user(request))
@@ -444,6 +452,8 @@ def update_project(
             _parse_optional_float(flex_percent, "Flex [%]"),
             _parse_optional_int(process_engineer_id, "Process Engineer"),
             _parse_optional_date(due_date),
+            _parse_int_list(moulding_tool_ids, "Moulding tools"),
+            _parse_int_list(assembly_line_ids, "Assembly lines"),
         )
     except ValueError as exc:
         return _render_settings(
@@ -460,6 +470,8 @@ def update_project(
                 "project_flex_percent": flex_percent or "",
                 "project_process_engineer_id": process_engineer_id or "",
                 "project_due_date": due_date or "",
+                "project_moulding_tool_ids": [value for value in (moulding_tool_ids or []) if value.strip().isdigit()],
+                "project_assembly_line_ids": [value for value in (assembly_line_ids or []) if value.strip().isdigit()],
             },
         )
     return RedirectResponse(url=f"/ui/settings/projects?message=Project+updated&project_id={project.id}", status_code=303)

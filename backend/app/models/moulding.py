@@ -19,6 +19,19 @@ class MouldingMachineTool(Base):
     )
 
 
+class ProjectMouldingTool(Base):
+    __tablename__ = "project_moulding_tools"
+
+    project_id: Mapped[int] = mapped_column(
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    tool_id: Mapped[int] = mapped_column(
+        ForeignKey("moulding_tools.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+
+
 class MouldingTool(Base):
     __tablename__ = "moulding_tools"
 
@@ -31,6 +44,12 @@ class MouldingTool(Base):
         "MouldingMachine",
         secondary="moulding_machine_tools",
         back_populates="tools",
+        passive_deletes=True,
+    )
+    projects = relationship(
+        "Project",
+        secondary="project_moulding_tools",
+        back_populates="moulding_tools",
         passive_deletes=True,
     )
 

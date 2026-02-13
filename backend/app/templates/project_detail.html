@@ -20,6 +20,37 @@
       {"label": "Sum days late", "value": kpi.sum_days_late},
     ] %}
     {% include "partials/kpi_cards.html" %}
+
+    <div class="card">
+      <h3>Assigned resources</h3>
+      <div class="grid two-cols">
+        <div>
+          <h4>Moulding tools</h4>
+          {% if project.moulding_tools %}
+            <ul>
+              {% for tool in project.moulding_tools %}
+                <li>{{ tool.tool_pn }}{% if tool.description %} — {{ tool.description }}{% endif %}</li>
+              {% endfor %}
+            </ul>
+          {% else %}
+            <p class="muted">No moulding tools assigned.</p>
+          {% endif %}
+        </div>
+        <div>
+          <h4>Assembly lines</h4>
+          {% if project.assembly_lines %}
+            <ul>
+              {% for line in project.assembly_lines %}
+                <li>Line {{ line.line_number }} (CT {{ line.ct_seconds }}s, HC {{ line.hc }})</li>
+              {% endfor %}
+            </ul>
+          {% else %}
+            <p class="muted">No assembly lines assigned.</p>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
     <div class="card">
       <div class="card-header">
         <h3>Actions in this project</h3>
