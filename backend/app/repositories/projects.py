@@ -12,6 +12,7 @@ def list_projects(db: Session, query: str | None = None, status: str | None = No
         joinedload(Project.process_engineer),
         joinedload(Project.moulding_tools),
         joinedload(Project.assembly_lines),
+        joinedload(Project.metalization_masks),
     )
     if query:
         like_query = f"%{query.lower()}%"
@@ -27,6 +28,7 @@ def get_project(db: Session, project_id: int) -> Project | None:
         joinedload(Project.process_engineer),
         joinedload(Project.moulding_tools),
         joinedload(Project.assembly_lines),
+        joinedload(Project.metalization_masks),
     ).where(Project.id == project_id)
     return db.scalar(stmt)
 

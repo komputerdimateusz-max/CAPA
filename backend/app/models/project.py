@@ -33,3 +33,9 @@ class Project(Base):
         back_populates="projects",
         passive_deletes=True,
     )
+    metalization_masks = relationship(
+        "MetalizationMask",
+        secondary="project_metalization_masks",
+        back_populates="projects",
+        passive_deletes=True,
+    )

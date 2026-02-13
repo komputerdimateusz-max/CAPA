@@ -12,13 +12,14 @@
       {% if projects %}
         <div class="table-wrap">
           <table class="table">
-            <thead><tr><th>Name</th><th>Status</th><th>Max Volume</th><th>Flex</th><th>Process Engineer</th><th>Due</th><th>Tools</th><th>Lines</th><th></th></tr></thead>
+            <thead><tr><th>Name</th><th>Status</th><th>Max Volume</th><th>Flex</th><th>Process Engineer</th><th>Due</th><th>Tools</th><th>Lines</th><th>Metal Masks</th><th></th></tr></thead>
             <tbody>
               {% for project in projects %}
                 <tr>
                   <td>{{ project.name }}</td><td>{{ project.status or '—' }}</td><td>{{ project.max_volume if project.max_volume is not none else '—' }}</td><td>{{ project.flex_percent if project.flex_percent is not none else '—' }}</td><td>{{ project.process_engineer.full_name if project.process_engineer else '—' }}</td><td>{{ format_date(project.due_date) }}</td>
                   <td><a href="/ui/settings/projects/{{ project.id }}/assignments">{{ project.moulding_tools|length }} tool{% if project.moulding_tools|length != 1 %}s{% endif %}</a></td>
                   <td><a href="/ui/settings/projects/{{ project.id }}/assignments">{{ project.assembly_lines|length }} line{% if project.assembly_lines|length != 1 %}s{% endif %}</a></td>
+                  <td><a href="/ui/settings/projects/{{ project.id }}/assignments">{{ project.metalization_masks|length }} mask{% if project.metalization_masks|length != 1 %}s{% endif %}</a></td>
                   <td><a class="button secondary" href="/ui/settings/projects?project_id={{ project.id }}">Edit</a></td>
                 </tr>
               {% endfor %}
@@ -61,6 +62,32 @@
                 </span>
               {% else %}
                 <small class="muted">No moulding tools assigned.</small>
+              {% endfor %}
+            </div>
+          </div>
+
+
+          <div class="assignment-widget">
+            <h5>Metalization Masks</h5>
+            <form class="assignment-add-form" method="post" action="/ui/settings/projects/{{ selected_project.id }}/metalization-masks/add">
+              <input name="mask_pn" list="mask-options" placeholder="Type mask P/N" autocomplete="off" required />
+              <datalist id="mask-options">
+                {% for mask in metalization_masks %}
+                  <option value="{{ mask.mask_pn }}">{{ mask.mask_pn }}{% if mask.description %} — {{ mask.description }}{% endif %} (CT {{ mask.ct_seconds }}s)</option>
+                {% endfor %}
+              </datalist>
+              <button class="button secondary" type="submit">Add</button>
+            </form>
+            <div class="assignment-chips">
+              {% for mask in selected_project.metalization_masks %}
+                <span class="chip assignment-chip">{{ mask.mask_pn }}{% if mask.description %} · {{ mask.description }}{% endif %}
+                  <form method="post" action="/ui/settings/projects/{{ selected_project.id }}/metalization-masks/remove">
+                    <input type="hidden" name="mask_id" value="{{ mask.id }}" />
+                    <button class="assignment-remove" type="submit" aria-label="Remove mask">×</button>
+                  </form>
+                </span>
+              {% else %}
+                <small class="muted">No metalization masks assigned.</small>
               {% endfor %}
             </div>
           </div>

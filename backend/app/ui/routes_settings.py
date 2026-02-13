@@ -16,6 +16,12 @@ from app.models.user import User
 from app.repositories import champions as champions_repo
 from app.repositories import projects as projects_repo
 from app.schemas.assembly_line import AssemblyLineCreate, AssemblyLineUpdate
+from app.schemas.metalization import (
+    MetalizationChamberCreate,
+    MetalizationChamberUpdate,
+    MetalizationMaskCreate,
+    MetalizationMaskUpdate,
+)
 from app.schemas.moulding import MouldingMachineCreate, MouldingMachineUpdate, MouldingToolCreate, MouldingToolUpdate
 from app.services import settings as settings_service
 from app.services import users as users_service
@@ -89,6 +95,19 @@ def _resolve_tool_id(db: Session, value: str) -> int:
     raise ValueError("Selected moulding tool does not exist.")
 
 
+
+
+def _resolve_mask_id(db: Session, value: str) -> int:
+    cleaned = value.strip()
+    if not cleaned:
+        raise ValueError("Metalization mask is required.")
+    for mask in settings_service.list_metalization_masks(db):
+        if mask.mask_pn.lower() == cleaned.lower():
+            return mask.id
+    parsed = _parse_optional_int(value, "Metalization mask")
+    if parsed is not None:
+        return parsed
+    raise ValueError("Selected metalization mask does not exist.")
 def _resolve_line_id(db: Session, value: str, *, from_line_number: bool = False) -> int:
     cleaned = value.strip()
     if not cleaned:
@@ -113,6 +132,8 @@ def _base_settings_context(db: Session) -> dict[str, object]:
     moulding_tools = settings_service.list_moulding_tools(db)
     moulding_machines = settings_service.list_moulding_machines(db)
     assembly_lines = settings_service.list_assembly_lines(db)
+    metalization_masks = settings_service.list_metalization_masks(db)
+    metalization_chambers = settings_service.list_metalization_chambers(db)
     return {
         "champions": champions,
         "projects": projects,
@@ -120,6 +141,8 @@ def _base_settings_context(db: Session) -> dict[str, object]:
         "moulding_tools": moulding_tools,
         "moulding_machines": moulding_machines,
         "assembly_lines": assembly_lines,
+        "metalization_masks": metalization_masks,
+        "metalization_chambers": metalization_chambers,
         "project_status_options": settings_service.ALLOWED_PROJECT_STATUSES,
         "user_role_options": users_service.ALLOWED_USER_ROLES,
     }
@@ -138,6 +161,8 @@ def _render_settings(
     form: dict[str, str] | None = None,
     open_modal: str | None = None,
     assembly_line_id: int | None = None,
+    mask_id: int | None = None,
+    chamber_id: int | None = None,
 ):
     context = _base_settings_context(db)
     champions = context["champions"]
@@ -152,6 +177,12 @@ def _render_settings(
     )
     assembly_lines = context["assembly_lines"]
     selected_assembly_line = next((line for line in assembly_lines if line.id == assembly_line_id), None) if assembly_line_id else None
+    metalization_masks = context["metalization_masks"]
+    selected_metalization_mask = next((mask for mask in metalization_masks if mask.id == mask_id), None) if mask_id else None
+    metalization_chambers = context["metalization_chambers"]
+    selected_metalization_chamber = (
+        next((chamber for chamber in metalization_chambers if chamber.id == chamber_id), None) if chamber_id else None
+    )
     return templates.TemplateResponse(
         template_name,
         {
@@ -166,6 +197,8 @@ def _render_settings(
             "format_date": format_date,
             "open_modal": open_modal,
             "selected_assembly_line": selected_assembly_line,
+            "selected_metalization_mask": selected_metalization_mask,
+            "selected_metalization_chamber": selected_metalization_chamber,
             **context,
         },
     )
@@ -292,6 +325,49 @@ def settings_assembly_lines_page(
         error=error,
         assembly_line_id=assembly_line_id,
     )
+
+@router.get("/settings/metalization-masks", response_class=HTMLResponse, response_model=None)
+def settings_metalization_masks_page(
+    request: Request,
+    mask_id: int | None = None,
+    message: str | None = None,
+    created: str | None = None,
+    error: str | None = None,
+    db: Session = Depends(get_db),
+):
+    return _render_settings(
+        "settings_metalization_masks.html",
+        request,
+        db,
+        champion_id=None,
+        project_id=None,
+        message=message or ("Metalization mask added" if (created or "").strip().lower() == "metalization_mask" else None),
+        error=error,
+        mask_id=mask_id,
+    )
+
+
+@router.get("/settings/metalization-chambers", response_class=HTMLResponse, response_model=None)
+def settings_metalization_chambers_page(
+    request: Request,
+    chamber_id: int | None = None,
+    message: str | None = None,
+    created: str | None = None,
+    error: str | None = None,
+    db: Session = Depends(get_db),
+):
+    return _render_settings(
+        "settings_metalization_chambers.html",
+        request,
+        db,
+        champion_id=None,
+        project_id=None,
+        message=message
+        or ("Metalization chamber added" if (created or "").strip().lower() == "metalization_chamber" else None),
+        error=error,
+        chamber_id=chamber_id,
+    )
+
 
 @router.get("/settings/users", response_class=HTMLResponse, response_model=None)
 def settings_users_page(
@@ -608,6 +684,50 @@ def remove_project_line(
     )
 
 
+@router.post("/settings/projects/{project_id}/metalization-masks/add", response_model=None)
+def add_project_metalization_mask(
+    project_id: int,
+    request: Request,
+    mask_pn: str = Form(...),
+    db: Session = Depends(get_db),
+):
+    enforce_admin(_current_user(request))
+    try:
+        parsed_mask_id = _resolve_mask_id(db, mask_pn)
+        settings_service.add_project_metalization_mask(db, project_id=project_id, mask_id=parsed_mask_id)
+    except ValueError as exc:
+        return RedirectResponse(
+            url=f"/ui/settings/projects?project_id={project_id}&error={quote_plus(str(exc))}",
+            status_code=303,
+        )
+    return RedirectResponse(
+        url=f"/ui/settings/projects?project_id={project_id}&message=Metalization+mask+assigned",
+        status_code=303,
+    )
+
+
+@router.post("/settings/projects/{project_id}/metalization-masks/remove", response_model=None)
+def remove_project_metalization_mask(
+    project_id: int,
+    request: Request,
+    mask_id: str = Form(...),
+    db: Session = Depends(get_db),
+):
+    enforce_admin(_current_user(request))
+    try:
+        parsed_mask_id = _resolve_mask_id(db, mask_id)
+        settings_service.remove_project_metalization_mask(db, project_id=project_id, mask_id=parsed_mask_id)
+    except ValueError as exc:
+        return RedirectResponse(
+            url=f"/ui/settings/projects?project_id={project_id}&error={quote_plus(str(exc))}",
+            status_code=303,
+        )
+    return RedirectResponse(
+        url=f"/ui/settings/projects?project_id={project_id}&message=Metalization+mask+removed",
+        status_code=303,
+    )
+
+
 @router.get("/settings/projects/{project_id}/assignments", response_class=HTMLResponse, response_model=None)
 def project_assignments_page(
     project_id: int,
@@ -899,3 +1019,137 @@ def delete_assembly_line(assembly_line_id: int, request: Request, db: Session = 
             open_modal="assembly-line-edit",
         )
     return RedirectResponse(url="/ui/settings/assembly-lines?message=Assembly+line+deleted", status_code=303)
+
+
+@router.post("/settings/metalization-masks", response_model=None)
+def add_metalization_mask(
+    request: Request,
+    mask_pn: str = Form(...),
+    description: str | None = Form(default=None),
+    ct_seconds: str = Form(...),
+    db: Session = Depends(get_db),
+):
+    enforce_admin(_current_user(request))
+    try:
+        mask = settings_service.create_metalization_mask(
+            db,
+            MetalizationMaskCreate(mask_pn=mask_pn, description=description, ct_seconds=float(ct_seconds)),
+        )
+    except (ValidationError, ValueError, TypeError) as exc:
+        return _render_settings(
+            "settings_metalization_masks.html",
+            request,
+            db,
+            champion_id=None,
+            project_id=None,
+            error=str(exc),
+            form={"mask_pn": mask_pn, "mask_description": description or "", "mask_ct_seconds": ct_seconds},
+            open_modal="metalization-mask",
+        )
+    return RedirectResponse(url=f"/ui/settings/metalization-masks?created=metalization_mask&mask_id={mask.id}", status_code=303)
+
+
+@router.post("/settings/metalization-masks/{mask_id}", response_model=None)
+def update_metalization_mask(
+    mask_id: int,
+    request: Request,
+    mask_pn: str = Form(...),
+    description: str | None = Form(default=None),
+    ct_seconds: str = Form(...),
+    db: Session = Depends(get_db),
+):
+    enforce_admin(_current_user(request))
+    try:
+        mask = settings_service.update_metalization_mask(
+            db,
+            mask_id,
+            MetalizationMaskUpdate(mask_pn=mask_pn, description=description, ct_seconds=float(ct_seconds)),
+        )
+    except (ValidationError, ValueError, TypeError) as exc:
+        return _render_settings(
+            "settings_metalization_masks.html",
+            request,
+            db,
+            champion_id=None,
+            project_id=None,
+            mask_id=mask_id,
+            error=str(exc),
+            form={"mask_pn": mask_pn, "mask_description": description or "", "mask_ct_seconds": ct_seconds},
+        )
+    return RedirectResponse(url=f"/ui/settings/metalization-masks?message=Metalization+mask+updated&mask_id={mask.id}", status_code=303)
+
+
+@router.post("/settings/metalization-masks/{mask_id}/delete", response_model=None)
+def delete_metalization_mask(mask_id: int, request: Request, db: Session = Depends(get_db)):
+    enforce_admin(_current_user(request))
+    try:
+        settings_service.delete_metalization_mask(db, mask_id)
+    except ValueError as exc:
+        return _render_settings("settings_metalization_masks.html", request, db, champion_id=None, project_id=None, error=str(exc))
+    return RedirectResponse(url="/ui/settings/metalization-masks?message=Metalization+mask+deleted", status_code=303)
+
+
+@router.post("/settings/metalization-chambers", response_model=None)
+def add_metalization_chamber(
+    request: Request,
+    chamber_number: str = Form(...),
+    mask_ids: list[str] = Form(default=[]),
+    db: Session = Depends(get_db),
+):
+    enforce_admin(_current_user(request))
+    try:
+        chamber = settings_service.create_metalization_chamber(
+            db,
+            MetalizationChamberCreate(chamber_number=chamber_number, mask_ids=_parse_int_list(mask_ids, "Masks assigned")),
+        )
+    except (ValidationError, ValueError) as exc:
+        return _render_settings(
+            "settings_metalization_chambers.html",
+            request,
+            db,
+            champion_id=None,
+            project_id=None,
+            error=str(exc),
+            form={"chamber_number": chamber_number, "chamber_mask_ids": ",".join(mask_ids)},
+            open_modal="metalization-chamber",
+        )
+    return RedirectResponse(url=f"/ui/settings/metalization-chambers?created=metalization_chamber&chamber_id={chamber.id}", status_code=303)
+
+
+@router.post("/settings/metalization-chambers/{chamber_id}", response_model=None)
+def update_metalization_chamber(
+    chamber_id: int,
+    request: Request,
+    chamber_number: str = Form(...),
+    mask_ids: list[str] = Form(default=[]),
+    db: Session = Depends(get_db),
+):
+    enforce_admin(_current_user(request))
+    try:
+        chamber = settings_service.update_metalization_chamber(
+            db,
+            chamber_id,
+            MetalizationChamberUpdate(chamber_number=chamber_number, mask_ids=_parse_int_list(mask_ids, "Masks assigned")),
+        )
+    except (ValidationError, ValueError) as exc:
+        return _render_settings(
+            "settings_metalization_chambers.html",
+            request,
+            db,
+            champion_id=None,
+            project_id=None,
+            chamber_id=chamber_id,
+            error=str(exc),
+            form={"chamber_number": chamber_number, "chamber_mask_ids": ",".join(mask_ids)},
+        )
+    return RedirectResponse(url=f"/ui/settings/metalization-chambers?message=Metalization+chamber+updated&chamber_id={chamber.id}", status_code=303)
+
+
+@router.post("/settings/metalization-chambers/{chamber_id}/delete", response_model=None)
+def delete_metalization_chamber(chamber_id: int, request: Request, db: Session = Depends(get_db)):
+    enforce_admin(_current_user(request))
+    try:
+        settings_service.delete_metalization_chamber(db, chamber_id)
+    except ValueError as exc:
+        return _render_settings("settings_metalization_chambers.html", request, db, champion_id=None, project_id=None, error=str(exc))
+    return RedirectResponse(url="/ui/settings/metalization-chambers?message=Metalization+chamber+deleted", status_code=303)
