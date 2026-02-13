@@ -16,7 +16,7 @@ from app.models.user import User
 from app.repositories import champions as champions_repo
 from app.repositories import projects as projects_repo
 from app.schemas.assembly_line import AssemblyLineCreate, AssemblyLineUpdate
-from app.schemas.material import MaterialCreate, MaterialUpdate
+from app.schemas.material import MATERIAL_CATEGORY_OPTIONS, MaterialCreate, MaterialUpdate
 from app.schemas.metalization import (
     MetalizationChamberCreate,
     MetalizationChamberUpdate,
@@ -182,6 +182,7 @@ def _base_settings_context(db: Session) -> dict[str, object]:
         "worker_types": settings_service.LABOUR_COST_WORKER_TYPES,
         "project_status_options": settings_service.ALLOWED_PROJECT_STATUSES,
         "user_role_options": users_service.ALLOWED_USER_ROLES,
+        "material_category_options": MATERIAL_CATEGORY_OPTIONS,
     }
 
 
@@ -1787,6 +1788,8 @@ def add_material(
     description: str | None = Form(default=None),
     unit: str = Form(...),
     price_per_unit: float = Form(...),
+    category: str = Form(...),
+    make_buy: str | None = Form(default=None),
     db: Session = Depends(get_db),
 ):
     enforce_admin(_current_user(request))
@@ -1795,6 +1798,8 @@ def add_material(
         "description": description or "",
         "unit": unit,
         "price_per_unit": str(price_per_unit),
+        "category": category,
+        "make_buy": "1" if make_buy is not None else "0",
     }
     try:
         settings_service.create_material(
@@ -1804,6 +1809,8 @@ def add_material(
                 description=description,
                 unit=unit,
                 price_per_unit=price_per_unit,
+                category=category,
+                make_buy=make_buy is not None,
             ),
         )
     except (ValidationError, ValueError) as exc:
@@ -1828,6 +1835,8 @@ def edit_material(
     description: str | None = Form(default=None),
     unit: str = Form(...),
     price_per_unit: float = Form(...),
+    category: str = Form(...),
+    make_buy: str | None = Form(default=None),
     db: Session = Depends(get_db),
 ):
     enforce_admin(_current_user(request))
@@ -1836,6 +1845,8 @@ def edit_material(
         "description": description or "",
         "unit": unit,
         "price_per_unit": str(price_per_unit),
+        "category": category,
+        "make_buy": "1" if make_buy is not None else "0",
     }
     try:
         settings_service.update_material(
@@ -1846,6 +1857,8 @@ def edit_material(
                 description=description,
                 unit=unit,
                 price_per_unit=price_per_unit,
+                category=category,
+                make_buy=make_buy is not None,
             ),
         )
     except (ValidationError, ValueError) as exc:
