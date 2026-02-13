@@ -603,3 +603,26 @@ def test_machine_and_chamber_assignment_add_is_idempotent(db_session):
 
     assert [assigned.tool_pn for assigned in updated_machine.tools] == [tool.tool_pn]
     assert [assigned.mask_pn for assigned in updated_chamber.masks] == [mask.mask_pn]
+
+
+def test_labour_cost_update_and_validation(db_session):
+    rows = settings_service.list_labour_costs(db_session)
+
+    assert [row.worker_type for row in rows] == list(settings_service.LABOUR_COST_WORKER_TYPES)
+
+    updated = settings_service.update_labour_cost(db_session, "Operator", 77.7)
+    assert updated.cost_pln == 77.7
+
+    with pytest.raises(ValueError, match="Worker type must be one of"):
+        settings_service.update_labour_cost(db_session, "Unknown", 10)
+
+    with pytest.raises(ValueError, match="greater than or equal to 0"):
+        settings_service.update_labour_cost(db_session, "Operator", -1)
+
+
+def test_labour_cost_seeding_occurs(db_session):
+    settings_service.ensure_labour_cost_rows(db_session)
+
+    rows = settings_service.list_labour_costs(db_session)
+    assert len(rows) == 6
+    assert [row.worker_type for row in rows] == list(settings_service.LABOUR_COST_WORKER_TYPES)

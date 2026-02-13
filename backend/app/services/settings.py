@@ -7,10 +7,12 @@ from sqlalchemy.orm import Session
 
 from app.models.assembly_line import AssemblyLine
 from app.models.champion import Champion
+from app.models.labour_cost import LabourCost
 from app.models.metalization import MetalizationChamber, MetalizationMask
 from app.models.moulding import MouldingMachine, MouldingTool
 from app.models.project import Project
 from app.repositories import assembly_lines as assembly_lines_repo
+from app.repositories import labour_costs as labour_costs_repo
 from app.repositories import metalization as metalization_repo
 from app.repositories import moulding as moulding_repo
 from app.schemas.assembly_line import AssemblyLineCreate, AssemblyLineUpdate
@@ -831,3 +833,44 @@ def remove_metalization_chamber_mask(
     db.commit()
     db.refresh(chamber)
     return chamber
+
+
+LABOUR_COST_WORKER_TYPES = ("Operator", "Logistic", "TeamLeader", "Inspector", "Specialist", "Technican")
+
+
+def ensure_labour_cost_rows(db: Session) -> None:
+    existing = {row.worker_type for row in labour_costs_repo.list_labour_costs(db, LABOUR_COST_WORKER_TYPES)}
+    missing = [worker_type for worker_type in LABOUR_COST_WORKER_TYPES if worker_type not in existing]
+    for worker_type in missing:
+        labour_costs_repo.create_labour_cost(db, worker_type=worker_type, cost_pln=0)
+
+
+def _validate_worker_type(worker_type: str) -> str:
+    cleaned = worker_type.strip()
+    if cleaned not in LABOUR_COST_WORKER_TYPES:
+        raise ValueError(f"Worker type must be one of: {', '.join(LABOUR_COST_WORKER_TYPES)}.")
+    return cleaned
+
+
+def _validate_cost_pln(cost_pln: float) -> float:
+    try:
+        value = float(cost_pln)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("Cost [PLN] must be numeric.") from exc
+    if value < 0:
+        raise ValueError("Cost [PLN] must be greater than or equal to 0.")
+    return value
+
+
+def list_labour_costs(db: Session) -> list[LabourCost]:
+    ensure_labour_cost_rows(db)
+    return labour_costs_repo.list_labour_costs(db, LABOUR_COST_WORKER_TYPES)
+
+
+def update_labour_cost(db: Session, worker_type: str, cost_pln: float) -> LabourCost:
+    normalized_worker_type = _validate_worker_type(worker_type)
+    normalized_cost_pln = _validate_cost_pln(cost_pln)
+    labour_cost = labour_costs_repo.get_by_worker_type(db, normalized_worker_type)
+    if labour_cost is None:
+        labour_cost = labour_costs_repo.create_labour_cost(db, worker_type=normalized_worker_type, cost_pln=0)
+    return labour_costs_repo.update_labour_cost(db, labour_cost=labour_cost, cost_pln=normalized_cost_pln)
