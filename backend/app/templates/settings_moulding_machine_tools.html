@@ -1,0 +1,25 @@
+{% extends "layout.html" %}
+{% block content %}
+  <div class="settings-page">
+    <section class="card settings-section-card">
+      <div class="settings-subpage-header">
+        <a class="button secondary" href="/ui/settings/moulding-machines">← Back to Moulding Machines</a>
+      </div>
+      <h2>Moulding Machine Tools</h2>
+      <p class="muted">Machine: {{ machine.machine_number }}</p>
+
+      <div class="table-wrap">
+        <table class="table">
+          <thead><tr><th>Tool P/N</th><th>Description</th><th>CT (s)</th></tr></thead>
+          <tbody>
+            {% for tool in tools %}
+              <tr><td>{{ tool.tool_pn }}</td><td>{{ tool.description or '—' }}</td><td>{{ tool.ct_seconds }}</td></tr>
+            {% else %}
+              <tr><td colspan="3" class="muted">No tools assigned.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+{% endblock %}

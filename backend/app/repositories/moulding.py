@@ -63,6 +63,16 @@ def get_moulding_machine(db: Session, machine_id: int) -> MouldingMachine | None
     return db.scalar(stmt)
 
 
+def list_tools_for_machine(db: Session, machine_id: int) -> list[MouldingTool]:
+    stmt = (
+        select(MouldingTool)
+        .join(MouldingMachine.tools)
+        .where(MouldingMachine.id == machine_id)
+        .order_by(MouldingTool.tool_pn.asc())
+    )
+    return list(db.scalars(stmt).all())
+
+
 def create_moulding_machine(
     db: Session,
     *,

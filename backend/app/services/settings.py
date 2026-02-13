@@ -509,6 +509,14 @@ def list_moulding_machines(db: Session) -> list[MouldingMachine]:
     return moulding_repo.list_moulding_machines(db)
 
 
+def machine_by_id(db: Session, machine_id: int) -> MouldingMachine | None:
+    return moulding_repo.get_moulding_machine(db, machine_id)
+
+
+def list_tools_for_machine(db: Session, machine_id: int) -> list[MouldingTool]:
+    return moulding_repo.list_tools_for_machine(db, machine_id)
+
+
 def create_moulding_machine(db: Session, data: MouldingMachineCreate) -> MouldingMachine:
     machine_number = _normalize_required_text(data.machine_number, "Machine number")
     _ensure_unique_machine_number(db, machine_number)

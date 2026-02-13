@@ -4,7 +4,7 @@ from datetime import date
 from pathlib import Path
 from urllib.parse import quote_plus
 
-from fastapi import APIRouter, Depends, Form, Request
+from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import ValidationError
@@ -306,6 +306,25 @@ def settings_moulding_machines_page(
     )
 
 
+
+@router.get("/settings/moulding-machines/{machine_id}/tools", response_class=HTMLResponse, response_model=None)
+def settings_moulding_machine_tools_page(
+    request: Request,
+    machine_id: int,
+    db: Session = Depends(get_db),
+):
+    machine = settings_service.machine_by_id(db, machine_id)
+    if machine is None:
+        raise HTTPException(status_code=404, detail="Moulding machine not found")
+    tools = settings_service.list_tools_for_machine(db, machine_id)
+    return templates.TemplateResponse(
+        "settings_moulding_machine_tools.html",
+        {
+            "request": request,
+            "machine": machine,
+            "tools": tools,
+        },
+    )
 
 
 @router.get("/settings/assembly-lines", response_class=HTMLResponse, response_model=None)

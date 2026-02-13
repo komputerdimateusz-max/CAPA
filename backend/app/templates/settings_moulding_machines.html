@@ -20,7 +20,7 @@
                 <tr>
                   <td>{{ machine.machine_number }}</td>
                   <td>{{ machine.tonnage if machine.tonnage is not none else '—' }}</td>
-                  <td>{% if machine.tools %}{{ machine.tools | map(attribute='tool_pn') | join(', ') }}{% else %}—{% endif %}</td>
+                  <td>{% set tool_count = machine.tools | length %}{% if tool_count > 0 %}<a href="/ui/settings/moulding-machines/{{ machine.id }}/tools">{{ tool_count }}</a>{% else %}0{% endif %}</td>
                   <td><a class="button secondary" href="/ui/settings/moulding-machines?machine_id={{ machine.id }}">Edit</a></td>
                 </tr>
               {% endfor %}

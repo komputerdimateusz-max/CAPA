@@ -10,7 +10,7 @@ from app.models.project import Project
 from app.models.user import User
 from app.schemas.assembly_line import AssemblyLineCreate
 from app.schemas.metalization import MetalizationMaskCreate
-from app.schemas.moulding import MouldingToolCreate
+from app.schemas.moulding import MouldingMachineCreate, MouldingToolCreate
 from app.services import settings as settings_service
 
 
@@ -154,6 +154,38 @@ def test_ui_settings_assembly_lines_subpage(client):
     assert "Assembly Lines" in response.text
     assert "Add assembly line" in response.text
 
+
+
+def test_ui_moulding_machine_tools_page_and_count_link(client, db_session):
+    tool_a = settings_service.create_moulding_tool(
+        db_session,
+        MouldingToolCreate(tool_pn="000001", description="Tool A", ct_seconds=10),
+    )
+    tool_b = settings_service.create_moulding_tool(
+        db_session,
+        MouldingToolCreate(tool_pn="000002", description="Tool B", ct_seconds=12),
+    )
+    machine = settings_service.create_moulding_machine(
+        db_session,
+        MouldingMachineCreate(machine_number="MC-01", tonnage=120, tool_ids=[tool_b.id, tool_a.id]),
+    )
+
+    list_response = client.get("/ui/settings/moulding-machines")
+    assert list_response.status_code == 200
+    assert f'href="/ui/settings/moulding-machines/{machine.id}/tools">2</a>' in list_response.text
+
+    tools_response = client.get(f"/ui/settings/moulding-machines/{machine.id}/tools")
+    assert tools_response.status_code == 200
+    assert "Moulding Machine Tools" in tools_response.text
+    assert "Machine: MC-01" in tools_response.text
+    assert "000001" in tools_response.text
+    assert "000002" in tools_response.text
+
+
+def test_ui_moulding_machine_tools_page_returns_404_for_missing_machine(client):
+    response = client.get("/ui/settings/moulding-machines/999999/tools")
+
+    assert response.status_code == 404
 
 def test_ui_project_assignment_endpoints_and_assignments_page(client, db_session):
     engineer = settings_service.create_champion(
