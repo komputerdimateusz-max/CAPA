@@ -1,0 +1,47 @@
+{% extends "layout.html" %}
+{% block content %}
+  <div class="settings-page">
+    <section class="card settings-section-card">
+      <div class="settings-subpage-header">
+        <a class="button secondary" href="/ui/settings">← Back to Settings</a>
+      </div>
+      <h2>Users</h2>
+      {% include "partials/flash_message.html" %}
+
+      {% if users %}
+        <div class="table-wrap users-table-wrap">
+          <table class="table users-table">
+            <thead>
+              <tr>
+                <th class="users-col-email">Email</th>
+                <th class="users-col-current-role">Current role</th>
+                <th class="users-col-change-role">Change role</th>
+                <th class="users-col-action"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for user in users %}
+                <tr>
+                  <td>{{ user.email }}</td>
+                  <td><span class="status-pill">{{ user.role }}</span></td>
+                  <td>
+                    <form id="user-role-form-{{ user.id }}" class="inline-form users-role-form" method="post" action="/ui/settings/users/{{ user.id }}/role">
+                      <select name="role">
+                        {% for role in user_role_options %}
+                          <option value="{{ role }}" {% if role == user.role %}selected{% endif %}>{{ role|title }}</option>
+                        {% endfor %}
+                      </select>
+                    </form>
+                  </td>
+                  <td class="users-action-cell"><button class="button users-save-button" type="submit" form="user-role-form-{{ user.id }}">Save</button></td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% else %}
+        <p class="muted">No users found.</p>
+      {% endif %}
+    </section>
+  </div>
+{% endblock %}

@@ -14,6 +14,16 @@ def test_ui_settings_page(client):
     response = client.get("/ui/settings")
 
     assert response.status_code == 200
+    assert "Global Settings" in response.text
+    assert "Moulding Machines" in response.text
+
+
+def test_ui_settings_champions_subpage(client):
+    response = client.get("/ui/settings/champions")
+
+    assert response.status_code == 200
+    assert "Back to Settings" in response.text
+    assert "Add champion" in response.text
 
 
 def test_ui_analyses_page(client, monkeypatch, tmp_path):
@@ -105,7 +115,7 @@ def test_ui_settings_shows_users_section(client, db_session):
     )
     db_session.commit()
 
-    response = client.get("/ui/settings")
+    response = client.get("/ui/settings/users")
 
     assert response.status_code == 200
     assert "Users" in response.text
