@@ -8,7 +8,7 @@
       </div>
       {% include "partials/flash_message.html" %}
 
-      <div class="detail-grid settings-grid">
+      <div class="settings-grid">
         <div class="card card-compact settings-card">
         <div class="card-header">
           <h3>Champions</h3>
@@ -177,60 +177,6 @@
           <p class="muted">No projects yet. Use Add project to create one.</p>
         {% endif %}
 
-        {% if selected_project %}
-          <div class="card mt-16">
-            <h4>Edit project</h4>
-            <form class="form-grid" method="post" action="/ui/settings/projects/{{ selected_project.id }}">
-              <label>
-                Name
-                <input
-                  type="text"
-                  name="name"
-                  value="{{ form.project_name or selected_project.name }}"
-                />
-              </label>
-              <label>
-                Status
-                <select name="status" required>
-                  <option value="">Select status</option>
-                  {% set selected_status = form.project_status or selected_project.status or '' %}
-                  {% for option in project_status_options %}
-                    <option value="{{ option }}" {% if selected_status == option %}selected{% endif %}>{{ option }}</option>
-                  {% endfor %}
-                </select>
-              </label>
-              <label>
-                Max Volume [parts/year]
-                <input type="number" name="max_volume" min="0" step="1" required value="{{ form.project_max_volume or (selected_project.max_volume if selected_project.max_volume is not none else '') }}" />
-              </label>
-              <label>
-                Flex [%]
-                <input type="number" name="flex_percent" min="0" max="100" step="0.01" required value="{{ form.project_flex_percent or (selected_project.flex_percent if selected_project.flex_percent is not none else '') }}" />
-              </label>
-              <label>
-                Process Engineer
-                {% set selected_engineer = form.project_process_engineer_id or (selected_project.process_engineer_id|string if selected_project.process_engineer_id else '') %}
-                <select name="process_engineer_id" required>
-                  <option value="">Select process engineer</option>
-                  {% for champion in champions %}
-                    <option value="{{ champion.id }}" {% if selected_engineer == champion.id|string %}selected{% endif %}>{{ champion.full_name }}</option>
-                  {% endfor %}
-                </select>
-              </label>
-              <label>
-                Due date
-                <input
-                  type="date"
-                  name="due_date"
-                  value="{{ form.project_due_date or (selected_project.due_date.isoformat() if selected_project.due_date else '') }}"
-                />
-              </label>
-              <div class="form-actions">
-                <button class="button" type="submit">Save project</button>
-              </div>
-            </form>
-          </div>
-        {% endif %}
       </div>
 
       <div class="card card-compact settings-card">
@@ -280,31 +226,6 @@
           <p class="muted">No moulding tools yet. Use Add moulding tool to create one.</p>
         {% endif %}
 
-        {% if selected_moulding_tool %}
-          <div class="card mt-16">
-            <h4>Edit moulding tool</h4>
-            <form class="form-grid" method="post" action="/ui/settings/moulding-tools/{{ selected_moulding_tool.id }}">
-              <label>
-                Tool P/N
-                <input type="text" name="tool_pn" required value="{{ form.tool_pn or selected_moulding_tool.tool_pn }}" />
-              </label>
-              <label>
-                Description
-                <input type="text" name="description" value="{{ form.tool_description or selected_moulding_tool.description or '' }}" />
-              </label>
-              <label>
-                CT (s)
-                <input type="number" name="ct_seconds" min="0" step="0.01" required value="{{ form.tool_ct_seconds or selected_moulding_tool.ct_seconds }}" />
-              </label>
-              <div class="form-actions">
-                <button class="button" type="submit">Save moulding tool</button>
-              </div>
-            </form>
-            <form method="post" action="/ui/settings/moulding-tools/{{ selected_moulding_tool.id }}/delete">
-              <button class="button secondary" type="submit">Delete moulding tool</button>
-            </form>
-          </div>
-        {% endif %}
       </div>
 
       <div class="card card-compact settings-card">
@@ -360,40 +281,6 @@
           <p class="muted">No moulding machines yet. Use Add moulding machine to create one.</p>
         {% endif %}
 
-        {% if selected_moulding_machine %}
-          <div class="card mt-16">
-            <h4>Edit moulding machine</h4>
-            {% set edit_machine_tool_ids = (form.machine_tool_ids.split(',') if form.machine_tool_ids else selected_moulding_machine.tools | map(attribute='id') | list) %}
-            <form class="form-grid" method="post" action="/ui/settings/moulding-machines/{{ selected_moulding_machine.id }}">
-              <label>
-                Machine number
-                <input type="text" name="machine_number" required value="{{ form.machine_number or selected_moulding_machine.machine_number }}" />
-              </label>
-              <label>
-                Tonnage
-                <input type="number" name="tonnage" min="0" step="1" value="{{ form.machine_tonnage or (selected_moulding_machine.tonnage if selected_moulding_machine.tonnage is not none else '') }}" />
-              </label>
-              <label>
-                Tools assigned
-                {% if moulding_tools %}
-                  <select name="tool_ids" multiple size="5">
-                    {% for tool in moulding_tools %}
-                      <option value="{{ tool.id }}" {% if tool.id in edit_machine_tool_ids or tool.id|string in edit_machine_tool_ids %}selected{% endif %}>{{ tool.tool_pn }}</option>
-                    {% endfor %}
-                  </select>
-                {% else %}
-                  <p class="muted">Add moulding tools first.</p>
-                {% endif %}
-              </label>
-              <div class="form-actions">
-                <button class="button" type="submit">Save moulding machine</button>
-              </div>
-            </form>
-            <form method="post" action="/ui/settings/moulding-machines/{{ selected_moulding_machine.id }}/delete">
-              <button class="button secondary" type="submit">Delete moulding machine</button>
-            </form>
-          </div>
-        {% endif %}
       </div>
 
 
@@ -444,8 +331,8 @@
   </div>
 
   <div class="modal-shell" id="champion-modal" hidden>
-    <div class="modal-backdrop" data-close-modal="champion"></div>
-    <aside class="create-action-panel" role="dialog" aria-modal="true" aria-labelledby="champion-modal-title">
+    <div class="modal-backdrop settings-modal-backdrop" data-close-modal="champion"></div>
+    <aside class="create-action-panel settings-modal-panel" role="dialog" aria-modal="true" aria-labelledby="champion-modal-title">
       <div class="create-action-header">
         <h3 id="champion-modal-title">Add champion</h3>
         <button class="button secondary" type="button" data-close-modal="champion">Cancel</button>
@@ -503,8 +390,8 @@
   </div>
 
   <div class="modal-shell" id="project-modal" hidden>
-    <div class="modal-backdrop" data-close-modal="project"></div>
-    <aside class="create-action-panel" role="dialog" aria-modal="true" aria-labelledby="project-modal-title">
+    <div class="modal-backdrop settings-modal-backdrop" data-close-modal="project"></div>
+    <aside class="create-action-panel settings-modal-panel" role="dialog" aria-modal="true" aria-labelledby="project-modal-title">
       <div class="create-action-header">
         <h3 id="project-modal-title">Add project</h3>
         <button class="button secondary" type="button" data-close-modal="project">Cancel</button>
@@ -556,8 +443,8 @@
 
 
   <div class="modal-shell" id="moulding-tool-modal" hidden>
-    <div class="modal-backdrop" data-close-modal="moulding-tool"></div>
-    <aside class="create-action-panel" role="dialog" aria-modal="true" aria-labelledby="moulding-tool-modal-title">
+    <div class="modal-backdrop settings-modal-backdrop" data-close-modal="moulding-tool"></div>
+    <aside class="create-action-panel settings-modal-panel" role="dialog" aria-modal="true" aria-labelledby="moulding-tool-modal-title">
       <div class="create-action-header">
         <h3 id="moulding-tool-modal-title">Add moulding tool</h3>
         <button class="button secondary" type="button" data-close-modal="moulding-tool">Cancel</button>
@@ -575,8 +462,8 @@
   </div>
 
   <div class="modal-shell" id="moulding-machine-modal" hidden>
-    <div class="modal-backdrop" data-close-modal="moulding-machine"></div>
-    <aside class="create-action-panel" role="dialog" aria-modal="true" aria-labelledby="moulding-machine-modal-title">
+    <div class="modal-backdrop settings-modal-backdrop" data-close-modal="moulding-machine"></div>
+    <aside class="create-action-panel settings-modal-panel" role="dialog" aria-modal="true" aria-labelledby="moulding-machine-modal-title">
       <div class="create-action-header">
         <h3 id="moulding-machine-modal-title">Add moulding machine</h3>
         <button class="button secondary" type="button" data-close-modal="moulding-machine">Cancel</button>
@@ -605,6 +492,136 @@
     </aside>
   </div>
 
+
+  {% if selected_project %}
+    <div class="modal-shell" id="project-edit-modal">
+      <div class="modal-backdrop settings-modal-backdrop">
+        <aside class="create-action-panel settings-modal-panel" role="dialog" aria-modal="true" aria-labelledby="project-edit-title">
+          <div class="create-action-header">
+            <h3 id="project-edit-title">Edit project</h3>
+            <a class="button secondary" href="/ui/settings">Close</a>
+          </div>
+          <form class="form-grid" method="post" action="/ui/settings/projects/{{ selected_project.id }}">
+            <label>
+              Name
+              <input type="text" name="name" value="{{ form.project_name or selected_project.name }}" />
+            </label>
+            <label>
+              Status
+              <select name="status" required>
+                <option value="">Select status</option>
+                {% set selected_status = form.project_status or selected_project.status or '' %}
+                {% for option in project_status_options %}
+                  <option value="{{ option }}" {% if selected_status == option %}selected{% endif %}>{{ option }}</option>
+                {% endfor %}
+              </select>
+            </label>
+            <label>
+              Max Volume [parts/year]
+              <input type="number" name="max_volume" min="0" step="1" required value="{{ form.project_max_volume or (selected_project.max_volume if selected_project.max_volume is not none else '') }}" />
+            </label>
+            <label>
+              Flex [%]
+              <input type="number" name="flex_percent" min="0" max="100" step="0.01" required value="{{ form.project_flex_percent or (selected_project.flex_percent if selected_project.flex_percent is not none else '') }}" />
+            </label>
+            <label>
+              Process Engineer
+              {% set selected_engineer = form.project_process_engineer_id or (selected_project.process_engineer_id|string if selected_project.process_engineer_id else '') %}
+              <select name="process_engineer_id" required>
+                <option value="">Select process engineer</option>
+                {% for champion in champions %}
+                  <option value="{{ champion.id }}" {% if selected_engineer == champion.id|string %}selected{% endif %}>{{ champion.full_name }}</option>
+                {% endfor %}
+              </select>
+            </label>
+            <label>
+              Due date
+              <input type="date" name="due_date" value="{{ form.project_due_date or (selected_project.due_date.isoformat() if selected_project.due_date else '') }}" />
+            </label>
+            <div class="form-actions">
+              <button class="button" type="submit">Save project</button>
+              <a class="button secondary" href="/ui/settings">Cancel</a>
+            </div>
+          </form>
+        </aside>
+      </div>
+    </div>
+  {% endif %}
+
+  {% if selected_moulding_tool %}
+    <div class="modal-shell" id="moulding-tool-edit-modal">
+      <div class="modal-backdrop settings-modal-backdrop">
+        <aside class="create-action-panel settings-modal-panel" role="dialog" aria-modal="true" aria-labelledby="moulding-tool-edit-title">
+          <div class="create-action-header">
+            <h3 id="moulding-tool-edit-title">Edit moulding tool</h3>
+            <a class="button secondary" href="/ui/settings">Close</a>
+          </div>
+          <form class="form-grid" method="post" action="/ui/settings/moulding-tools/{{ selected_moulding_tool.id }}">
+            <label>
+              Tool P/N
+              <input type="text" name="tool_pn" required value="{{ form.tool_pn or selected_moulding_tool.tool_pn }}" />
+            </label>
+            <label>
+              Description
+              <input type="text" name="description" value="{{ form.tool_description or selected_moulding_tool.description or '' }}" />
+            </label>
+            <label>
+              CT (s)
+              <input type="number" name="ct_seconds" min="0" step="0.01" required value="{{ form.tool_ct_seconds or selected_moulding_tool.ct_seconds }}" />
+            </label>
+            <div class="form-actions">
+              <button class="button" type="submit">Save moulding tool</button>
+            </div>
+          </form>
+          <form method="post" action="/ui/settings/moulding-tools/{{ selected_moulding_tool.id }}/delete">
+            <button class="button secondary" type="submit">Delete moulding tool</button>
+          </form>
+        </aside>
+      </div>
+    </div>
+  {% endif %}
+
+  {% if selected_moulding_machine %}
+    <div class="modal-shell" id="moulding-machine-edit-modal">
+      <div class="modal-backdrop settings-modal-backdrop">
+        <aside class="create-action-panel settings-modal-panel" role="dialog" aria-modal="true" aria-labelledby="moulding-machine-edit-title">
+          <div class="create-action-header">
+            <h3 id="moulding-machine-edit-title">Edit moulding machine</h3>
+            <a class="button secondary" href="/ui/settings">Close</a>
+          </div>
+          {% set edit_machine_tool_ids = (form.machine_tool_ids.split(',') if form.machine_tool_ids else selected_moulding_machine.tools | map(attribute='id') | list) %}
+          <form class="form-grid" method="post" action="/ui/settings/moulding-machines/{{ selected_moulding_machine.id }}">
+            <label>
+              Machine number
+              <input type="text" name="machine_number" required value="{{ form.machine_number or selected_moulding_machine.machine_number }}" />
+            </label>
+            <label>
+              Tonnage
+              <input type="number" name="tonnage" min="0" step="1" value="{{ form.machine_tonnage or (selected_moulding_machine.tonnage if selected_moulding_machine.tonnage is not none else '') }}" />
+            </label>
+            <label>
+              Tools assigned
+              {% if moulding_tools %}
+                <select name="tool_ids" multiple size="5">
+                  {% for tool in moulding_tools %}
+                    <option value="{{ tool.id }}" {% if tool.id in edit_machine_tool_ids or tool.id|string in edit_machine_tool_ids %}selected{% endif %}>{{ tool.tool_pn }}</option>
+                  {% endfor %}
+                </select>
+              {% else %}
+                <p class="muted">Add moulding tools first.</p>
+              {% endif %}
+            </label>
+            <div class="form-actions">
+              <button class="button" type="submit">Save moulding machine</button>
+            </div>
+          </form>
+          <form method="post" action="/ui/settings/moulding-machines/{{ selected_moulding_machine.id }}/delete">
+            <button class="button secondary" type="submit">Delete moulding machine</button>
+          </form>
+        </aside>
+      </div>
+    </div>
+  {% endif %}
 
   <script>
     (() => {
