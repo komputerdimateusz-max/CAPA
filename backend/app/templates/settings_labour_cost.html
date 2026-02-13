@@ -1,0 +1,36 @@
+{% extends "layout.html" %}
+{% block content %}
+  <div class="settings-page">
+    <section class="card settings-section-card">
+      <div class="settings-subpage-header">
+        <a class="button secondary" href="/ui/settings">← Back to Settings</a>
+      </div>
+      <h2>Labour cost</h2>
+      {% include "partials/flash_message.html" %}
+
+      <div class="table-wrap">
+        <table class="table">
+          <thead>
+            <tr><th>Employee type</th><th>Cost [PLN]</th><th>Save</th></tr>
+          </thead>
+          <tbody>
+            {% for labour_cost in labour_costs %}
+              <tr>
+                <td>{{ labour_cost.worker_type }}</td>
+                <td>
+                  <form method="post" action="/ui/settings/labour-cost/update" class="inline-form">
+                    <input type="hidden" name="worker_type" value="{{ labour_cost.worker_type }}" />
+                    <input type="number" name="cost_pln" min="0" step="0.01" required value="{{ labour_cost.cost_pln }}" />
+                </td>
+                <td>
+                    <button class="button" type="submit">Save</button>
+                  </form>
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+{% endblock %}

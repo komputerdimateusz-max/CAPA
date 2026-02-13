@@ -23,6 +23,7 @@ def test_ui_settings_page(client):
     assert "Assembly Lines" in response.text
     assert "Metalization Masks" in response.text
     assert "Metalization Chambers" in response.text
+    assert "Labour cost" in response.text
 
 
 def test_ui_settings_champions_subpage(client):
@@ -333,3 +334,38 @@ def test_ui_settings_projects_table_has_assignments_links(client, db_session):
     assert response.status_code == 200
     assert f'/ui/settings/projects/{project.id}/assignments' in response.text
     assert "0 masks" in response.text
+
+
+def test_ui_settings_labour_cost_page_and_update(client):
+    response = client.get("/ui/settings/labour-cost")
+
+    assert response.status_code == 200
+    for worker_type in ("Operator", "Logistic", "TeamLeader", "Inspector", "Specialist", "Technican"):
+        assert worker_type in response.text
+
+    update_response = client.post(
+        "/ui/settings/labour-cost/update",
+        data={"worker_type": "Operator", "cost_pln": "123.45"},
+        allow_redirects=False,
+    )
+
+    assert update_response.status_code == 303
+    assert "message=Labour+cost+updated" in update_response.headers["location"]
+
+
+def test_ui_settings_labour_cost_validation_errors(client):
+    invalid_worker_response = client.post(
+        "/ui/settings/labour-cost/update",
+        data={"worker_type": "Unknown", "cost_pln": "100"},
+        allow_redirects=False,
+    )
+    invalid_cost_response = client.post(
+        "/ui/settings/labour-cost/update",
+        data={"worker_type": "Operator", "cost_pln": "-1"},
+        allow_redirects=False,
+    )
+
+    assert invalid_worker_response.status_code == 303
+    assert "error=" in invalid_worker_response.headers["location"]
+    assert invalid_cost_response.status_code == 303
+    assert "error=" in invalid_cost_response.headers["location"]

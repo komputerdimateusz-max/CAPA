@@ -20,6 +20,7 @@ from app.core.security import hash_password, is_password_too_long
 from app.db.session import SessionLocal, engine
 from app.models.user import User
 from app.repositories import users as users_repo
+from app.services import settings as settings_service
 from app.ui import routes as ui_routes
 from app.ui import routes_analyses, routes_auth, routes_champions, routes_metrics, routes_projects, routes_settings
 
@@ -417,3 +418,9 @@ def on_startup() -> None:
             seed_admin_user(db)
         finally:
             db.close()
+
+    db = SessionLocal()
+    try:
+        settings_service.ensure_labour_cost_rows(db)
+    finally:
+        db.close()

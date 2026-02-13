@@ -1306,3 +1306,42 @@ def delete_metalization_chamber(chamber_id: int, request: Request, db: Session =
     except ValueError as exc:
         return _render_settings("settings_metalization_chambers.html", request, db, champion_id=None, project_id=None, error=str(exc))
     return RedirectResponse(url="/ui/settings/metalization-chambers?message=Metalization+chamber+deleted", status_code=303)
+
+@router.get("/settings/labour-cost", response_class=HTMLResponse, response_model=None)
+def settings_labour_cost_page(
+    request: Request,
+    message: str | None = None,
+    error: str | None = None,
+    db: Session = Depends(get_db),
+):
+    labour_costs = settings_service.list_labour_costs(db)
+    return templates.TemplateResponse(
+        "settings_labour_cost.html",
+        {
+            "request": request,
+            "labour_costs": labour_costs,
+            "message": message,
+            "error": error,
+            "form": {},
+        },
+    )
+
+
+@router.post("/settings/labour-cost/update", response_model=None)
+def update_labour_cost(
+    worker_type: str = Form(...),
+    cost_pln: str = Form(...),
+    db: Session = Depends(get_db),
+):
+    try:
+        parsed_cost = _parse_optional_float(cost_pln, "Cost [PLN]")
+        if parsed_cost is None:
+            raise ValueError("Cost [PLN] is required.")
+        settings_service.update_labour_cost(db, worker_type=worker_type, cost_pln=parsed_cost)
+    except ValueError as exc:
+        return RedirectResponse(
+            url=f"/ui/settings/labour-cost?error={quote_plus(str(exc))}",
+            status_code=303,
+        )
+
+    return RedirectResponse(url="/ui/settings/labour-cost?message=Labour+cost+updated", status_code=303)

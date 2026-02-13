@@ -7,6 +7,7 @@ from app.models.tag import Tag
 from app.models.user import User
 from app.models.moulding import MouldingMachine, MouldingMachineTool, MouldingTool
 from app.models.assembly_line import AssemblyLine
+from app.models.labour_cost import LabourCost
 from app.models.metalization import MetalizationChamber, MetalizationChamberMask, MetalizationMask, ProjectMetalizationMask
 
 __all__ = [
@@ -21,6 +22,7 @@ __all__ = [
     "MouldingMachine",
     "MouldingMachineTool",
     "AssemblyLine",
+    "LabourCost",
     "MetalizationMask",
     "MetalizationChamber",
     "MetalizationChamberMask",
