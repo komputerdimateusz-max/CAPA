@@ -503,3 +503,52 @@ def test_ui_add_moulding_tool_persists_hc_breakdown(client, db_session):
     hc_map = settings_service.get_tool_hc_map(db_session, tool.id)
     assert hc_map["Operator"] == 1.25
     assert hc_map["Logistic"] == 0.75
+
+
+def test_ui_lists_show_outcome_material_cost_columns(client, db_session):
+    tool = settings_service.create_moulding_tool(
+        db_session,
+        MouldingToolCreate(tool_pn="UI-OUT-T", description="desc", ct_seconds=60, hc_map={"Operator": 1}),
+    )
+    mask = settings_service.create_metalization_mask(
+        db_session,
+        MetalizationMaskCreate(mask_pn="UI-OUT-M", description="desc", ct_seconds=60, hc_map={"Operator": 1}),
+    )
+    material = settings_service.create_material(
+        db_session,
+        MaterialCreate(part_number="UI-OUT-MAT", description="mat", unit="kg", price_per_unit=2),
+    )
+    settings_service.add_material_out_to_tool(db_session, tool.id, material_id=material.id, qty_per_piece=3)
+    settings_service.add_material_out_to_mask(db_session, mask.id, material_id=material.id, qty_per_piece=4)
+
+    tool_response = client.get("/ui/settings/moulding-tools")
+    mask_response = client.get("/ui/settings/metalization-masks")
+
+    assert tool_response.status_code == 200
+    assert mask_response.status_code == 200
+    assert "Outcome material cost [PLN]" in tool_response.text
+    assert "Outcome material cost [PLN]" in mask_response.text
+    assert "6.00" in tool_response.text
+    assert "8.00" in mask_response.text
+
+
+def test_ui_assembly_lines_list_shows_labour_and_material_costs(client, db_session):
+    settings_service.update_labour_cost(db_session, "Operator", 12)
+    line = settings_service.create_assembly_line(
+        db_session,
+        AssemblyLineCreate(line_number="UI-AL-1", ct_seconds=60, hc=0, hc_map={"Operator": 2}),
+    )
+    material = settings_service.create_material(
+        db_session,
+        MaterialCreate(part_number="UI-AL-MAT", description="mat", unit="kg", price_per_unit=5),
+    )
+    settings_service.add_material_in_to_assembly_line(db_session, line.id, material_id=material.id, qty_per_piece=1)
+    settings_service.add_material_out_to_assembly_line(db_session, line.id, material_id=material.id, qty_per_piece=0.2)
+
+    response = client.get("/ui/settings/assembly-lines")
+
+    assert response.status_code == 200
+    assert "Unit labour cost [PLN]" in response.text
+    assert "Outcome material cost [PLN]" in response.text
+    assert "0.40" in response.text
+    assert "5.00" in response.text

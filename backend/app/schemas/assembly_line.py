@@ -6,7 +6,8 @@ from pydantic import BaseModel, Field, field_validator
 class AssemblyLineBase(BaseModel):
     line_number: str = Field(..., min_length=1)
     ct_seconds: float = Field(..., ge=0)
-    hc: int = Field(..., ge=0)
+    hc: int = Field(default=0, ge=0)
+    hc_map: dict[str, float] = Field(default_factory=dict)
 
     @field_validator("line_number")
     @classmethod
@@ -25,6 +26,7 @@ class AssemblyLineUpdate(BaseModel):
     line_number: str | None = Field(default=None, min_length=1)
     ct_seconds: float | None = Field(default=None, ge=0)
     hc: int | None = Field(default=None, ge=0)
+    hc_map: dict[str, float] | None = None
 
     @field_validator("line_number")
     @classmethod

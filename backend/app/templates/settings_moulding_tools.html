@@ -14,7 +14,7 @@
     <div class="table-wrap">
       <table class="table">
         <thead>
-          <tr><th>Tool P/N</th><th>Description</th><th class="num-col">CT (s)</th><th class="num-col">HC total</th><th class="num-col">Unit labour cost [PLN]</th><th class="num-col">Material cost [PLN]</th><th class="action-col">Edit</th></tr>
+          <tr><th>Tool P/N</th><th>Description</th><th class="num-col">CT (s)</th><th class="num-col">HC total</th><th class="num-col">Unit labour cost [PLN]</th><th class="num-col">Material cost [PLN]</th><th class="num-col">Outcome material cost [PLN]</th><th class="action-col">Edit</th></tr>
         </thead>
         <tbody>
           {% for tool in moulding_tools %}
@@ -25,6 +25,7 @@
             <td class="num-col">{{ '%.2f'|format(tool.hc_total or 0) }}</td>
             <td class="num-col">{{ '%.2f'|format(tool.unit_labour_cost or 0) }}</td>
             <td class="num-col">{{ '%.2f'|format(tool.material_cost or 0) }}</td>
+            <td class="num-col">{{ '%.2f'|format(tool.material_out_cost or 0) }}</td>
             <td class="action-col"><a class="button secondary" href="/ui/settings/moulding-tools?tool_id={{ tool.id }}">Edit</a></td>
           </tr>
           {% endfor %}
@@ -94,6 +95,50 @@
       {% endif %}
       {% else %}
       <p class="muted">No materials defined yet. Add them in Settings → Materials.</p>
+      {% endif %}
+
+
+      <h5>Material outcome (per 1 piece)</h5>
+      {% if materials %}
+      <form class="form-grid" method="post" action="/ui/settings/moulding-tools/{{ selected_moulding_tool.id }}/materials-out/add">
+        <label>Material part number
+          <input list="materials-out-datalist" name="part_number" placeholder="Type material part number…" required />
+          <datalist id="materials-out-datalist">
+            {% for material in materials %}
+            <option value="{{ material.part_number }}">{{ material.description or '' }}</option>
+            {% endfor %}
+          </datalist>
+        </label>
+        <label>Qty / piece<input type="text" name="qty_per_piece" placeholder="Qty / piece" required /></label>
+        <div class="form-actions"><button class="button" type="submit">Add material</button></div>
+      </form>
+
+      {% if selected_moulding_tool_materials_out %}
+      <div class="table-wrap">
+        <table class="table">
+          <thead><tr><th>Material</th><th>Unit</th><th>Qty / piece</th><th></th></tr></thead>
+          <tbody>
+            {% for row in selected_moulding_tool_materials_out %}
+            <tr>
+              <td><strong>{{ row.material.part_number }}</strong><br><small class="muted">{{ row.material.description or '—' }}</small></td>
+              <td>{{ row.material.unit }}</td>
+              <td>
+                <form method="post" action="/ui/settings/moulding-tools/{{ selected_moulding_tool.id }}/materials-out/{{ row.material_id }}/qty" style="display:flex;gap:0.5rem;align-items:center;">
+                  <input type="text" name="qty_per_piece" value="{{ row.qty_per_piece }}" required style="max-width:120px;" />
+                  <button class="button secondary" type="submit">Save</button>
+                </form>
+              </td>
+              <td>
+                <form method="post" action="/ui/settings/moulding-tools/{{ selected_moulding_tool.id }}/materials-out/{{ row.material_id }}/remove">
+                  <button class="button secondary" type="submit">×</button>
+                </form>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% endif %}
       {% endif %}
 
       <form method="post" action="/ui/settings/moulding-tools/{{ selected_moulding_tool.id }}/delete">

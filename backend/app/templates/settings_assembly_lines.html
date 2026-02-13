@@ -13,14 +13,17 @@
         <div class="table-wrap">
           <table class="table">
             <thead>
-              <tr><th>Line number</th><th>CT (s)</th><th>HC</th><th>Edit</th></tr>
+              <tr><th>Line number</th><th class="num-col">CT (s)</th><th class="num-col">HC total</th><th class="num-col">Unit labour cost [PLN]</th><th class="num-col">Material cost [PLN]</th><th class="num-col">Outcome material cost [PLN]</th><th>Edit</th></tr>
             </thead>
             <tbody>
               {% for assembly_line in assembly_lines %}
                 <tr>
                   <td>{{ assembly_line.line_number }}</td>
-                  <td>{{ assembly_line.ct_seconds }}</td>
-                  <td>{{ assembly_line.hc }}</td>
+                  <td class="num-col">{{ '%.2f'|format(assembly_line.ct_seconds or 0) }}</td>
+                  <td class="num-col">{{ '%.2f'|format(assembly_line.hc_total or 0) }}</td>
+                  <td class="num-col">{{ '%.2f'|format(assembly_line.unit_labour_cost or 0) }}</td>
+                  <td class="num-col">{{ '%.2f'|format(assembly_line.material_cost or 0) }}</td>
+                  <td class="num-col">{{ '%.2f'|format(assembly_line.material_out_cost or 0) }}</td>
                   <td><a class="button secondary" href="/ui/settings/assembly-lines?assembly_line_id={{ assembly_line.id }}">Edit</a></td>
                 </tr>
               {% endfor %}
@@ -43,7 +46,10 @@
       <form class="form-grid" method="post" action="/ui/settings/assembly-lines">
         <label>Line number<input type="text" name="line_number" required value="{{ form.assembly_line_number or '' }}" /></label>
         <label>CT (s)<input type="number" name="ct_seconds" min="0" step="0.1" required value="{{ form.assembly_ct_seconds or '' }}" /></label>
-        <label>HC<input type="number" name="hc" min="0" step="1" required value="{{ form.assembly_hc or '' }}" /></label>
+        <h5>HC (by function)</h5>
+        {% for worker_type in worker_types %}
+        <label>{{ worker_type }} HC<input type="number" name="hc_{{ worker_type.lower() }}" min="0" step="0.01" value="{{ form['hc_' ~ worker_type.lower()] if ('hc_' ~ worker_type.lower()) in form else 0 }}" /></label>
+        {% endfor %}
         <div class="form-actions"><button class="button" type="submit">Save</button><button class="button secondary" type="button" data-close-modal="assembly-line-add">Cancel</button></div>
       </form>
     </aside>
@@ -60,9 +66,55 @@
         <form class="form-grid" method="post" action="/ui/settings/assembly-lines/{{ selected_assembly_line.id }}">
           <label>Line number<input type="text" name="line_number" required value="{{ form.assembly_line_number or selected_assembly_line.line_number }}" /></label>
           <label>CT (s)<input type="number" name="ct_seconds" min="0" step="0.1" required value="{{ form.assembly_ct_seconds or selected_assembly_line.ct_seconds }}" /></label>
-          <label>HC<input type="number" name="hc" min="0" step="1" required value="{{ form.assembly_hc or selected_assembly_line.hc }}" /></label>
+          <h5>HC (by function)</h5>
+          {% for worker_type in worker_types %}
+          <label>{{ worker_type }} HC<input type="number" name="hc_{{ worker_type.lower() }}" min="0" step="0.01" value="{{ form['hc_' ~ worker_type.lower()] if ('hc_' ~ worker_type.lower()) in form else selected_assembly_line_hc_map.get(worker_type, 0) }}" /></label>
+          {% endfor %}
           <div class="form-actions"><button class="button" type="submit">Save</button><button class="button secondary" type="button" data-close-modal="assembly-line-edit">Cancel</button></div>
         </form>
+
+        <h5>Material input (per 1 piece)</h5>
+        <form class="form-grid" method="post" action="/ui/settings/assembly-lines/{{ selected_assembly_line.id }}/materials-in/add">
+          <label>Material part number
+            <input list="assembly-materials-in-datalist" name="part_number" placeholder="Type material part number…" required />
+            <datalist id="assembly-materials-in-datalist">
+              {% for material in materials %}
+              <option value="{{ material.part_number }}">{{ material.description or '' }}</option>
+              {% endfor %}
+            </datalist>
+          </label>
+          <label>Qty / piece<input type="text" name="qty_per_piece" placeholder="Qty / piece" required /></label>
+          <div class="form-actions"><button class="button" type="submit">Add material</button></div>
+        </form>
+        {% if selected_assembly_line_materials_in %}
+        <div class="table-wrap"><table class="table"><thead><tr><th>Material</th><th>Unit</th><th>Qty / piece</th><th></th></tr></thead><tbody>
+          {% for row in selected_assembly_line_materials_in %}
+          <tr><td><strong>{{ row.material.part_number }}</strong><br><small class="muted">{{ row.material.description or '—' }}</small></td><td>{{ row.material.unit }}</td><td><form method="post" action="/ui/settings/assembly-lines/{{ selected_assembly_line.id }}/materials-in/{{ row.material_id }}/qty" style="display:flex;gap:0.5rem;align-items:center;"><input type="text" name="qty_per_piece" value="{{ row.qty_per_piece }}" required style="max-width:120px;" /><button class="button secondary" type="submit">Save</button></form></td><td><form method="post" action="/ui/settings/assembly-lines/{{ selected_assembly_line.id }}/materials-in/{{ row.material_id }}/remove"><button class="button secondary" type="submit">×</button></form></td></tr>
+          {% endfor %}
+        </tbody></table></div>
+        {% endif %}
+
+        <h5>Material outcome (per 1 piece)</h5>
+        <form class="form-grid" method="post" action="/ui/settings/assembly-lines/{{ selected_assembly_line.id }}/materials-out/add">
+          <label>Material part number
+            <input list="assembly-materials-out-datalist" name="part_number" placeholder="Type material part number…" required />
+            <datalist id="assembly-materials-out-datalist">
+              {% for material in materials %}
+              <option value="{{ material.part_number }}">{{ material.description or '' }}</option>
+              {% endfor %}
+            </datalist>
+          </label>
+          <label>Qty / piece<input type="text" name="qty_per_piece" placeholder="Qty / piece" required /></label>
+          <div class="form-actions"><button class="button" type="submit">Add material</button></div>
+        </form>
+        {% if selected_assembly_line_materials_out %}
+        <div class="table-wrap"><table class="table"><thead><tr><th>Material</th><th>Unit</th><th>Qty / piece</th><th></th></tr></thead><tbody>
+          {% for row in selected_assembly_line_materials_out %}
+          <tr><td><strong>{{ row.material.part_number }}</strong><br><small class="muted">{{ row.material.description or '—' }}</small></td><td>{{ row.material.unit }}</td><td><form method="post" action="/ui/settings/assembly-lines/{{ selected_assembly_line.id }}/materials-out/{{ row.material_id }}/qty" style="display:flex;gap:0.5rem;align-items:center;"><input type="text" name="qty_per_piece" value="{{ row.qty_per_piece }}" required style="max-width:120px;" /><button class="button secondary" type="submit">Save</button></form></td><td><form method="post" action="/ui/settings/assembly-lines/{{ selected_assembly_line.id }}/materials-out/{{ row.material_id }}/remove"><button class="button secondary" type="submit">×</button></form></td></tr>
+          {% endfor %}
+        </tbody></table></div>
+        {% endif %}
+
         <form method="post" action="/ui/settings/assembly-lines/{{ selected_assembly_line.id }}/delete">
           <button class="button secondary" type="submit">Delete</button>
         </form>

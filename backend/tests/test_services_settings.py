@@ -834,3 +834,29 @@ def test_compute_material_cost_helpers_for_tool_and_mask(db_session):
 
     assert settings_service.compute_material_cost_for_tool(db_session, tool.id) == pytest.approx(9.5)
     assert settings_service.compute_material_cost_for_mask(db_session, mask.id) == pytest.approx(12)
+
+
+def test_assembly_line_labour_and_material_costs(db_session):
+    settings_service.update_labour_cost(db_session, "Operator", 30)
+    settings_service.update_labour_cost(db_session, "Logistic", 10)
+    line = settings_service.create_assembly_line(
+        db_session,
+        AssemblyLineCreate(line_number="AL-COST", ct_seconds=120, hc=0, hc_map={"Operator": 2, "Logistic": 1}),
+    )
+    mat_in = settings_service.create_material(
+        db_session,
+        MaterialCreate(part_number="AL-IN", description="in", unit="kg", price_per_unit=4),
+    )
+    mat_out = settings_service.create_material(
+        db_session,
+        MaterialCreate(part_number="AL-OUT", description="out", unit="kg", price_per_unit=5),
+    )
+    settings_service.add_material_in_to_assembly_line(db_session, line.id, material_id=mat_in.id, qty_per_piece=2)
+    settings_service.add_material_out_to_assembly_line(db_session, line.id, material_id=mat_out.id, qty_per_piece=0.5)
+
+    listed = next(l for l in settings_service.list_assembly_lines(db_session) if l.id == line.id)
+
+    assert listed.hc_total == 3
+    assert listed.unit_labour_cost == pytest.approx(2.333333, rel=1e-4)
+    assert listed.material_cost == pytest.approx(8.0)
+    assert listed.material_out_cost == pytest.approx(2.5)

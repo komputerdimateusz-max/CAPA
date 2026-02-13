@@ -226,7 +226,12 @@ def _render_settings(
     selected_moulding_tool_hc_map = settings_service.get_tool_hc_map(db, selected_moulding_tool.id) if selected_moulding_tool else {}
     selected_metalization_mask_hc_map = settings_service.get_mask_hc_map(db, selected_metalization_mask.id) if selected_metalization_mask else {}
     selected_moulding_tool_materials = settings_service.list_materials_for_tool(db, selected_moulding_tool.id) if selected_moulding_tool else []
+    selected_moulding_tool_materials_out = settings_service.list_materials_out_for_tool(db, selected_moulding_tool.id) if selected_moulding_tool else []
     selected_metalization_mask_materials = settings_service.list_materials_for_mask(db, selected_metalization_mask.id) if selected_metalization_mask else []
+    selected_metalization_mask_materials_out = settings_service.list_materials_out_for_mask(db, selected_metalization_mask.id) if selected_metalization_mask else []
+    selected_assembly_line_hc_map = settings_service.get_assembly_line_hc_map(db, selected_assembly_line.id) if selected_assembly_line else {}
+    selected_assembly_line_materials_in = settings_service.list_materials_in_for_assembly_line(db, selected_assembly_line.id) if selected_assembly_line else []
+    selected_assembly_line_materials_out = settings_service.list_materials_out_for_assembly_line(db, selected_assembly_line.id) if selected_assembly_line else []
     return templates.TemplateResponse(
         template_name,
         {
@@ -247,7 +252,12 @@ def _render_settings(
             "selected_moulding_tool_hc_map": selected_moulding_tool_hc_map,
             "selected_metalization_mask_hc_map": selected_metalization_mask_hc_map,
             "selected_moulding_tool_materials": selected_moulding_tool_materials,
+            "selected_moulding_tool_materials_out": selected_moulding_tool_materials_out,
             "selected_metalization_mask_materials": selected_metalization_mask_materials,
+            "selected_metalization_mask_materials_out": selected_metalization_mask_materials_out,
+            "selected_assembly_line_hc_map": selected_assembly_line_hc_map,
+            "selected_assembly_line_materials_in": selected_assembly_line_materials_in,
+            "selected_assembly_line_materials_out": selected_assembly_line_materials_out,
             **context,
         },
     )
@@ -1008,6 +1018,50 @@ def remove_moulding_tool_material(
     return RedirectResponse(url=f"/ui/settings/moulding-tools?tool_id={tool_id}&message=Material+removed", status_code=303)
 
 
+@router.post("/settings/moulding-tools/{tool_id}/materials-out/add", response_model=None)
+def add_moulding_tool_material_out(
+    tool_id: int,
+    request: Request,
+    part_number: str | None = Form(default=None),
+    material_id: str | None = Form(default=None),
+    qty_per_piece: str = Form(...),
+    db: Session = Depends(get_db),
+):
+    enforce_admin(_current_user(request))
+    try:
+        parsed_material_id = _parse_optional_int(material_id, "Material") if material_id else None
+        parsed_qty = _parse_optional_float(qty_per_piece, "Qty / piece")
+        if parsed_qty is None:
+            raise ValueError("Qty / piece is required.")
+        settings_service.add_material_out_to_tool(db, tool_id, material_id=parsed_material_id, part_number=part_number, qty_per_piece=parsed_qty)
+    except ValueError as exc:
+        return RedirectResponse(url=f"/ui/settings/moulding-tools?tool_id={tool_id}&error={quote_plus(str(exc))}", status_code=303)
+    return RedirectResponse(url=f"/ui/settings/moulding-tools?tool_id={tool_id}&message=Outcome+material+added", status_code=303)
+
+
+@router.post("/settings/moulding-tools/{tool_id}/materials-out/{material_id}/qty", response_model=None)
+def update_moulding_tool_material_out_qty(tool_id: int, material_id: int, request: Request, qty_per_piece: str = Form(...), db: Session = Depends(get_db)):
+    enforce_admin(_current_user(request))
+    try:
+        parsed_qty = _parse_optional_float(qty_per_piece, "Qty / piece")
+        if parsed_qty is None:
+            raise ValueError("Qty / piece is required.")
+        settings_service.update_tool_material_out_qty(db, tool_id, material_id, parsed_qty)
+    except ValueError as exc:
+        return RedirectResponse(url=f"/ui/settings/moulding-tools?tool_id={tool_id}&error={quote_plus(str(exc))}", status_code=303)
+    return RedirectResponse(url=f"/ui/settings/moulding-tools?tool_id={tool_id}&message=Outcome+material+qty+updated", status_code=303)
+
+
+@router.post("/settings/moulding-tools/{tool_id}/materials-out/{material_id}/remove", response_model=None)
+def remove_moulding_tool_material_out(tool_id: int, material_id: int, request: Request, db: Session = Depends(get_db)):
+    enforce_admin(_current_user(request))
+    try:
+        settings_service.remove_material_out_from_tool(db, tool_id, material_id)
+    except ValueError as exc:
+        return RedirectResponse(url=f"/ui/settings/moulding-tools?tool_id={tool_id}&error={quote_plus(str(exc))}", status_code=303)
+    return RedirectResponse(url=f"/ui/settings/moulding-tools?tool_id={tool_id}&message=Outcome+material+removed", status_code=303)
+
+
 @router.post("/settings/moulding-machines", response_model=None)
 def add_moulding_machine(
     request: Request,
@@ -1178,14 +1232,21 @@ def add_assembly_line(
     request: Request,
     line_number: str = Form(...),
     ct_seconds: str = Form(...),
-    hc: str = Form(...),
+    hc_operator: str = Form(default="0"),
+    hc_logistic: str = Form(default="0"),
+    hc_teamleader: str = Form(default="0"),
+    hc_inspector: str = Form(default="0"),
+    hc_specialist: str = Form(default="0"),
+    hc_technican: str = Form(default="0"),
     db: Session = Depends(get_db),
 ):
     enforce_admin(_current_user(request))
+    hc_map: dict[str, float] = {}
     try:
+        hc_map = _build_hc_map(hc_operator, hc_logistic, hc_teamleader, hc_inspector, hc_specialist, hc_technican)
         assembly_line = settings_service.create_assembly_line(
             db,
-            AssemblyLineCreate(line_number=line_number, ct_seconds=float(ct_seconds), hc=int(hc)),
+            AssemblyLineCreate(line_number=line_number, ct_seconds=float(ct_seconds), hc=0, hc_map=hc_map),
         )
     except (ValidationError, ValueError, TypeError) as exc:
         return _render_settings(
@@ -1198,7 +1259,7 @@ def add_assembly_line(
             form={
                 "assembly_line_number": line_number,
                 "assembly_ct_seconds": ct_seconds,
-                "assembly_hc": hc,
+                **{f"hc_{k.lower()}": v for k, v in hc_map.items()},
             },
             open_modal="assembly-line-add",
         )
@@ -1214,15 +1275,22 @@ def update_assembly_line(
     request: Request,
     line_number: str = Form(...),
     ct_seconds: str = Form(...),
-    hc: str = Form(...),
+    hc_operator: str = Form(default="0"),
+    hc_logistic: str = Form(default="0"),
+    hc_teamleader: str = Form(default="0"),
+    hc_inspector: str = Form(default="0"),
+    hc_specialist: str = Form(default="0"),
+    hc_technican: str = Form(default="0"),
     db: Session = Depends(get_db),
 ):
     enforce_admin(_current_user(request))
+    hc_map: dict[str, float] = {}
     try:
+        hc_map = _build_hc_map(hc_operator, hc_logistic, hc_teamleader, hc_inspector, hc_specialist, hc_technican)
         assembly_line = settings_service.update_assembly_line(
             db,
             assembly_line_id,
-            AssemblyLineUpdate(line_number=line_number, ct_seconds=float(ct_seconds), hc=int(hc)),
+            AssemblyLineUpdate(line_number=line_number, ct_seconds=float(ct_seconds), hc_map=hc_map),
         )
     except (ValidationError, ValueError, TypeError) as exc:
         return _render_settings(
@@ -1236,7 +1304,7 @@ def update_assembly_line(
             form={
                 "assembly_line_number": line_number,
                 "assembly_ct_seconds": ct_seconds,
-                "assembly_hc": hc,
+                **{f"hc_{k.lower()}": v for k, v in hc_map.items()},
             },
             open_modal="assembly-line-edit",
         )
@@ -1263,6 +1331,100 @@ def delete_assembly_line(assembly_line_id: int, request: Request, db: Session = 
             open_modal="assembly-line-edit",
         )
     return RedirectResponse(url="/ui/settings/assembly-lines?message=Assembly+line+deleted", status_code=303)
+
+
+@router.post("/settings/assembly-lines/{assembly_line_id}/hc", response_model=None)
+def update_assembly_line_hc(
+    assembly_line_id: int,
+    request: Request,
+    hc_operator: str = Form(default="0"),
+    hc_logistic: str = Form(default="0"),
+    hc_teamleader: str = Form(default="0"),
+    hc_inspector: str = Form(default="0"),
+    hc_specialist: str = Form(default="0"),
+    hc_technican: str = Form(default="0"),
+    db: Session = Depends(get_db),
+):
+    enforce_admin(_current_user(request))
+    try:
+        settings_service.set_assembly_line_hc(db, assembly_line_id, _build_hc_map(hc_operator, hc_logistic, hc_teamleader, hc_inspector, hc_specialist, hc_technican))
+    except ValueError as exc:
+        return RedirectResponse(url=f"/ui/settings/assembly-lines?assembly_line_id={assembly_line_id}&error={quote_plus(str(exc))}", status_code=303)
+    return RedirectResponse(url=f"/ui/settings/assembly-lines?assembly_line_id={assembly_line_id}&message=HC+updated", status_code=303)
+
+
+@router.post("/settings/assembly-lines/{assembly_line_id}/materials-in/add", response_model=None)
+def add_assembly_line_material_in(assembly_line_id: int, request: Request, part_number: str | None = Form(default=None), material_id: str | None = Form(default=None), qty_per_piece: str = Form(...), db: Session = Depends(get_db)):
+    enforce_admin(_current_user(request))
+    try:
+        parsed_material_id = _parse_optional_int(material_id, "Material") if material_id else None
+        parsed_qty = _parse_optional_float(qty_per_piece, "Qty / piece")
+        if parsed_qty is None:
+            raise ValueError("Qty / piece is required.")
+        settings_service.add_material_in_to_assembly_line(db, assembly_line_id, material_id=parsed_material_id, part_number=part_number, qty_per_piece=parsed_qty)
+    except ValueError as exc:
+        return RedirectResponse(url=f"/ui/settings/assembly-lines?assembly_line_id={assembly_line_id}&error={quote_plus(str(exc))}", status_code=303)
+    return RedirectResponse(url=f"/ui/settings/assembly-lines?assembly_line_id={assembly_line_id}&message=Material+added", status_code=303)
+
+
+@router.post("/settings/assembly-lines/{assembly_line_id}/materials-in/{material_id}/qty", response_model=None)
+def update_assembly_line_material_in_qty(assembly_line_id: int, material_id: int, request: Request, qty_per_piece: str = Form(...), db: Session = Depends(get_db)):
+    enforce_admin(_current_user(request))
+    try:
+        parsed_qty = _parse_optional_float(qty_per_piece, "Qty / piece")
+        if parsed_qty is None:
+            raise ValueError("Qty / piece is required.")
+        settings_service.update_assembly_line_material_in_qty(db, assembly_line_id, material_id, parsed_qty)
+    except ValueError as exc:
+        return RedirectResponse(url=f"/ui/settings/assembly-lines?assembly_line_id={assembly_line_id}&error={quote_plus(str(exc))}", status_code=303)
+    return RedirectResponse(url=f"/ui/settings/assembly-lines?assembly_line_id={assembly_line_id}&message=Material+qty+updated", status_code=303)
+
+
+@router.post("/settings/assembly-lines/{assembly_line_id}/materials-in/{material_id}/remove", response_model=None)
+def remove_assembly_line_material_in(assembly_line_id: int, material_id: int, request: Request, db: Session = Depends(get_db)):
+    enforce_admin(_current_user(request))
+    try:
+        settings_service.remove_material_in_from_assembly_line(db, assembly_line_id, material_id)
+    except ValueError as exc:
+        return RedirectResponse(url=f"/ui/settings/assembly-lines?assembly_line_id={assembly_line_id}&error={quote_plus(str(exc))}", status_code=303)
+    return RedirectResponse(url=f"/ui/settings/assembly-lines?assembly_line_id={assembly_line_id}&message=Material+removed", status_code=303)
+
+
+@router.post("/settings/assembly-lines/{assembly_line_id}/materials-out/add", response_model=None)
+def add_assembly_line_material_out(assembly_line_id: int, request: Request, part_number: str | None = Form(default=None), material_id: str | None = Form(default=None), qty_per_piece: str = Form(...), db: Session = Depends(get_db)):
+    enforce_admin(_current_user(request))
+    try:
+        parsed_material_id = _parse_optional_int(material_id, "Material") if material_id else None
+        parsed_qty = _parse_optional_float(qty_per_piece, "Qty / piece")
+        if parsed_qty is None:
+            raise ValueError("Qty / piece is required.")
+        settings_service.add_material_out_to_assembly_line(db, assembly_line_id, material_id=parsed_material_id, part_number=part_number, qty_per_piece=parsed_qty)
+    except ValueError as exc:
+        return RedirectResponse(url=f"/ui/settings/assembly-lines?assembly_line_id={assembly_line_id}&error={quote_plus(str(exc))}", status_code=303)
+    return RedirectResponse(url=f"/ui/settings/assembly-lines?assembly_line_id={assembly_line_id}&message=Outcome+material+added", status_code=303)
+
+
+@router.post("/settings/assembly-lines/{assembly_line_id}/materials-out/{material_id}/qty", response_model=None)
+def update_assembly_line_material_out_qty(assembly_line_id: int, material_id: int, request: Request, qty_per_piece: str = Form(...), db: Session = Depends(get_db)):
+    enforce_admin(_current_user(request))
+    try:
+        parsed_qty = _parse_optional_float(qty_per_piece, "Qty / piece")
+        if parsed_qty is None:
+            raise ValueError("Qty / piece is required.")
+        settings_service.update_assembly_line_material_out_qty(db, assembly_line_id, material_id, parsed_qty)
+    except ValueError as exc:
+        return RedirectResponse(url=f"/ui/settings/assembly-lines?assembly_line_id={assembly_line_id}&error={quote_plus(str(exc))}", status_code=303)
+    return RedirectResponse(url=f"/ui/settings/assembly-lines?assembly_line_id={assembly_line_id}&message=Outcome+material+qty+updated", status_code=303)
+
+
+@router.post("/settings/assembly-lines/{assembly_line_id}/materials-out/{material_id}/remove", response_model=None)
+def remove_assembly_line_material_out(assembly_line_id: int, material_id: int, request: Request, db: Session = Depends(get_db)):
+    enforce_admin(_current_user(request))
+    try:
+        settings_service.remove_material_out_from_assembly_line(db, assembly_line_id, material_id)
+    except ValueError as exc:
+        return RedirectResponse(url=f"/ui/settings/assembly-lines?assembly_line_id={assembly_line_id}&error={quote_plus(str(exc))}", status_code=303)
+    return RedirectResponse(url=f"/ui/settings/assembly-lines?assembly_line_id={assembly_line_id}&message=Outcome+material+removed", status_code=303)
 
 
 @router.post("/settings/metalization-masks", response_model=None)
@@ -1408,6 +1570,43 @@ def remove_metalization_mask_material(
     except ValueError as exc:
         return RedirectResponse(url=f"/ui/settings/metalization-masks?mask_id={mask_id}&error={quote_plus(str(exc))}", status_code=303)
     return RedirectResponse(url=f"/ui/settings/metalization-masks?mask_id={mask_id}&message=Material+removed", status_code=303)
+
+
+@router.post("/settings/metalization-masks/{mask_id}/materials-out/add", response_model=None)
+def add_metalization_mask_material_out(mask_id: int, request: Request, part_number: str | None = Form(default=None), material_id: str | None = Form(default=None), qty_per_piece: str = Form(...), db: Session = Depends(get_db)):
+    enforce_admin(_current_user(request))
+    try:
+        parsed_material_id = _parse_optional_int(material_id, "Material") if material_id else None
+        parsed_qty = _parse_optional_float(qty_per_piece, "Qty / piece")
+        if parsed_qty is None:
+            raise ValueError("Qty / piece is required.")
+        settings_service.add_material_out_to_mask(db, mask_id, material_id=parsed_material_id, part_number=part_number, qty_per_piece=parsed_qty)
+    except ValueError as exc:
+        return RedirectResponse(url=f"/ui/settings/metalization-masks?mask_id={mask_id}&error={quote_plus(str(exc))}", status_code=303)
+    return RedirectResponse(url=f"/ui/settings/metalization-masks?mask_id={mask_id}&message=Outcome+material+added", status_code=303)
+
+
+@router.post("/settings/metalization-masks/{mask_id}/materials-out/{material_id}/qty", response_model=None)
+def update_metalization_mask_material_out_qty(mask_id: int, material_id: int, request: Request, qty_per_piece: str = Form(...), db: Session = Depends(get_db)):
+    enforce_admin(_current_user(request))
+    try:
+        parsed_qty = _parse_optional_float(qty_per_piece, "Qty / piece")
+        if parsed_qty is None:
+            raise ValueError("Qty / piece is required.")
+        settings_service.update_mask_material_out_qty(db, mask_id, material_id, parsed_qty)
+    except ValueError as exc:
+        return RedirectResponse(url=f"/ui/settings/metalization-masks?mask_id={mask_id}&error={quote_plus(str(exc))}", status_code=303)
+    return RedirectResponse(url=f"/ui/settings/metalization-masks?mask_id={mask_id}&message=Outcome+material+qty+updated", status_code=303)
+
+
+@router.post("/settings/metalization-masks/{mask_id}/materials-out/{material_id}/remove", response_model=None)
+def remove_metalization_mask_material_out(mask_id: int, material_id: int, request: Request, db: Session = Depends(get_db)):
+    enforce_admin(_current_user(request))
+    try:
+        settings_service.remove_material_out_from_mask(db, mask_id, material_id)
+    except ValueError as exc:
+        return RedirectResponse(url=f"/ui/settings/metalization-masks?mask_id={mask_id}&error={quote_plus(str(exc))}", status_code=303)
+    return RedirectResponse(url=f"/ui/settings/metalization-masks?mask_id={mask_id}&message=Outcome+material+removed", status_code=303)
 
 
 @router.post("/settings/metalization-chambers", response_model=None)
