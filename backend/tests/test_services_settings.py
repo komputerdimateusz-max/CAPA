@@ -6,8 +6,10 @@ import pytest
 from sqlalchemy import select
 
 from app.models.assembly_line import ProjectAssemblyLine
+from app.models.metalization import ProjectMetalizationMask
 from app.models.moulding import ProjectMouldingTool
 from app.schemas.assembly_line import AssemblyLineCreate
+from app.schemas.metalization import MetalizationChamberCreate, MetalizationMaskCreate
 from app.schemas.moulding import MouldingMachineCreate, MouldingMachineUpdate, MouldingToolCreate
 from app.services import settings as settings_service
 
@@ -432,3 +434,85 @@ def test_create_assembly_line_requires_unique_line_number(db_session):
             db_session,
             AssemblyLineCreate(line_number="L-01", ct_seconds=11, hc=4),
         )
+
+
+def test_create_and_list_metalization_mask(db_session):
+    created = settings_service.create_metalization_mask(
+        db_session,
+        MetalizationMaskCreate(mask_pn="M-100", description="Main mask", ct_seconds=13.5),
+    )
+
+    masks = settings_service.list_metalization_masks(db_session)
+
+    assert created.id is not None
+    assert len(masks) == 1
+    assert masks[0].mask_pn == "M-100"
+
+
+def test_create_metalization_mask_unique_mask_pn(db_session):
+    settings_service.create_metalization_mask(
+        db_session,
+        MetalizationMaskCreate(mask_pn="M-200", description=None, ct_seconds=8),
+    )
+
+    with pytest.raises(ValueError, match="Mask P/N already exists"):
+        settings_service.create_metalization_mask(
+            db_session,
+            MetalizationMaskCreate(mask_pn="M-200", description="Dup", ct_seconds=9),
+        )
+
+
+def test_create_metalization_chamber_with_mask_assignments(db_session):
+    mask_a = settings_service.create_metalization_mask(
+        db_session,
+        MetalizationMaskCreate(mask_pn="MC-A", description=None, ct_seconds=10),
+    )
+    mask_b = settings_service.create_metalization_mask(
+        db_session,
+        MetalizationMaskCreate(mask_pn="MC-B", description=None, ct_seconds=11),
+    )
+
+    chamber = settings_service.create_metalization_chamber(
+        db_session,
+        MetalizationChamberCreate(chamber_number="C-01", mask_ids=[mask_a.id, mask_b.id]),
+    )
+
+    assert chamber.id is not None
+    assert sorted(mask.mask_pn for mask in chamber.masks) == ["MC-A", "MC-B"]
+
+
+def test_project_metalization_assignments_add_remove_and_cascade(db_session):
+    engineer = settings_service.create_champion(
+        db_session,
+        first_name="Metal",
+        last_name="Engineer",
+        email="metal.engineer@example.com",
+        position="Process Engineer",
+        birth_date=None,
+    )
+    mask = settings_service.create_metalization_mask(
+        db_session,
+        MetalizationMaskCreate(mask_pn="PM-1", description=None, ct_seconds=10),
+    )
+    project = settings_service.create_project(
+        db_session,
+        "Project Metal",
+        "Serial production",
+        120,
+        5,
+        engineer.id,
+        None,
+    )
+
+    updated = settings_service.add_project_metalization_mask(db_session, project.id, mask.id)
+    updated = settings_service.add_project_metalization_mask(db_session, project.id, mask.id)
+    assert [assigned.mask_pn for assigned in updated.metalization_masks] == ["PM-1"]
+
+    removed = settings_service.remove_project_metalization_mask(db_session, project.id, mask.id)
+    assert removed.metalization_masks == []
+
+    settings_service.add_project_metalization_mask(db_session, project.id, mask.id)
+    db_session.delete(project)
+    db_session.commit()
+
+    assert db_session.scalars(select(ProjectMetalizationMask)).all() == []

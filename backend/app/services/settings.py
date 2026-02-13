@@ -7,11 +7,19 @@ from sqlalchemy.orm import Session
 
 from app.models.assembly_line import AssemblyLine
 from app.models.champion import Champion
+from app.models.metalization import MetalizationChamber, MetalizationMask
 from app.models.moulding import MouldingMachine, MouldingTool
 from app.models.project import Project
 from app.repositories import assembly_lines as assembly_lines_repo
+from app.repositories import metalization as metalization_repo
 from app.repositories import moulding as moulding_repo
 from app.schemas.assembly_line import AssemblyLineCreate, AssemblyLineUpdate
+from app.schemas.metalization import (
+    MetalizationChamberCreate,
+    MetalizationChamberUpdate,
+    MetalizationMaskCreate,
+    MetalizationMaskUpdate,
+)
 from app.schemas.moulding import (
     MouldingMachineCreate,
     MouldingMachineUpdate,
@@ -207,6 +215,19 @@ def _resolve_project_assembly_lines(db: Session, line_ids: list[int]) -> list[As
     return [lines_by_id[line_id] for line_id in line_ids]
 
 
+def _resolve_project_metalization_masks(db: Session, mask_ids: list[int]) -> list[MetalizationMask]:
+    if not mask_ids:
+        return []
+    stmt = select(MetalizationMask).where(MetalizationMask.id.in_(mask_ids))
+    masks = list(db.scalars(stmt).all())
+    found_ids = {mask.id for mask in masks}
+    missing_ids = [mask_id for mask_id in mask_ids if mask_id not in found_ids]
+    if missing_ids:
+        raise ValueError("Selected metalization masks do not exist.")
+    masks_by_id = {mask.id: mask for mask in masks}
+    return [masks_by_id[mask_id] for mask_id in mask_ids]
+
+
 def create_project(
     db: Session,
     name: str,
@@ -217,6 +238,7 @@ def create_project(
     due_date: date | None,
     moulding_tool_ids: list[int] | None = None,
     assembly_line_ids: list[int] | None = None,
+    metalization_mask_ids: list[int] | None = None,
 ) -> Project:
     cleaned = _normalize_name(name)
     if not cleaned:
@@ -228,6 +250,8 @@ def create_project(
     line_ids = _normalize_project_assignment_ids(assembly_line_ids, "Assembly lines")
     tools = _resolve_project_moulding_tools(db, tool_ids)
     lines = _resolve_project_assembly_lines(db, line_ids)
+    mask_ids = _normalize_project_assignment_ids(metalization_mask_ids, "Metalization masks")
+    masks = _resolve_project_metalization_masks(db, mask_ids)
 
     project = Project(
         name=cleaned,
@@ -239,6 +263,7 @@ def create_project(
     )
     project.moulding_tools = tools
     project.assembly_lines = lines
+    project.metalization_masks = masks
     db.add(project)
     db.commit()
     db.refresh(project)
@@ -256,6 +281,7 @@ def update_project(
     due_date: date | None,
     moulding_tool_ids: list[int] | None = None,
     assembly_line_ids: list[int] | None = None,
+    metalization_mask_ids: list[int] | None = None,
 ) -> Project:
     cleaned = _normalize_name(name)
     if not cleaned:
@@ -274,6 +300,8 @@ def update_project(
     line_ids = _normalize_project_assignment_ids(assembly_line_ids, "Assembly lines")
     tools = _resolve_project_moulding_tools(db, tool_ids)
     lines = _resolve_project_assembly_lines(db, line_ids)
+    mask_ids = _normalize_project_assignment_ids(metalization_mask_ids, "Metalization masks")
+    masks = _resolve_project_metalization_masks(db, mask_ids)
 
     project.name = cleaned
     project.status = _normalize_project_status(status)
@@ -283,6 +311,7 @@ def update_project(
     project.due_date = _normalize_date(due_date)
     project.moulding_tools = tools
     project.assembly_lines = lines
+    project.metalization_masks = masks
     db.add(project)
     db.commit()
     db.refresh(project)
@@ -335,6 +364,32 @@ def remove_project_assembly_line(db: Session, project_id: int, line_id: int) -> 
     if not project:
         raise ValueError("Project not found.")
     project.assembly_lines = [line for line in project.assembly_lines if line.id != line_id]
+    db.add(project)
+    db.commit()
+    db.refresh(project)
+    return project
+
+
+def add_project_metalization_mask(db: Session, project_id: int, mask_id: int) -> Project:
+    project = db.get(Project, project_id)
+    if not project:
+        raise ValueError("Project not found.")
+    mask = db.get(MetalizationMask, mask_id)
+    if not mask:
+        raise ValueError("Selected metalization mask does not exist.")
+    if all(existing.id != mask.id for existing in project.metalization_masks):
+        project.metalization_masks.append(mask)
+    db.add(project)
+    db.commit()
+    db.refresh(project)
+    return project
+
+
+def remove_project_metalization_mask(db: Session, project_id: int, mask_id: int) -> Project:
+    project = db.get(Project, project_id)
+    if not project:
+        raise ValueError("Project not found.")
+    project.metalization_masks = [mask for mask in project.metalization_masks if mask.id != mask_id]
     db.add(project)
     db.commit()
     db.refresh(project)
@@ -542,3 +597,115 @@ def delete_assembly_line(db: Session, assembly_line_id: int) -> None:
     if assembly_line is None:
         raise ValueError("Assembly line not found.")
     assembly_lines_repo.delete_assembly_line(db, assembly_line=assembly_line)
+
+
+def _normalize_mask_ids(mask_ids: list[int] | None) -> list[int]:
+    normalized = mask_ids or []
+    if len(normalized) != len(set(normalized)):
+        raise ValueError("Masks assigned cannot contain duplicates.")
+    return normalized
+
+
+def _resolve_masks(db: Session, mask_ids: list[int]) -> list[MetalizationMask]:
+    if not mask_ids:
+        return []
+    stmt = select(MetalizationMask).where(MetalizationMask.id.in_(mask_ids))
+    masks = list(db.scalars(stmt).all())
+    found_ids = {mask.id for mask in masks}
+    missing_ids = [mask_id for mask_id in mask_ids if mask_id not in found_ids]
+    if missing_ids:
+        raise ValueError("Selected metalization masks do not exist.")
+    masks_by_id = {mask.id: mask for mask in masks}
+    return [masks_by_id[mask_id] for mask_id in mask_ids]
+
+
+def _ensure_unique_mask_pn(db: Session, mask_pn: str, exclude_id: int | None = None) -> None:
+    stmt = select(MetalizationMask).where(func.lower(MetalizationMask.mask_pn) == mask_pn.lower())
+    if exclude_id is not None:
+        stmt = stmt.where(MetalizationMask.id != exclude_id)
+    if db.scalar(stmt):
+        raise ValueError("Mask P/N already exists.")
+
+
+def _ensure_unique_chamber_number(db: Session, chamber_number: str, exclude_id: int | None = None) -> None:
+    stmt = select(MetalizationChamber).where(func.lower(MetalizationChamber.chamber_number) == chamber_number.lower())
+    if exclude_id is not None:
+        stmt = stmt.where(MetalizationChamber.id != exclude_id)
+    if db.scalar(stmt):
+        raise ValueError("Chamber number already exists.")
+
+
+def list_metalization_masks(db: Session) -> list[MetalizationMask]:
+    return metalization_repo.list_metalization_masks(db)
+
+
+def create_metalization_mask(db: Session, data: MetalizationMaskCreate) -> MetalizationMask:
+    mask_pn = _normalize_required_text(data.mask_pn, "Mask P/N")
+    _ensure_unique_mask_pn(db, mask_pn)
+    return metalization_repo.create_metalization_mask(
+        db,
+        mask_pn=mask_pn,
+        description=_normalize_optional_text(data.description),
+        ct_seconds=_normalize_non_negative_ct(data.ct_seconds),
+    )
+
+
+def update_metalization_mask(db: Session, mask_id: int, data: MetalizationMaskUpdate) -> MetalizationMask:
+    mask = metalization_repo.get_metalization_mask(db, mask_id)
+    if mask is None:
+        raise ValueError("Metalization mask not found.")
+    mask_pn = _normalize_required_text(data.mask_pn, "Mask P/N")
+    _ensure_unique_mask_pn(db, mask_pn, exclude_id=mask_id)
+    return metalization_repo.update_metalization_mask(
+        db,
+        mask=mask,
+        mask_pn=mask_pn,
+        description=_normalize_optional_text(data.description),
+        ct_seconds=_normalize_non_negative_ct(data.ct_seconds),
+    )
+
+
+def delete_metalization_mask(db: Session, mask_id: int) -> None:
+    mask = metalization_repo.get_metalization_mask(db, mask_id)
+    if mask is None:
+        raise ValueError("Metalization mask not found.")
+    metalization_repo.delete_metalization_mask(db, mask=mask)
+
+
+def list_metalization_chambers(db: Session) -> list[MetalizationChamber]:
+    return metalization_repo.list_metalization_chambers(db)
+
+
+def create_metalization_chamber(db: Session, data: MetalizationChamberCreate) -> MetalizationChamber:
+    chamber_number = _normalize_required_text(data.chamber_number, "Chamber number")
+    _ensure_unique_chamber_number(db, chamber_number)
+    mask_ids = _normalize_mask_ids(data.mask_ids)
+    masks = _resolve_masks(db, mask_ids)
+    return metalization_repo.create_metalization_chamber(
+        db,
+        chamber_number=chamber_number,
+        masks=masks,
+    )
+
+
+def update_metalization_chamber(db: Session, chamber_id: int, data: MetalizationChamberUpdate) -> MetalizationChamber:
+    chamber = metalization_repo.get_metalization_chamber(db, chamber_id)
+    if chamber is None:
+        raise ValueError("Metalization chamber not found.")
+    chamber_number = _normalize_required_text(data.chamber_number, "Chamber number")
+    _ensure_unique_chamber_number(db, chamber_number, exclude_id=chamber_id)
+    mask_ids = _normalize_mask_ids(data.mask_ids)
+    masks = _resolve_masks(db, mask_ids)
+    return metalization_repo.update_metalization_chamber(
+        db,
+        chamber=chamber,
+        chamber_number=chamber_number,
+        masks=masks,
+    )
+
+
+def delete_metalization_chamber(db: Session, chamber_id: int) -> None:
+    chamber = metalization_repo.get_metalization_chamber(db, chamber_id)
+    if chamber is None:
+        raise ValueError("Metalization chamber not found.")
+    metalization_repo.delete_metalization_chamber(db, chamber=chamber)

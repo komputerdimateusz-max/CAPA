@@ -9,6 +9,7 @@ from app.models.action import Action
 from app.models.project import Project
 from app.models.user import User
 from app.schemas.assembly_line import AssemblyLineCreate
+from app.schemas.metalization import MetalizationMaskCreate
 from app.schemas.moulding import MouldingToolCreate
 from app.services import settings as settings_service
 
@@ -20,6 +21,8 @@ def test_ui_settings_page(client):
     assert "Global Settings" in response.text
     assert "Moulding Machines" in response.text
     assert "Assembly Lines" in response.text
+    assert "Metalization Masks" in response.text
+    assert "Metalization Chambers" in response.text
 
 
 def test_ui_settings_champions_subpage(client):
@@ -169,6 +172,10 @@ def test_ui_project_assignment_endpoints_and_assignments_page(client, db_session
         db_session,
         AssemblyLineCreate(line_number="UI-L1", ct_seconds=8, hc=3),
     )
+    mask = settings_service.create_metalization_mask(
+        db_session,
+        MetalizationMaskCreate(mask_pn="UI-M1", description="Coating", ct_seconds=9),
+    )
     project = settings_service.create_project(
         db_session,
         "UI Project",
@@ -189,15 +196,22 @@ def test_ui_project_assignment_endpoints_and_assignments_page(client, db_session
         data={"line_id": str(line.id)},
         allow_redirects=False,
     )
+    add_mask_resp = client.post(
+        f"/ui/settings/projects/{project.id}/metalization-masks/add",
+        data={"mask_pn": "ui-m1"},
+        allow_redirects=False,
+    )
 
     assert add_tool_resp.status_code == 303
     assert add_line_resp.status_code == 303
+    assert add_mask_resp.status_code == 303
 
     assignments_resp = client.get(f"/ui/settings/projects/{project.id}/assignments")
     assert assignments_resp.status_code == 200
     assert "Project Assignments" in assignments_resp.text
     assert "UI-T1" in assignments_resp.text
     assert "UI-L1" in assignments_resp.text
+    assert "UI-M1" in assignments_resp.text
 
     remove_tool_resp = client.post(
         f"/ui/settings/projects/{project.id}/tools/remove",
@@ -209,9 +223,15 @@ def test_ui_project_assignment_endpoints_and_assignments_page(client, db_session
         data={"line_id": str(line.id)},
         allow_redirects=False,
     )
+    remove_mask_resp = client.post(
+        f"/ui/settings/projects/{project.id}/metalization-masks/remove",
+        data={"mask_id": str(mask.id)},
+        allow_redirects=False,
+    )
 
     assert remove_tool_resp.status_code == 303
     assert remove_line_resp.status_code == 303
+    assert remove_mask_resp.status_code == 303
 
 
 
@@ -280,3 +300,4 @@ def test_ui_settings_projects_table_has_assignments_links(client, db_session):
 
     assert response.status_code == 200
     assert f'/ui/settings/projects/{project.id}/assignments' in response.text
+    assert "0 masks" in response.text
