@@ -224,7 +224,7 @@ def test_ui_metalization_chamber_masks_page_and_count_link(client, db_session):
 def test_ui_materials_crud_endpoints(client, db_session):
     create_response = client.post(
         "/ui/settings/materials",
-        data={"part_number": "MAT-01", "description": "Granulate", "unit": "kg", "price_per_unit": "9.5"},
+        data={"part_number": "MAT-01", "description": "Granulate", "unit": "kg", "price_per_unit": "9.5", "category": "Raw material", "make_buy": "1"},
         allow_redirects=False,
     )
     assert create_response.status_code == 303
@@ -237,14 +237,14 @@ def test_ui_materials_crud_endpoints(client, db_session):
     material = settings_service.list_materials(db_session)[0]
     update_response = client.post(
         f"/ui/settings/materials/{material.id}",
-        data={"part_number": "MAT-01", "description": "Updated", "unit": "pcs", "price_per_unit": "11"},
+        data={"part_number": "MAT-01", "description": "Updated", "unit": "pcs", "price_per_unit": "11", "category": "FG"},
         allow_redirects=False,
     )
     assert update_response.status_code == 303
 
     duplicate_response = client.post(
         "/ui/settings/materials",
-        data={"part_number": "mat-01", "description": "Dup", "unit": "pcs", "price_per_unit": "1"},
+        data={"part_number": "mat-01", "description": "Dup", "unit": "pcs", "price_per_unit": "1", "category": "metal parts"},
         allow_redirects=True,
     )
     assert duplicate_response.status_code == 200
@@ -441,11 +441,11 @@ def test_ui_moulding_tools_list_shows_hc_total_unit_and_material_cost(client, db
     )
     material_a = settings_service.create_material(
         db_session,
-        MaterialCreate(part_number="UI-MAT-T-1", description="mat-a", unit="kg", price_per_unit=3),
+        MaterialCreate(part_number="UI-MAT-T-1", description="mat-a", unit="kg", price_per_unit=3, category="Raw material", make_buy=False),
     )
     material_b = settings_service.create_material(
         db_session,
-        MaterialCreate(part_number="UI-MAT-T-2", description="mat-b", unit="kg", price_per_unit=4),
+        MaterialCreate(part_number="UI-MAT-T-2", description="mat-b", unit="kg", price_per_unit=4, category="metal parts", make_buy=True),
     )
     settings_service.add_material_to_tool(db_session, tool.id, material_id=material_a.id, qty_per_piece=2)
     settings_service.add_material_to_tool(db_session, tool.id, material_id=material_b.id, qty_per_piece=1.5)
@@ -468,7 +468,7 @@ def test_ui_metalization_masks_list_shows_hc_total_unit_and_material_cost(client
     )
     material = settings_service.create_material(
         db_session,
-        MaterialCreate(part_number="UI-MAT-M-1", description="mat", unit="ml", price_per_unit=10),
+        MaterialCreate(part_number="UI-MAT-M-1", description="mat", unit="ml", price_per_unit=10, category="sub-group", make_buy=False),
     )
     settings_service.add_material_to_mask(db_session, mask.id, material_id=material.id, qty_per_piece=0.5)
 
@@ -516,7 +516,7 @@ def test_ui_lists_show_outcome_material_cost_columns(client, db_session):
     )
     material = settings_service.create_material(
         db_session,
-        MaterialCreate(part_number="UI-OUT-MAT", description="mat", unit="kg", price_per_unit=2),
+        MaterialCreate(part_number="UI-OUT-MAT", description="mat", unit="kg", price_per_unit=2, category="Raw material", make_buy=False),
     )
     settings_service.add_material_out_to_tool(db_session, tool.id, material_id=material.id, qty_per_piece=3)
     settings_service.add_material_out_to_mask(db_session, mask.id, material_id=material.id, qty_per_piece=4)
@@ -540,7 +540,7 @@ def test_ui_assembly_lines_list_shows_labour_and_material_costs(client, db_sessi
     )
     material = settings_service.create_material(
         db_session,
-        MaterialCreate(part_number="UI-AL-MAT", description="mat", unit="kg", price_per_unit=5),
+        MaterialCreate(part_number="UI-AL-MAT", description="mat", unit="kg", price_per_unit=5, category="FG", make_buy=True),
     )
     settings_service.add_material_in_to_assembly_line(db_session, line.id, material_id=material.id, qty_per_piece=1)
     settings_service.add_material_out_to_assembly_line(db_session, line.id, material_id=material.id, qty_per_piece=0.2)

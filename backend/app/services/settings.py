@@ -1388,6 +1388,8 @@ def create_material(db: Session, data: MaterialCreate) -> Material:
         description=_normalize_optional_text(data.description),
         unit=unit,
         price_per_unit=_normalize_non_negative_price(data.price_per_unit),
+        category=data.category,
+        make_buy=data.make_buy,
     )
 
 
@@ -1405,6 +1407,8 @@ def update_material(db: Session, material_id: int, data: MaterialUpdate) -> Mate
         description=_normalize_optional_text(data.description),
         unit=unit,
         price_per_unit=_normalize_non_negative_price(data.price_per_unit),
+        category=data.category,
+        make_buy=data.make_buy,
     )
 
 

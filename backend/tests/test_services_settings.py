@@ -695,27 +695,46 @@ def test_compute_unit_labour_cost_returns_zero_for_null_ct_and_missing_inputs(db
 def test_material_create_list_unique_and_update(db_session):
     created = settings_service.create_material(
         db_session,
-        MaterialCreate(part_number="MAT-01", description="Pellets", unit="kg", price_per_unit=12.5),
+        MaterialCreate(part_number="MAT-01", description="Pellets", unit="kg", price_per_unit=12.5, category="Raw material", make_buy=False),
     )
 
     materials = settings_service.list_materials(db_session)
     assert [material.part_number for material in materials] == ["MAT-01"]
     assert created.unit == "kg"
+    assert created.category == "Raw material"
+    assert created.make_buy is False
 
     with pytest.raises(ValueError, match="already exists"):
         settings_service.create_material(
             db_session,
-            MaterialCreate(part_number="mat-01", description="dup", unit="kg", price_per_unit=1),
+            MaterialCreate(part_number="mat-01", description="dup", unit="kg", price_per_unit=1, category="Raw material", make_buy=False),
         )
 
     updated = settings_service.update_material(
         db_session,
         created.id,
-        MaterialUpdate(part_number="MAT-01", description="Updated", unit="pcs", price_per_unit=15),
+        MaterialUpdate(part_number="MAT-01", description="Updated", unit="pcs", price_per_unit=15, category="FG", make_buy=True),
     )
     assert updated.description == "Updated"
     assert updated.unit == "pcs"
     assert updated.price_per_unit == 15
+    assert updated.category == "FG"
+    assert updated.make_buy is True
+
+
+def test_material_invalid_category_rejected(db_session):
+    with pytest.raises(ValueError, match="Category must be one of"):
+        settings_service.create_material(
+            db_session,
+            MaterialCreate(
+                part_number="MAT-INVALID",
+                description="bad",
+                unit="kg",
+                price_per_unit=1,
+                category="Invalid category",
+                make_buy=False,
+            ),
+        )
 
 
 def test_tool_material_add_update_remove(db_session):
@@ -725,7 +744,7 @@ def test_tool_material_add_update_remove(db_session):
     )
     material = settings_service.create_material(
         db_session,
-        MaterialCreate(part_number="BOM-M-1", description="Granulate", unit="kg", price_per_unit=1),
+        MaterialCreate(part_number="BOM-M-1", description="Granulate", unit="kg", price_per_unit=1, category="Raw material", make_buy=False),
     )
 
     settings_service.add_material_to_tool(db_session, tool.id, material_id=material.id, qty_per_piece=1.5)
@@ -753,7 +772,7 @@ def test_mask_material_add_update_remove(db_session):
     )
     material = settings_service.create_material(
         db_session,
-        MaterialCreate(part_number="BOM-M-2", description="Paint", unit="ml", price_per_unit=1),
+        MaterialCreate(part_number="BOM-M-2", description="Paint", unit="ml", price_per_unit=1, category="Raw material", make_buy=False),
     )
 
     settings_service.add_material_to_mask(db_session, mask.id, material_id=material.id, qty_per_piece=0.25)
@@ -780,7 +799,7 @@ def test_reject_non_positive_qty_for_tool_and_mask(db_session):
     )
     material = settings_service.create_material(
         db_session,
-        MaterialCreate(part_number="BOM-M-3", description="Resin", unit="kg", price_per_unit=1),
+        MaterialCreate(part_number="BOM-M-3", description="Resin", unit="kg", price_per_unit=1, category="Raw material", make_buy=False),
     )
 
     with pytest.raises(ValueError, match="greater than 0"):
@@ -818,11 +837,11 @@ def test_compute_material_cost_helpers_for_tool_and_mask(db_session):
     )
     material_a = settings_service.create_material(
         db_session,
-        MaterialCreate(part_number="BOM-M-COST-1", description="A", unit="kg", price_per_unit=2.5),
+        MaterialCreate(part_number="BOM-M-COST-1", description="A", unit="kg", price_per_unit=2.5, category="Raw material", make_buy=False),
     )
     material_b = settings_service.create_material(
         db_session,
-        MaterialCreate(part_number="BOM-M-COST-2", description="B", unit="kg", price_per_unit=3),
+        MaterialCreate(part_number="BOM-M-COST-2", description="B", unit="kg", price_per_unit=3, category="Raw material", make_buy=False),
     )
 
     assert settings_service.compute_material_cost_for_tool(db_session, tool.id) == pytest.approx(0)
@@ -845,11 +864,11 @@ def test_assembly_line_labour_and_material_costs(db_session):
     )
     mat_in = settings_service.create_material(
         db_session,
-        MaterialCreate(part_number="AL-IN", description="in", unit="kg", price_per_unit=4),
+        MaterialCreate(part_number="AL-IN", description="in", unit="kg", price_per_unit=4, category="metal parts", make_buy=True),
     )
     mat_out = settings_service.create_material(
         db_session,
-        MaterialCreate(part_number="AL-OUT", description="out", unit="kg", price_per_unit=5),
+        MaterialCreate(part_number="AL-OUT", description="out", unit="kg", price_per_unit=5, category="FG", make_buy=True),
     )
     settings_service.add_material_in_to_assembly_line(db_session, line.id, material_id=mat_in.id, qty_per_piece=2)
     settings_service.add_material_out_to_assembly_line(db_session, line.id, material_id=mat_out.id, qty_per_piece=0.5)

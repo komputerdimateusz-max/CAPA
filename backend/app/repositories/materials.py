@@ -22,12 +22,16 @@ def create_material(
     description: str | None,
     unit: str,
     price_per_unit: float,
+    category: str,
+    make_buy: bool,
 ) -> Material:
     material = Material(
         part_number=part_number,
         description=description,
         unit=unit,
         price_per_unit=price_per_unit,
+        category=category,
+        make_buy=make_buy,
     )
     db.add(material)
     db.commit()
@@ -43,11 +47,15 @@ def update_material(
     description: str | None,
     unit: str,
     price_per_unit: float,
+    category: str,
+    make_buy: bool,
 ) -> Material:
     material.part_number = part_number
     material.description = description
     material.unit = unit
     material.price_per_unit = price_per_unit
+    material.category = category
+    material.make_buy = make_buy
     db.add(material)
     db.commit()
     db.refresh(material)

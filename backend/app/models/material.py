@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from sqlalchemy import Float, Integer, String
+from sqlalchemy import Boolean, Float, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -14,3 +14,5 @@ class Material(Base):
     description: Mapped[str | None] = mapped_column(String(500), nullable=True)
     unit: Mapped[str] = mapped_column(String(50), nullable=False)
     price_per_unit: Mapped[float] = mapped_column(Float, nullable=False, default=0)
+    category: Mapped[str] = mapped_column(String(100), nullable=False, default="Raw material")
+    make_buy: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
