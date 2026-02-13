@@ -9,7 +9,7 @@ from app.models.action import Action
 from app.models.project import Project
 from app.models.user import User
 from app.schemas.assembly_line import AssemblyLineCreate
-from app.schemas.metalization import MetalizationMaskCreate
+from app.schemas.metalization import MetalizationChamberCreate, MetalizationMaskCreate
 from app.schemas.moulding import MouldingMachineCreate, MouldingToolCreate
 from app.services import settings as settings_service
 
@@ -23,6 +23,7 @@ def test_ui_settings_page(client):
     assert "Assembly Lines" in response.text
     assert "Metalization Masks" in response.text
     assert "Metalization Chambers" in response.text
+    assert "Materials" in response.text
     assert "Labour cost" in response.text
 
 
@@ -187,6 +188,66 @@ def test_ui_moulding_machine_tools_page_returns_404_for_missing_machine(client):
     response = client.get("/ui/settings/moulding-machines/999999/tools")
 
     assert response.status_code == 404
+
+
+
+def test_ui_metalization_chamber_masks_page_and_count_link(client, db_session):
+    mask_a = settings_service.create_metalization_mask(
+        db_session,
+        MetalizationMaskCreate(mask_pn="M00002", description="Mask B", ct_seconds=10),
+    )
+    mask_b = settings_service.create_metalization_mask(
+        db_session,
+        MetalizationMaskCreate(mask_pn="M00001", description="Mask A", ct_seconds=12),
+    )
+    chamber = settings_service.create_metalization_chamber(
+        db_session,
+        data=MetalizationChamberCreate(
+            chamber_number="CH-01",
+            mask_ids=[mask_a.id, mask_b.id],
+        ),
+    )
+
+    list_response = client.get("/ui/settings/metalization-chambers")
+    assert list_response.status_code == 200
+    assert f'href="/ui/settings/metalization-chambers/{chamber.id}/masks">2</a>' in list_response.text
+
+    masks_response = client.get(f"/ui/settings/metalization-chambers/{chamber.id}/masks")
+    assert masks_response.status_code == 200
+    assert "Metalization Chamber Masks" in masks_response.text
+    assert "Chamber: CH-01" in masks_response.text
+    assert "M00001" in masks_response.text
+    assert "M00002" in masks_response.text
+
+
+def test_ui_materials_crud_endpoints(client, db_session):
+    create_response = client.post(
+        "/ui/settings/materials",
+        data={"part_number": "MAT-01", "description": "Granulate", "unit": "kg", "price_per_unit": "9.5"},
+        allow_redirects=False,
+    )
+    assert create_response.status_code == 303
+
+    list_response = client.get("/ui/settings/materials")
+    assert list_response.status_code == 200
+    assert "Materials" in list_response.text
+    assert "MAT-01" in list_response.text
+
+    material = settings_service.list_materials(db_session)[0]
+    update_response = client.post(
+        f"/ui/settings/materials/{material.id}",
+        data={"part_number": "MAT-01", "description": "Updated", "unit": "pcs", "price_per_unit": "11"},
+        allow_redirects=False,
+    )
+    assert update_response.status_code == 303
+
+    duplicate_response = client.post(
+        "/ui/settings/materials",
+        data={"part_number": "mat-01", "description": "Dup", "unit": "pcs", "price_per_unit": "1"},
+        allow_redirects=True,
+    )
+    assert duplicate_response.status_code == 200
+    assert "already exists" in duplicate_response.text
 
 def test_ui_project_assignment_endpoints_and_assignments_page(client, db_session):
     engineer = settings_service.create_champion(

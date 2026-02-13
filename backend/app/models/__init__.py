@@ -8,6 +8,7 @@ from app.models.user import User
 from app.models.moulding import MouldingMachine, MouldingMachineTool, MouldingTool, MouldingToolHC
 from app.models.assembly_line import AssemblyLine
 from app.models.labour_cost import LabourCost
+from app.models.material import Material
 from app.models.metalization import (
     MetalizationChamber,
     MetalizationChamberMask,
@@ -30,6 +31,7 @@ __all__ = [
     "MouldingToolHC",
     "AssemblyLine",
     "LabourCost",
+    "Material",
     "MetalizationMask",
     "MetalizationMaskHC",
     "MetalizationChamber",
