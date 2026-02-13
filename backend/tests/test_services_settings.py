@@ -717,10 +717,58 @@ def test_material_create_list_unique_and_update(db_session):
     )
     assert updated.description == "Updated"
     assert updated.unit == "pcs"
-    assert updated.price_per_unit == 15
+    assert updated.price_per_unit is None
     assert updated.category == "FG"
     assert updated.make_buy is True
 
+
+
+
+def test_material_make_sets_price_to_null(db_session):
+    created = settings_service.create_material(
+        db_session,
+        MaterialCreate(part_number="MAT-MAKE", description="Internal", unit="kg", price_per_unit=99, category="FG", make_buy=True),
+    )
+    assert created.price_per_unit is None
+
+
+def test_material_buy_requires_price(db_session):
+    with pytest.raises(ValueError, match="Price per unit is required for BUY material"):
+        settings_service.create_material(
+            db_session,
+            MaterialCreate(part_number="MAT-BUY", description="Purchased", unit="kg", price_per_unit=None, category="Raw material", make_buy=False),
+        )
+
+
+def test_outcome_save_updates_make_material_price_and_not_buy(db_session):
+    settings_service.update_labour_cost(db_session, "Operator", 36)
+    tool = settings_service.create_moulding_tool(
+        db_session,
+        MouldingToolCreate(tool_pn="OUT-TOOL", description=None, ct_seconds=120, hc_map={"Operator": 2}),
+    )
+    mat_in = settings_service.create_material(
+        db_session,
+        MaterialCreate(part_number="OUT-IN", description="in", unit="kg", price_per_unit=4, category="Raw material", make_buy=False),
+    )
+    make_out = settings_service.create_material(
+        db_session,
+        MaterialCreate(part_number="OUT-MAKE", description="make", unit="pcs", price_per_unit=None, category="FG", make_buy=True),
+    )
+    buy_out = settings_service.create_material(
+        db_session,
+        MaterialCreate(part_number="OUT-BUY", description="buy", unit="pcs", price_per_unit=50, category="FG", make_buy=False),
+    )
+
+    settings_service.add_material_to_tool(db_session, tool.id, material_id=mat_in.id, qty_per_piece=1.5)
+    settings_service.add_material_out_to_tool(db_session, tool.id, material_id=make_out.id, qty_per_piece=1)
+    refreshed_make = settings_service.list_materials(db_session)
+    make_material = next(m for m in refreshed_make if m.id == make_out.id)
+    assert make_material.price_per_unit == pytest.approx(7.2)
+
+    settings_service.add_material_out_to_tool(db_session, tool.id, material_id=buy_out.id, qty_per_piece=1)
+    refreshed_buy = settings_service.list_materials(db_session)
+    buy_material = next(m for m in refreshed_buy if m.id == buy_out.id)
+    assert buy_material.price_per_unit == pytest.approx(50)
 
 def test_material_invalid_category_rejected(db_session):
     with pytest.raises(ValueError, match="Category must be one of"):
@@ -868,7 +916,7 @@ def test_assembly_line_labour_and_material_costs(db_session):
     )
     mat_out = settings_service.create_material(
         db_session,
-        MaterialCreate(part_number="AL-OUT", description="out", unit="kg", price_per_unit=5, category="FG", make_buy=True),
+        MaterialCreate(part_number="AL-OUT", description="out", unit="kg", price_per_unit=5, category="FG", make_buy=False),
     )
     settings_service.add_material_in_to_assembly_line(db_session, line.id, material_id=mat_in.id, qty_per_piece=2)
     settings_service.add_material_out_to_assembly_line(db_session, line.id, material_id=mat_out.id, qty_per_piece=0.5)

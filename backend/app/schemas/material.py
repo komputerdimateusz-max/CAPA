@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 MATERIAL_CATEGORY_OPTIONS = (
@@ -16,7 +16,7 @@ class MaterialBase(BaseModel):
     part_number: str = Field(..., min_length=1)
     description: str | None = None
     unit: str = Field(..., min_length=1)
-    price_per_unit: float = Field(..., ge=0)
+    price_per_unit: float | None = Field(default=None, ge=0)
     category: str = Field(..., min_length=1)
     make_buy: bool = False
 
@@ -43,6 +43,14 @@ class MaterialBase(BaseModel):
         if cleaned not in MATERIAL_CATEGORY_OPTIONS:
             raise ValueError(f"Category must be one of: {', '.join(MATERIAL_CATEGORY_OPTIONS)}")
         return cleaned
+
+    @model_validator(mode="after")
+    def validate_make_buy_price_rules(self) -> "MaterialBase":
+        if self.make_buy and self.price_per_unit is not None:
+            self.price_per_unit = None
+        if not self.make_buy and self.price_per_unit is None:
+            raise ValueError("Price per unit is required for BUY material.")
+        return self
 
 
 class MaterialCreate(MaterialBase):

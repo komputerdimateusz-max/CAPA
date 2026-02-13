@@ -95,6 +95,7 @@
         {% endif %}
 
         <h5>Material outcome (per 1 piece)</h5>
+      <p class="muted">Warning: input materials without price are treated as 0 in process cost.</p>
         <form class="form-grid" method="post" action="/ui/settings/assembly-lines/{{ selected_assembly_line.id }}/materials-out/add">
           <label>Material part number
             <input list="assembly-materials-out-datalist" name="part_number" placeholder="Type material part number…" required />

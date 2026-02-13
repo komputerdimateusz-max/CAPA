@@ -13,6 +13,6 @@ class Material(Base):
     part_number: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
     description: Mapped[str | None] = mapped_column(String(500), nullable=True)
     unit: Mapped[str] = mapped_column(String(50), nullable=False)
-    price_per_unit: Mapped[float] = mapped_column(Float, nullable=False, default=0)
+    price_per_unit: Mapped[float | None] = mapped_column(Float, nullable=True)
     category: Mapped[str] = mapped_column(String(100), nullable=False, default="Raw material")
     make_buy: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)

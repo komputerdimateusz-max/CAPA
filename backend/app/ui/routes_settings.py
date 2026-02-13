@@ -1787,7 +1787,7 @@ def add_material(
     part_number: str = Form(...),
     description: str | None = Form(default=None),
     unit: str = Form(...),
-    price_per_unit: float = Form(...),
+    price_per_unit: str | None = Form(default=None),
     category: str = Form(...),
     make_buy: str | None = Form(default=None),
     db: Session = Depends(get_db),
@@ -1797,18 +1797,19 @@ def add_material(
         "part_number": part_number,
         "description": description or "",
         "unit": unit,
-        "price_per_unit": str(price_per_unit),
+        "price_per_unit": price_per_unit or "",
         "category": category,
         "make_buy": "1" if make_buy is not None else "0",
     }
     try:
+        parsed_price = _parse_optional_float(price_per_unit, "Price per unit [PLN]")
         settings_service.create_material(
             db,
             MaterialCreate(
                 part_number=part_number,
                 description=description,
                 unit=unit,
-                price_per_unit=price_per_unit,
+                price_per_unit=parsed_price,
                 category=category,
                 make_buy=make_buy is not None,
             ),
@@ -1834,7 +1835,7 @@ def edit_material(
     part_number: str = Form(...),
     description: str | None = Form(default=None),
     unit: str = Form(...),
-    price_per_unit: float = Form(...),
+    price_per_unit: str | None = Form(default=None),
     category: str = Form(...),
     make_buy: str | None = Form(default=None),
     db: Session = Depends(get_db),
@@ -1844,11 +1845,12 @@ def edit_material(
         "part_number": part_number,
         "description": description or "",
         "unit": unit,
-        "price_per_unit": str(price_per_unit),
+        "price_per_unit": price_per_unit or "",
         "category": category,
         "make_buy": "1" if make_buy is not None else "0",
     }
     try:
+        parsed_price = _parse_optional_float(price_per_unit, "Price per unit [PLN]")
         settings_service.update_material(
             db,
             material_id,
@@ -1856,7 +1858,7 @@ def edit_material(
                 part_number=part_number,
                 description=description,
                 unit=unit,
-                price_per_unit=price_per_unit,
+                price_per_unit=parsed_price,
                 category=category,
                 make_buy=make_buy is not None,
             ),
