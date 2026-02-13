@@ -77,28 +77,32 @@ def _current_user(request: Request):
 
 
 def _resolve_tool_id(db: Session, value: str) -> int:
-    parsed = _parse_optional_int(value, "Moulding tool")
-    if parsed is not None:
-        return parsed
     cleaned = value.strip()
     if not cleaned:
         raise ValueError("Moulding tool is required.")
     for tool in settings_service.list_moulding_tools(db):
         if tool.tool_pn.lower() == cleaned.lower():
             return tool.id
+    parsed = _parse_optional_int(value, "Moulding tool")
+    if parsed is not None:
+        return parsed
     raise ValueError("Selected moulding tool does not exist.")
 
 
-def _resolve_line_id(db: Session, value: str) -> int:
-    parsed = _parse_optional_int(value, "Assembly line")
-    if parsed is not None:
-        return parsed
+def _resolve_line_id(db: Session, value: str, *, from_line_number: bool = False) -> int:
     cleaned = value.strip()
     if not cleaned:
+        if from_line_number:
+            raise ValueError("Line number is required.")
         raise ValueError("Assembly line is required.")
     for line in settings_service.list_assembly_lines(db):
         if line.line_number.lower() == cleaned.lower():
             return line.id
+    parsed = _parse_optional_int(value, "Assembly line")
+    if parsed is not None and not from_line_number:
+        return parsed
+    if from_line_number:
+        raise ValueError("Unknown line number")
     raise ValueError("Selected assembly line does not exist.")
 
 
@@ -510,12 +514,16 @@ def update_project(
 def add_project_tool(
     project_id: int,
     request: Request,
-    tool_id: str = Form(...),
+    tool_id: str | None = Form(default=None),
+    tool_pn: str | None = Form(default=None),
     db: Session = Depends(get_db),
 ):
     enforce_admin(_current_user(request))
     try:
-        parsed_tool_id = _resolve_tool_id(db, tool_id)
+        tool_value = tool_pn if tool_pn is not None else tool_id
+        if tool_value is None:
+            raise ValueError("Moulding tool is required.")
+        parsed_tool_id = _resolve_tool_id(db, tool_value)
         settings_service.add_project_moulding_tool(db, project_id=project_id, tool_id=parsed_tool_id)
     except ValueError as exc:
         return RedirectResponse(
@@ -554,12 +562,18 @@ def remove_project_tool(
 def add_project_line(
     project_id: int,
     request: Request,
-    line_id: str = Form(...),
+    line_number: str | None = Form(default=None),
+    line_id: str | None = Form(default=None),
     db: Session = Depends(get_db),
 ):
     enforce_admin(_current_user(request))
     try:
-        parsed_line_id = _resolve_line_id(db, line_id)
+        if line_number is not None:
+            parsed_line_id = _resolve_line_id(db, line_number, from_line_number=True)
+        elif line_id is not None:
+            parsed_line_id = _resolve_line_id(db, line_id)
+        else:
+            raise ValueError("Assembly line is required.")
         settings_service.add_project_assembly_line(db, project_id=project_id, line_id=parsed_line_id)
     except ValueError as exc:
         return RedirectResponse(

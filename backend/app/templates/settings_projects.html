@@ -43,7 +43,7 @@
           <div class="assignment-widget">
             <h5>Moulding Tools</h5>
             <form class="assignment-add-form" method="post" action="/ui/settings/projects/{{ selected_project.id }}/tools/add">
-              <input name="tool_id" list="tool-options" placeholder="Search Tool P/N" required />
+              <input name="tool_pn" list="tool-options" placeholder="Type tool P/N" autocomplete="off" required />
               <datalist id="tool-options">
                 {% for tool in moulding_tools %}
                   <option value="{{ tool.tool_pn }}">{{ tool.tool_pn }}{% if tool.description %} — {{ tool.description }}{% endif %}</option>
@@ -68,10 +68,10 @@
           <div class="assignment-widget">
             <h5>Assembly Lines</h5>
             <form class="assignment-add-form" method="post" action="/ui/settings/projects/{{ selected_project.id }}/lines/add">
-              <input name="line_id" list="line-options" placeholder="Search line number" required />
+              <input name="line_number" list="line-options" placeholder="Type line number (e.g., PL74)" autocomplete="off" required />
               <datalist id="line-options">
                 {% for line in assembly_lines %}
-                  <option value="{{ line.line_number }}">{{ line.line_number }}</option>
+                  <option value="{{ line.line_number }}">Line {{ line.line_number }} (CT {{ line.ct_seconds }}s, HC {{ line.hc }})</option>
                 {% endfor %}
               </datalist>
               <button class="button secondary" type="submit">Add</button>
