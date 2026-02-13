@@ -6,7 +6,15 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.models.champion import Champion
+from app.models.moulding import MouldingMachine, MouldingTool
 from app.models.project import Project
+from app.repositories import moulding as moulding_repo
+from app.schemas.moulding import (
+    MouldingMachineCreate,
+    MouldingMachineUpdate,
+    MouldingToolCreate,
+    MouldingToolUpdate,
+)
 
 
 def _normalize_name(value: str) -> str:
@@ -224,3 +232,148 @@ def update_project(
     db.commit()
     db.refresh(project)
     return project
+
+
+
+def _normalize_required_text(value: str, label: str) -> str:
+    cleaned = " ".join(value.split()).strip()
+    if not cleaned:
+        raise ValueError(f"{label} is required.")
+    return cleaned
+
+
+def _normalize_optional_text(value: str | None) -> str | None:
+    if value is None:
+        return None
+    cleaned = value.strip()
+    return cleaned or None
+
+
+def _normalize_non_negative_ct(value: float) -> float:
+    if value < 0:
+        raise ValueError("CT must be greater than or equal to 0.")
+    return value
+
+
+def _normalize_tonnage(value: int | None) -> int | None:
+    if value is None:
+        return None
+    if value < 0:
+        raise ValueError("Tonnage must be greater than or equal to 0.")
+    return value
+
+
+def _normalize_tool_ids(tool_ids: list[int] | None) -> list[int]:
+    normalized = tool_ids or []
+    if len(normalized) != len(set(normalized)):
+        raise ValueError("Tools assigned cannot contain duplicates.")
+    return normalized
+
+
+def _resolve_tools(db: Session, tool_ids: list[int]) -> list[MouldingTool]:
+    if not tool_ids:
+        return []
+    stmt = select(MouldingTool).where(MouldingTool.id.in_(tool_ids))
+    tools = list(db.scalars(stmt).all())
+    found_ids = {tool.id for tool in tools}
+    missing_ids = [tool_id for tool_id in tool_ids if tool_id not in found_ids]
+    if missing_ids:
+        raise ValueError("Selected moulding tools do not exist.")
+    tools_by_id = {tool.id: tool for tool in tools}
+    return [tools_by_id[tool_id] for tool_id in tool_ids]
+
+
+def _ensure_unique_tool_pn(db: Session, tool_pn: str, exclude_id: int | None = None) -> None:
+    stmt = select(MouldingTool).where(func.lower(MouldingTool.tool_pn) == tool_pn.lower())
+    if exclude_id is not None:
+        stmt = stmt.where(MouldingTool.id != exclude_id)
+    if db.scalar(stmt):
+        raise ValueError("Tool P/N already exists.")
+
+
+def _ensure_unique_machine_number(db: Session, machine_number: str, exclude_id: int | None = None) -> None:
+    stmt = select(MouldingMachine).where(
+        func.lower(MouldingMachine.machine_number) == machine_number.lower()
+    )
+    if exclude_id is not None:
+        stmt = stmt.where(MouldingMachine.id != exclude_id)
+    if db.scalar(stmt):
+        raise ValueError("Machine number already exists.")
+
+
+def list_moulding_tools(db: Session) -> list[MouldingTool]:
+    return moulding_repo.list_moulding_tools(db)
+
+
+def create_moulding_tool(db: Session, data: MouldingToolCreate) -> MouldingTool:
+    tool_pn = _normalize_required_text(data.tool_pn, "Tool P/N")
+    _ensure_unique_tool_pn(db, tool_pn)
+    return moulding_repo.create_moulding_tool(
+        db,
+        tool_pn=tool_pn,
+        description=_normalize_optional_text(data.description),
+        ct_seconds=_normalize_non_negative_ct(data.ct_seconds),
+    )
+
+
+def update_moulding_tool(db: Session, tool_id: int, data: MouldingToolUpdate) -> MouldingTool:
+    tool = moulding_repo.get_moulding_tool(db, tool_id)
+    if tool is None:
+        raise ValueError("Moulding tool not found.")
+    tool_pn = _normalize_required_text(data.tool_pn, "Tool P/N")
+    _ensure_unique_tool_pn(db, tool_pn, exclude_id=tool_id)
+    return moulding_repo.update_moulding_tool(
+        db,
+        tool=tool,
+        tool_pn=tool_pn,
+        description=_normalize_optional_text(data.description),
+        ct_seconds=_normalize_non_negative_ct(data.ct_seconds),
+    )
+
+
+def delete_moulding_tool(db: Session, tool_id: int) -> None:
+    tool = moulding_repo.get_moulding_tool(db, tool_id)
+    if tool is None:
+        raise ValueError("Moulding tool not found.")
+    moulding_repo.delete_moulding_tool(db, tool=tool)
+
+
+def list_moulding_machines(db: Session) -> list[MouldingMachine]:
+    return moulding_repo.list_moulding_machines(db)
+
+
+def create_moulding_machine(db: Session, data: MouldingMachineCreate) -> MouldingMachine:
+    machine_number = _normalize_required_text(data.machine_number, "Machine number")
+    _ensure_unique_machine_number(db, machine_number)
+    tool_ids = _normalize_tool_ids(data.tool_ids)
+    tools = _resolve_tools(db, tool_ids)
+    return moulding_repo.create_moulding_machine(
+        db,
+        machine_number=machine_number,
+        tonnage=_normalize_tonnage(data.tonnage),
+        tools=tools,
+    )
+
+
+def update_moulding_machine(db: Session, machine_id: int, data: MouldingMachineUpdate) -> MouldingMachine:
+    machine = moulding_repo.get_moulding_machine(db, machine_id)
+    if machine is None:
+        raise ValueError("Moulding machine not found.")
+    machine_number = _normalize_required_text(data.machine_number, "Machine number")
+    _ensure_unique_machine_number(db, machine_number, exclude_id=machine_id)
+    tool_ids = _normalize_tool_ids(data.tool_ids)
+    tools = _resolve_tools(db, tool_ids)
+    return moulding_repo.update_moulding_machine(
+        db,
+        machine=machine,
+        machine_number=machine_number,
+        tonnage=_normalize_tonnage(data.tonnage),
+        tools=tools,
+    )
+
+
+def delete_moulding_machine(db: Session, machine_id: int) -> None:
+    machine = moulding_repo.get_moulding_machine(db, machine_id)
+    if machine is None:
+        raise ValueError("Moulding machine not found.")
+    moulding_repo.delete_moulding_machine(db, machine=machine)
