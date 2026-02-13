@@ -16,6 +16,7 @@ from app.models.user import User
 from app.repositories import champions as champions_repo
 from app.repositories import projects as projects_repo
 from app.schemas.assembly_line import AssemblyLineCreate, AssemblyLineUpdate
+from app.schemas.material import MaterialCreate, MaterialUpdate
 from app.schemas.metalization import (
     MetalizationChamberCreate,
     MetalizationChamberUpdate,
@@ -154,6 +155,7 @@ def _base_settings_context(db: Session) -> dict[str, object]:
     assembly_lines = settings_service.list_assembly_lines(db)
     metalization_masks = settings_service.list_metalization_masks(db)
     metalization_chambers = settings_service.list_metalization_chambers(db)
+    materials = settings_service.list_materials(db)
     return {
         "champions": champions,
         "projects": projects,
@@ -163,6 +165,7 @@ def _base_settings_context(db: Session) -> dict[str, object]:
         "assembly_lines": assembly_lines,
         "metalization_masks": metalization_masks,
         "metalization_chambers": metalization_chambers,
+        "materials": materials,
         "worker_types": settings_service.LABOUR_COST_WORKER_TYPES,
         "project_status_options": settings_service.ALLOWED_PROJECT_STATUSES,
         "user_role_options": users_service.ALLOWED_USER_ROLES,
@@ -184,6 +187,7 @@ def _render_settings(
     assembly_line_id: int | None = None,
     mask_id: int | None = None,
     chamber_id: int | None = None,
+    material_id: int | None = None,
 ):
     context = _base_settings_context(db)
     champions = context["champions"]
@@ -204,6 +208,8 @@ def _render_settings(
     selected_metalization_chamber = (
         next((chamber for chamber in metalization_chambers if chamber.id == chamber_id), None) if chamber_id else None
     )
+    materials = context["materials"]
+    selected_material = next((material for material in materials if material.id == material_id), None) if material_id else None
     selected_moulding_tool_hc_map = settings_service.get_tool_hc_map(db, selected_moulding_tool.id) if selected_moulding_tool else {}
     selected_metalization_mask_hc_map = settings_service.get_mask_hc_map(db, selected_metalization_mask.id) if selected_metalization_mask else {}
     return templates.TemplateResponse(
@@ -222,6 +228,7 @@ def _render_settings(
             "selected_assembly_line": selected_assembly_line,
             "selected_metalization_mask": selected_metalization_mask,
             "selected_metalization_chamber": selected_metalization_chamber,
+            "selected_material": selected_material,
             "selected_moulding_tool_hc_map": selected_moulding_tool_hc_map,
             "selected_metalization_mask_hc_map": selected_metalization_mask_hc_map,
             **context,
@@ -410,6 +417,47 @@ def settings_metalization_chambers_page(
         or ("Metalization chamber added" if (created or "").strip().lower() == "metalization_chamber" else None),
         error=error,
         chamber_id=chamber_id,
+    )
+
+
+@router.get("/settings/metalization-chambers/{chamber_id}/masks", response_class=HTMLResponse, response_model=None)
+def settings_metalization_chamber_masks_page(
+    request: Request,
+    chamber_id: int,
+    db: Session = Depends(get_db),
+):
+    try:
+        chamber, masks = settings_service.list_masks_for_chamber(db, chamber_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return templates.TemplateResponse(
+        "settings_metalization_chamber_masks.html",
+        {
+            "request": request,
+            "chamber": chamber,
+            "masks": masks,
+        },
+    )
+
+
+@router.get("/settings/materials", response_class=HTMLResponse, response_model=None)
+def settings_materials_page(
+    request: Request,
+    material_id: int | None = None,
+    message: str | None = None,
+    created: str | None = None,
+    error: str | None = None,
+    db: Session = Depends(get_db),
+):
+    return _render_settings(
+        "settings_materials.html",
+        request,
+        db,
+        champion_id=None,
+        project_id=None,
+        material_id=material_id,
+        message=message or ("Material added" if (created or "").strip().lower() == "material" else None),
+        error=error,
     )
 
 
@@ -1392,3 +1440,100 @@ def update_labour_cost(
         )
 
     return RedirectResponse(url="/ui/settings/labour-cost?message=Labour+cost+updated", status_code=303)
+
+
+@router.post("/settings/materials", response_model=None)
+def add_material(
+    request: Request,
+    part_number: str = Form(...),
+    description: str | None = Form(default=None),
+    unit: str = Form(...),
+    price_per_unit: float = Form(...),
+    db: Session = Depends(get_db),
+):
+    enforce_admin(_current_user(request))
+    form_data = {
+        "part_number": part_number,
+        "description": description or "",
+        "unit": unit,
+        "price_per_unit": str(price_per_unit),
+    }
+    try:
+        settings_service.create_material(
+            db,
+            MaterialCreate(
+                part_number=part_number,
+                description=description,
+                unit=unit,
+                price_per_unit=price_per_unit,
+            ),
+        )
+    except (ValidationError, ValueError) as exc:
+        return _render_settings(
+            "settings_materials.html",
+            request,
+            db,
+            champion_id=None,
+            project_id=None,
+            error=str(exc),
+            form=form_data,
+            open_modal="material",
+        )
+    return RedirectResponse(url="/ui/settings/materials?created=material", status_code=303)
+
+
+@router.post("/settings/materials/{material_id}", response_model=None)
+def edit_material(
+    material_id: int,
+    request: Request,
+    part_number: str = Form(...),
+    description: str | None = Form(default=None),
+    unit: str = Form(...),
+    price_per_unit: float = Form(...),
+    db: Session = Depends(get_db),
+):
+    enforce_admin(_current_user(request))
+    form_data = {
+        "part_number": part_number,
+        "description": description or "",
+        "unit": unit,
+        "price_per_unit": str(price_per_unit),
+    }
+    try:
+        settings_service.update_material(
+            db,
+            material_id,
+            MaterialUpdate(
+                part_number=part_number,
+                description=description,
+                unit=unit,
+                price_per_unit=price_per_unit,
+            ),
+        )
+    except (ValidationError, ValueError) as exc:
+        return _render_settings(
+            "settings_materials.html",
+            request,
+            db,
+            champion_id=None,
+            project_id=None,
+            material_id=material_id,
+            error=str(exc),
+            form=form_data,
+            open_modal="material-edit",
+        )
+    return RedirectResponse(url=f"/ui/settings/materials?material_id={material_id}&message=Material+updated", status_code=303)
+
+
+@router.post("/settings/materials/{material_id}/delete", response_model=None)
+def delete_material(
+    material_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    enforce_admin(_current_user(request))
+    try:
+        settings_service.delete_material(db, material_id)
+    except ValueError as exc:
+        return _render_settings("settings_materials.html", request, db, champion_id=None, project_id=None, error=str(exc))
+    return RedirectResponse(url="/ui/settings/materials?message=Material+deleted", status_code=303)

@@ -19,7 +19,7 @@
               {% for chamber in metalization_chambers %}
                 <tr>
                   <td>{{ chamber.chamber_number }}</td>
-                  <td>{% if chamber.masks %}{{ chamber.masks | map(attribute='mask_pn') | join(', ') }}{% else %}—{% endif %}</td>
+                  <td>{% set mask_count = chamber.masks | length %}{% if mask_count > 0 %}<a href="/ui/settings/metalization-chambers/{{ chamber.id }}/masks">{{ mask_count }}</a>{% else %}0{% endif %}</td>
                   <td><a class="button secondary" href="/ui/settings/metalization-chambers?chamber_id={{ chamber.id }}">Edit</a></td>
                 </tr>
               {% endfor %}

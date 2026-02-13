@@ -9,6 +9,7 @@ from app.models.assembly_line import ProjectAssemblyLine
 from app.models.metalization import ProjectMetalizationMask
 from app.models.moulding import ProjectMouldingTool
 from app.schemas.assembly_line import AssemblyLineCreate
+from app.schemas.material import MaterialCreate, MaterialUpdate
 from app.schemas.metalization import MetalizationChamberCreate, MetalizationMaskCreate
 from app.schemas.moulding import MouldingMachineCreate, MouldingMachineUpdate, MouldingToolCreate
 from app.services import settings as settings_service
@@ -689,3 +690,29 @@ def test_compute_unit_labour_cost_returns_zero_for_null_ct_and_missing_inputs(db
 
     # NULL or non-positive CT should always result in zero cost
     assert settings_service._compute_unit_labour_cost(None, {"Operator": 1}, {"Operator": 10}) == 0
+
+
+def test_material_create_list_unique_and_update(db_session):
+    created = settings_service.create_material(
+        db_session,
+        MaterialCreate(part_number="MAT-01", description="Pellets", unit="kg", price_per_unit=12.5),
+    )
+
+    materials = settings_service.list_materials(db_session)
+    assert [material.part_number for material in materials] == ["MAT-01"]
+    assert created.unit == "kg"
+
+    with pytest.raises(ValueError, match="already exists"):
+        settings_service.create_material(
+            db_session,
+            MaterialCreate(part_number="mat-01", description="dup", unit="kg", price_per_unit=1),
+        )
+
+    updated = settings_service.update_material(
+        db_session,
+        created.id,
+        MaterialUpdate(part_number="MAT-01", description="Updated", unit="pcs", price_per_unit=15),
+    )
+    assert updated.description == "Updated"
+    assert updated.unit == "pcs"
+    assert updated.price_per_unit == 15

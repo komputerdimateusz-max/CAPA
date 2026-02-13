@@ -8,14 +8,17 @@ from sqlalchemy.orm import Session
 from app.models.assembly_line import AssemblyLine
 from app.models.champion import Champion
 from app.models.labour_cost import LabourCost
+from app.models.material import Material
 from app.models.metalization import MetalizationChamber, MetalizationMask
 from app.models.moulding import MouldingMachine, MouldingTool
 from app.models.project import Project
 from app.repositories import assembly_lines as assembly_lines_repo
 from app.repositories import labour_costs as labour_costs_repo
+from app.repositories import materials as materials_repo
 from app.repositories import metalization as metalization_repo
 from app.repositories import moulding as moulding_repo
 from app.schemas.assembly_line import AssemblyLineCreate, AssemblyLineUpdate
+from app.schemas.material import MaterialCreate, MaterialUpdate
 from app.schemas.metalization import (
     MetalizationChamberCreate,
     MetalizationChamberUpdate,
@@ -836,6 +839,14 @@ def list_metalization_chambers(db: Session) -> list[MetalizationChamber]:
     return metalization_repo.list_metalization_chambers(db)
 
 
+def list_masks_for_chamber(db: Session, chamber_id: int) -> tuple[MetalizationChamber, list[MetalizationMask]]:
+    chamber = metalization_repo.get_metalization_chamber(db, chamber_id)
+    if chamber is None:
+        raise ValueError("Metalization chamber not found.")
+    sorted_masks = sorted(chamber.masks, key=lambda mask: mask.mask_pn.lower())
+    return chamber, _attach_mask_cost_fields(db, sorted_masks)
+
+
 def create_metalization_chamber(db: Session, data: MetalizationChamberCreate) -> MetalizationChamber:
     chamber_number = _normalize_required_text(data.chamber_number, "Chamber number")
     _ensure_unique_chamber_number(db, chamber_number)
@@ -962,3 +973,58 @@ def update_labour_cost(db: Session, worker_type: str, cost_pln: float) -> Labour
     if labour_cost is None:
         labour_cost = labour_costs_repo.create_labour_cost(db, worker_type=normalized_worker_type, cost_pln=0)
     return labour_costs_repo.update_labour_cost(db, labour_cost=labour_cost, cost_pln=normalized_cost_pln)
+
+
+def _ensure_unique_material_part_number(db: Session, part_number: str, exclude_id: int | None = None) -> None:
+    stmt = select(Material).where(func.lower(Material.part_number) == part_number.lower())
+    if exclude_id is not None:
+        stmt = stmt.where(Material.id != exclude_id)
+    if db.scalar(stmt):
+        raise ValueError("Part number already exists.")
+
+
+def _normalize_non_negative_price(value: float) -> float:
+    if value < 0:
+        raise ValueError("Price per unit must be greater than or equal to 0.")
+    return float(value)
+
+
+def list_materials(db: Session) -> list[Material]:
+    return materials_repo.list_materials(db)
+
+
+def create_material(db: Session, data: MaterialCreate) -> Material:
+    part_number = _normalize_required_text(data.part_number, "Part number")
+    unit = _normalize_required_text(data.unit, "Unit")
+    _ensure_unique_material_part_number(db, part_number)
+    return materials_repo.create_material(
+        db,
+        part_number=part_number,
+        description=_normalize_optional_text(data.description),
+        unit=unit,
+        price_per_unit=_normalize_non_negative_price(data.price_per_unit),
+    )
+
+
+def update_material(db: Session, material_id: int, data: MaterialUpdate) -> Material:
+    material = materials_repo.get_material(db, material_id)
+    if material is None:
+        raise ValueError("Material not found.")
+    part_number = _normalize_required_text(data.part_number, "Part number")
+    unit = _normalize_required_text(data.unit, "Unit")
+    _ensure_unique_material_part_number(db, part_number, exclude_id=material_id)
+    return materials_repo.update_material(
+        db,
+        material=material,
+        part_number=part_number,
+        description=_normalize_optional_text(data.description),
+        unit=unit,
+        price_per_unit=_normalize_non_negative_price(data.price_per_unit),
+    )
+
+
+def delete_material(db: Session, material_id: int) -> None:
+    material = materials_repo.get_material(db, material_id)
+    if material is None:
+        raise ValueError("Material not found.")
+    materials_repo.delete_material(db, material=material)
