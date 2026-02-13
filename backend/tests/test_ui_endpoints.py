@@ -383,7 +383,7 @@ def test_ui_moulding_tools_list_shows_hc_total_and_unit_cost(client, db_session)
     assert response.status_code == 200
     assert "HC total" in response.text
     assert "Unit labour cost [PLN]" in response.text
-    assert "1200.00" in response.text
+    assert "0.33" in response.text
 
 
 def test_ui_metalization_masks_list_shows_hc_total_and_unit_cost(client, db_session):
@@ -398,7 +398,7 @@ def test_ui_metalization_masks_list_shows_hc_total_and_unit_cost(client, db_sess
     assert response.status_code == 200
     assert "HC total" in response.text
     assert "Unit labour cost [PLN]" in response.text
-    assert "900.00" in response.text
+    assert "0.25" in response.text
 
 
 def test_ui_add_moulding_tool_persists_hc_breakdown(client, db_session):

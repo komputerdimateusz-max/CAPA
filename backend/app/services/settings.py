@@ -490,11 +490,14 @@ def _labour_cost_map(db: Session) -> dict[str, float]:
     return {row.worker_type: row.cost_pln for row in labour_costs_repo.list_labour_costs(db, LABOUR_COST_WORKER_TYPES)}
 
 
-def _compute_unit_labour_cost(ct_seconds: float, hc_map: dict[str, float], labour_cost_map: dict[str, float]) -> float:
-    if ct_seconds <= 0:
+def _compute_unit_labour_cost(ct_seconds: float | None, hc_map: dict[str, float], labour_cost_map: dict[str, float]) -> float:
+    if ct_seconds is None or ct_seconds <= 0:
         return 0
-    pieces_per_hour = 3600.0 / ct_seconds
-    return sum(pieces_per_hour * labour_cost_map.get(worker_type, 0) * hc_map.get(worker_type, 0) for worker_type in LABOUR_COST_WORKER_TYPES)
+    pieces_time_hours = ct_seconds / 3600.0
+    return sum(
+        pieces_time_hours * hc_map.get(worker_type, 0) * labour_cost_map.get(worker_type, 0)
+        for worker_type in LABOUR_COST_WORKER_TYPES
+    )
 
 
 def _attach_tool_cost_fields(db: Session, tools: list[MouldingTool]) -> list[MouldingTool]:
