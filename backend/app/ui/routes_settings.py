@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import date
 from pathlib import Path
+from urllib.parse import quote_plus
 
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -73,6 +74,32 @@ def _parse_int_list(values: list[str] | None, label: str) -> list[int]:
 
 def _current_user(request: Request):
     return getattr(request.state, "user", None)
+
+
+def _resolve_tool_id(db: Session, value: str) -> int:
+    parsed = _parse_optional_int(value, "Moulding tool")
+    if parsed is not None:
+        return parsed
+    cleaned = value.strip()
+    if not cleaned:
+        raise ValueError("Moulding tool is required.")
+    for tool in settings_service.list_moulding_tools(db):
+        if tool.tool_pn.lower() == cleaned.lower():
+            return tool.id
+    raise ValueError("Selected moulding tool does not exist.")
+
+
+def _resolve_line_id(db: Session, value: str) -> int:
+    parsed = _parse_optional_int(value, "Assembly line")
+    if parsed is not None:
+        return parsed
+    cleaned = value.strip()
+    if not cleaned:
+        raise ValueError("Assembly line is required.")
+    for line in settings_service.list_assembly_lines(db):
+        if line.line_number.lower() == cleaned.lower():
+            return line.id
+    raise ValueError("Selected assembly line does not exist.")
 
 
 def _base_settings_context(db: Session) -> dict[str, object]:
@@ -387,8 +414,6 @@ def add_project(
     flex_percent: str | None = Form(default=None),
     process_engineer_id: str | None = Form(default=None),
     due_date: str | None = Form(default=None),
-    moulding_tool_ids: list[str] | None = Form(default=None),
-    assembly_line_ids: list[str] | None = Form(default=None),
     db: Session = Depends(get_db),
 ):
     enforce_admin(_current_user(request))
@@ -401,8 +426,8 @@ def add_project(
             _parse_optional_float(flex_percent, "Flex [%]"),
             _parse_optional_int(process_engineer_id, "Process Engineer"),
             _parse_optional_date(due_date),
-            _parse_int_list(moulding_tool_ids, "Moulding tools"),
-            _parse_int_list(assembly_line_ids, "Assembly lines"),
+            [],
+            [],
         )
     except ValueError as exc:
         return _render_settings(
@@ -419,8 +444,6 @@ def add_project(
                 "project_flex_percent": flex_percent or "",
                 "project_process_engineer_id": process_engineer_id or "",
                 "project_due_date": due_date or "",
-                "project_moulding_tool_ids": [value for value in (moulding_tool_ids or []) if value.strip().isdigit()],
-                "project_assembly_line_ids": [value for value in (assembly_line_ids or []) if value.strip().isdigit()],
             },
             open_modal="project",
         )
@@ -437,11 +460,19 @@ def update_project(
     flex_percent: str | None = Form(default=None),
     process_engineer_id: str | None = Form(default=None),
     due_date: str | None = Form(default=None),
-    moulding_tool_ids: list[str] | None = Form(default=None),
-    assembly_line_ids: list[str] | None = Form(default=None),
     db: Session = Depends(get_db),
 ):
     enforce_admin(_current_user(request))
+    existing_project = projects_repo.get_project(db, project_id)
+    if existing_project is None:
+        return _render_settings(
+            "settings_projects.html",
+            request,
+            db,
+            champion_id=None,
+            project_id=None,
+            error="Project not found.",
+        )
     try:
         project = settings_service.update_project(
             db,
@@ -452,8 +483,8 @@ def update_project(
             _parse_optional_float(flex_percent, "Flex [%]"),
             _parse_optional_int(process_engineer_id, "Process Engineer"),
             _parse_optional_date(due_date),
-            _parse_int_list(moulding_tool_ids, "Moulding tools"),
-            _parse_int_list(assembly_line_ids, "Assembly lines"),
+            [tool.id for tool in existing_project.moulding_tools],
+            [line.id for line in existing_project.assembly_lines],
         )
     except ValueError as exc:
         return _render_settings(
@@ -470,11 +501,116 @@ def update_project(
                 "project_flex_percent": flex_percent or "",
                 "project_process_engineer_id": process_engineer_id or "",
                 "project_due_date": due_date or "",
-                "project_moulding_tool_ids": [value for value in (moulding_tool_ids or []) if value.strip().isdigit()],
-                "project_assembly_line_ids": [value for value in (assembly_line_ids or []) if value.strip().isdigit()],
             },
         )
     return RedirectResponse(url=f"/ui/settings/projects?message=Project+updated&project_id={project.id}", status_code=303)
+
+
+@router.post("/settings/projects/{project_id}/tools/add", response_model=None)
+def add_project_tool(
+    project_id: int,
+    request: Request,
+    tool_id: str = Form(...),
+    db: Session = Depends(get_db),
+):
+    enforce_admin(_current_user(request))
+    try:
+        parsed_tool_id = _resolve_tool_id(db, tool_id)
+        settings_service.add_project_moulding_tool(db, project_id=project_id, tool_id=parsed_tool_id)
+    except ValueError as exc:
+        return RedirectResponse(
+            url=f"/ui/settings/projects?project_id={project_id}&error={quote_plus(str(exc))}",
+            status_code=303,
+        )
+    return RedirectResponse(
+        url=f"/ui/settings/projects?project_id={project_id}&message=Moulding+tool+assigned",
+        status_code=303,
+    )
+
+
+@router.post("/settings/projects/{project_id}/tools/remove", response_model=None)
+def remove_project_tool(
+    project_id: int,
+    request: Request,
+    tool_id: str = Form(...),
+    db: Session = Depends(get_db),
+):
+    enforce_admin(_current_user(request))
+    try:
+        parsed_tool_id = _resolve_tool_id(db, tool_id)
+        settings_service.remove_project_moulding_tool(db, project_id=project_id, tool_id=parsed_tool_id)
+    except ValueError as exc:
+        return RedirectResponse(
+            url=f"/ui/settings/projects?project_id={project_id}&error={quote_plus(str(exc))}",
+            status_code=303,
+        )
+    return RedirectResponse(
+        url=f"/ui/settings/projects?project_id={project_id}&message=Moulding+tool+removed",
+        status_code=303,
+    )
+
+
+@router.post("/settings/projects/{project_id}/lines/add", response_model=None)
+def add_project_line(
+    project_id: int,
+    request: Request,
+    line_id: str = Form(...),
+    db: Session = Depends(get_db),
+):
+    enforce_admin(_current_user(request))
+    try:
+        parsed_line_id = _resolve_line_id(db, line_id)
+        settings_service.add_project_assembly_line(db, project_id=project_id, line_id=parsed_line_id)
+    except ValueError as exc:
+        return RedirectResponse(
+            url=f"/ui/settings/projects?project_id={project_id}&error={quote_plus(str(exc))}",
+            status_code=303,
+        )
+    return RedirectResponse(
+        url=f"/ui/settings/projects?project_id={project_id}&message=Assembly+line+assigned",
+        status_code=303,
+    )
+
+
+@router.post("/settings/projects/{project_id}/lines/remove", response_model=None)
+def remove_project_line(
+    project_id: int,
+    request: Request,
+    line_id: str = Form(...),
+    db: Session = Depends(get_db),
+):
+    enforce_admin(_current_user(request))
+    try:
+        parsed_line_id = _resolve_line_id(db, line_id)
+        settings_service.remove_project_assembly_line(db, project_id=project_id, line_id=parsed_line_id)
+    except ValueError as exc:
+        return RedirectResponse(
+            url=f"/ui/settings/projects?project_id={project_id}&error={quote_plus(str(exc))}",
+            status_code=303,
+        )
+    return RedirectResponse(
+        url=f"/ui/settings/projects?project_id={project_id}&message=Assembly+line+removed",
+        status_code=303,
+    )
+
+
+@router.get("/settings/projects/{project_id}/assignments", response_class=HTMLResponse, response_model=None)
+def project_assignments_page(
+    project_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    project = projects_repo.get_project(db, project_id)
+    if project is None:
+        return RedirectResponse(url="/ui/settings/projects?error=Project+not+found", status_code=303)
+    return templates.TemplateResponse(
+        "settings_project_assignments.html",
+        {
+            "request": request,
+            "project": project,
+            "format_date": format_date,
+        },
+    )
 
 
 @router.post("/settings/moulding-tools", response_model=None)
