@@ -732,6 +732,7 @@ def add_material_out_to_tool(
         material_id=material.id,
         qty_per_piece=_normalize_positive_qty_per_piece(qty_per_piece),
     )
+    _update_make_material_prices_from_process_cost(db, [material.id], _compute_tool_unit_process_cost(db, tool_id))
 
 
 def update_tool_material_out_qty(db: Session, tool_id: int, material_id: int, qty_per_piece: float) -> None:
@@ -748,6 +749,7 @@ def update_tool_material_out_qty(db: Session, tool_id: int, material_id: int, qt
         material_id=material_id,
         qty_per_piece=_normalize_positive_qty_per_piece(qty_per_piece),
     )
+    _update_make_material_prices_from_process_cost(db, [material_id], _compute_tool_unit_process_cost(db, tool_id))
 
 
 def remove_material_out_from_tool(db: Session, tool_id: int, material_id: int) -> None:
@@ -1002,6 +1004,7 @@ def add_material_out_to_assembly_line(db: Session, assembly_line_id: int, *, mat
     assembly_lines_repo.upsert_line_material_out(
         db, line_id=assembly_line_id, material_id=material.id, qty_per_piece=_normalize_positive_qty_per_piece(qty_per_piece)
     )
+    _update_make_material_prices_from_process_cost(db, [material.id], _compute_assembly_line_unit_process_cost(db, assembly_line_id))
 
 
 def update_assembly_line_material_out_qty(db: Session, assembly_line_id: int, material_id: int, qty_per_piece: float) -> None:
@@ -1014,6 +1017,7 @@ def update_assembly_line_material_out_qty(db: Session, assembly_line_id: int, ma
     assembly_lines_repo.upsert_line_material_out(
         db, line_id=assembly_line_id, material_id=material_id, qty_per_piece=_normalize_positive_qty_per_piece(qty_per_piece)
     )
+    _update_make_material_prices_from_process_cost(db, [material_id], _compute_assembly_line_unit_process_cost(db, assembly_line_id))
 
 
 def remove_material_out_from_assembly_line(db: Session, assembly_line_id: int, material_id: int) -> None:
@@ -1195,6 +1199,7 @@ def add_material_out_to_mask(
         material_id=material.id,
         qty_per_piece=_normalize_positive_qty_per_piece(qty_per_piece),
     )
+    _update_make_material_prices_from_process_cost(db, [material.id], _compute_mask_unit_process_cost(db, mask_id))
 
 
 def update_mask_material_out_qty(db: Session, mask_id: int, material_id: int, qty_per_piece: float) -> None:
@@ -1211,6 +1216,7 @@ def update_mask_material_out_qty(db: Session, mask_id: int, material_id: int, qt
         material_id=material_id,
         qty_per_piece=_normalize_positive_qty_per_piece(qty_per_piece),
     )
+    _update_make_material_prices_from_process_cost(db, [material_id], _compute_mask_unit_process_cost(db, mask_id))
 
 
 def remove_material_out_from_mask(db: Session, mask_id: int, material_id: int) -> None:
@@ -1368,10 +1374,58 @@ def _ensure_unique_material_part_number(db: Session, part_number: str, exclude_i
         raise ValueError("Part number already exists.")
 
 
-def _normalize_non_negative_price(value: float) -> float:
+def _normalize_non_negative_price(value: float | None) -> float | None:
+    if value is None:
+        return None
     if value < 0:
         raise ValueError("Price per unit must be greater than or equal to 0.")
     return float(value)
+
+
+def _normalize_material_price_for_make_buy(*, make_buy: bool, price_per_unit: float | None) -> float | None:
+    normalized_price = _normalize_non_negative_price(price_per_unit)
+    if make_buy:
+        return None
+    if normalized_price is None:
+        raise ValueError("Price per unit is required for BUY material.")
+    return normalized_price
+
+
+def _update_make_material_prices_from_process_cost(db: Session, material_ids: list[int], unit_process_cost: float) -> None:
+    for material_id in dict.fromkeys(material_ids):
+        material = materials_repo.get_material(db, material_id)
+        if material is None or not material.make_buy:
+            continue
+        material.price_per_unit = float(unit_process_cost)
+        db.add(material)
+    db.commit()
+
+
+def _compute_tool_unit_process_cost(db: Session, tool_id: int) -> float:
+    tool = moulding_repo.get_moulding_tool(db, tool_id)
+    if tool is None:
+        raise ValueError("Moulding tool not found.")
+    labour_cost = compute_tool_unit_cost(db, tool, moulding_repo.get_tool_hc_map(db, tool_id))
+    material_income_cost = compute_material_cost_for_tool(db, tool_id)
+    return float(labour_cost + material_income_cost)
+
+
+def _compute_mask_unit_process_cost(db: Session, mask_id: int) -> float:
+    mask = metalization_repo.get_metalization_mask(db, mask_id)
+    if mask is None:
+        raise ValueError("Metalization mask not found.")
+    labour_cost = compute_mask_unit_cost(db, mask, metalization_repo.get_mask_hc_map(db, mask_id))
+    material_income_cost = compute_material_cost_for_mask(db, mask_id)
+    return float(labour_cost + material_income_cost)
+
+
+def _compute_assembly_line_unit_process_cost(db: Session, assembly_line_id: int) -> float:
+    line = assembly_lines_repo.get_assembly_line(db, assembly_line_id)
+    if line is None:
+        raise ValueError("Assembly line not found.")
+    labour_cost = _compute_unit_labour_cost(line.ct_seconds, assembly_lines_repo.get_line_hc_map(db, assembly_line_id), _labour_cost_map(db))
+    material_income_cost = assembly_lines_repo.material_in_cost_map_for_lines(db).get(assembly_line_id, 0.0)
+    return float(labour_cost + material_income_cost)
 
 
 def list_materials(db: Session) -> list[Material]:
@@ -1387,7 +1441,7 @@ def create_material(db: Session, data: MaterialCreate) -> Material:
         part_number=part_number,
         description=_normalize_optional_text(data.description),
         unit=unit,
-        price_per_unit=_normalize_non_negative_price(data.price_per_unit),
+        price_per_unit=_normalize_material_price_for_make_buy(make_buy=data.make_buy, price_per_unit=data.price_per_unit),
         category=data.category,
         make_buy=data.make_buy,
     )
@@ -1406,7 +1460,7 @@ def update_material(db: Session, material_id: int, data: MaterialUpdate) -> Mate
         part_number=part_number,
         description=_normalize_optional_text(data.description),
         unit=unit,
-        price_per_unit=_normalize_non_negative_price(data.price_per_unit),
+        price_per_unit=_normalize_material_price_for_make_buy(make_buy=data.make_buy, price_per_unit=data.price_per_unit),
         category=data.category,
         make_buy=data.make_buy,
     )

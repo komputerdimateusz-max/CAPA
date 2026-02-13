@@ -99,6 +99,7 @@
 
 
       <h5>Material outcome (per 1 piece)</h5>
+      <p class="muted">Warning: input materials without price are treated as 0 in process cost.</p>
       {% if materials %}
       <form class="form-grid" method="post" action="/ui/settings/moulding-tools/{{ selected_moulding_tool.id }}/materials-out/add">
         <label>Material part number

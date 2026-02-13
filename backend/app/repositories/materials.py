@@ -21,7 +21,7 @@ def create_material(
     part_number: str,
     description: str | None,
     unit: str,
-    price_per_unit: float,
+    price_per_unit: float | None,
     category: str,
     make_buy: bool,
 ) -> Material:
@@ -46,7 +46,7 @@ def update_material(
     part_number: str,
     description: str | None,
     unit: str,
-    price_per_unit: float,
+    price_per_unit: float | None,
     category: str,
     make_buy: bool,
 ) -> Material:
