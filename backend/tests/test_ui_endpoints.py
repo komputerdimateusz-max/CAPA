@@ -9,6 +9,7 @@ from app.models.action import Action
 from app.models.project import Project
 from app.models.user import User
 from app.schemas.assembly_line import AssemblyLineCreate
+from app.schemas.material import MaterialCreate
 from app.schemas.metalization import MetalizationChamberCreate, MetalizationMaskCreate
 from app.schemas.moulding import MouldingMachineCreate, MouldingToolCreate
 from app.services import settings as settings_service
@@ -432,34 +433,53 @@ def test_ui_settings_labour_cost_validation_errors(client):
     assert "error=" in invalid_cost_response.headers["location"]
 
 
-def test_ui_moulding_tools_list_shows_hc_total_and_unit_cost(client, db_session):
+def test_ui_moulding_tools_list_shows_hc_total_unit_and_material_cost(client, db_session):
     settings_service.update_labour_cost(db_session, "Operator", 10)
-    settings_service.create_moulding_tool(
+    tool = settings_service.create_moulding_tool(
         db_session,
         MouldingToolCreate(tool_pn="UI-HC-T", description="desc", ct_seconds=60, hc_map={"Operator": 2}),
     )
+    material_a = settings_service.create_material(
+        db_session,
+        MaterialCreate(part_number="UI-MAT-T-1", description="mat-a", unit="kg", price_per_unit=3),
+    )
+    material_b = settings_service.create_material(
+        db_session,
+        MaterialCreate(part_number="UI-MAT-T-2", description="mat-b", unit="kg", price_per_unit=4),
+    )
+    settings_service.add_material_to_tool(db_session, tool.id, material_id=material_a.id, qty_per_piece=2)
+    settings_service.add_material_to_tool(db_session, tool.id, material_id=material_b.id, qty_per_piece=1.5)
 
     response = client.get("/ui/settings/moulding-tools")
 
     assert response.status_code == 200
     assert "HC total" in response.text
     assert "Unit labour cost [PLN]" in response.text
+    assert "Material cost [PLN]" in response.text
     assert "0.33" in response.text
+    assert "12.00" in response.text
 
 
-def test_ui_metalization_masks_list_shows_hc_total_and_unit_cost(client, db_session):
+def test_ui_metalization_masks_list_shows_hc_total_unit_and_material_cost(client, db_session):
     settings_service.update_labour_cost(db_session, "Operator", 10)
-    settings_service.create_metalization_mask(
+    mask = settings_service.create_metalization_mask(
         db_session,
         MetalizationMaskCreate(mask_pn="UI-HC-M", description="desc", ct_seconds=60, hc_map={"Operator": 1.5}),
     )
+    material = settings_service.create_material(
+        db_session,
+        MaterialCreate(part_number="UI-MAT-M-1", description="mat", unit="ml", price_per_unit=10),
+    )
+    settings_service.add_material_to_mask(db_session, mask.id, material_id=material.id, qty_per_piece=0.5)
 
     response = client.get("/ui/settings/metalization-masks")
 
     assert response.status_code == 200
     assert "HC total" in response.text
     assert "Unit labour cost [PLN]" in response.text
+    assert "Material cost [PLN]" in response.text
     assert "0.25" in response.text
+    assert "5.00" in response.text
 
 
 def test_ui_add_moulding_tool_persists_hc_breakdown(client, db_session):

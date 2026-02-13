@@ -13,16 +13,17 @@
     {% if metalization_masks %}
     <div class="table-wrap">
       <table class="table">
-        <thead><tr><th>Mask P/N</th><th>Description</th><th>CT (s)</th><th>HC total</th><th>Unit labour cost [PLN]</th><th></th></tr></thead>
+        <thead><tr><th>Mask P/N</th><th>Description</th><th class="num-col">CT (s)</th><th class="num-col">HC total</th><th class="num-col">Unit labour cost [PLN]</th><th class="num-col">Material cost [PLN]</th><th class="action-col">Edit</th></tr></thead>
         <tbody>
           {% for mask in metalization_masks %}
           <tr>
             <td>{{ mask.mask_pn }}</td>
             <td>{{ mask.description or '—' }}</td>
-            <td>{{ mask.ct_seconds }}</td>
-            <td>{{ '%.2f'|format(mask.hc_total or 0) }}</td>
-            <td>{{ '%.2f'|format(mask.unit_labour_cost or 0) }}</td>
-            <td><a class="button secondary" href="/ui/settings/metalization-masks?mask_id={{ mask.id }}">Edit</a></td>
+            <td class="num-col">{{ '%.2f'|format(mask.ct_seconds or 0) }}</td>
+            <td class="num-col">{{ '%.2f'|format(mask.hc_total or 0) }}</td>
+            <td class="num-col">{{ '%.2f'|format(mask.unit_labour_cost or 0) }}</td>
+            <td class="num-col">{{ '%.2f'|format(mask.material_cost or 0) }}</td>
+            <td class="action-col"><a class="button secondary" href="/ui/settings/metalization-masks?mask_id={{ mask.id }}">Edit</a></td>
           </tr>
           {% endfor %}
         </tbody>

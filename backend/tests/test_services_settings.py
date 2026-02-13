@@ -805,3 +805,32 @@ def test_reject_unknown_material_part_number_for_tool_and_mask(db_session):
 
     with pytest.raises(ValueError, match="does not exist"):
         settings_service.add_material_to_mask(db_session, mask.id, part_number="UNKNOWN", qty_per_piece=1)
+
+
+def test_compute_material_cost_helpers_for_tool_and_mask(db_session):
+    tool = settings_service.create_moulding_tool(
+        db_session,
+        MouldingToolCreate(tool_pn="BOM-T-COST", description=None, ct_seconds=10),
+    )
+    mask = settings_service.create_metalization_mask(
+        db_session,
+        MetalizationMaskCreate(mask_pn="BOM-K-COST", description=None, ct_seconds=10),
+    )
+    material_a = settings_service.create_material(
+        db_session,
+        MaterialCreate(part_number="BOM-M-COST-1", description="A", unit="kg", price_per_unit=2.5),
+    )
+    material_b = settings_service.create_material(
+        db_session,
+        MaterialCreate(part_number="BOM-M-COST-2", description="B", unit="kg", price_per_unit=3),
+    )
+
+    assert settings_service.compute_material_cost_for_tool(db_session, tool.id) == pytest.approx(0)
+    assert settings_service.compute_material_cost_for_mask(db_session, mask.id) == pytest.approx(0)
+
+    settings_service.add_material_to_tool(db_session, tool.id, material_id=material_a.id, qty_per_piece=2)
+    settings_service.add_material_to_tool(db_session, tool.id, material_id=material_b.id, qty_per_piece=1.5)
+    settings_service.add_material_to_mask(db_session, mask.id, material_id=material_b.id, qty_per_piece=4)
+
+    assert settings_service.compute_material_cost_for_tool(db_session, tool.id) == pytest.approx(9.5)
+    assert settings_service.compute_material_cost_for_mask(db_session, mask.id) == pytest.approx(12)
