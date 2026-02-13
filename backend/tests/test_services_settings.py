@@ -4,6 +4,7 @@ from datetime import date
 
 import pytest
 
+from app.schemas.moulding import MouldingMachineCreate, MouldingMachineUpdate, MouldingToolCreate
 from app.services import settings as settings_service
 
 
@@ -90,3 +91,99 @@ def test_create_project_validates_required_fields(db_session):
         settings_service.create_project(db_session, "Line", "Serial production", 1, 120, engineer.id, None)
     with pytest.raises(ValueError, match="does not exist"):
         settings_service.create_project(db_session, "Line", "Serial production", 1, 10, 9999, None)
+
+
+def test_create_and_list_moulding_tool(db_session):
+    created = settings_service.create_moulding_tool(
+        db_session,
+        MouldingToolCreate(tool_pn="T-100", description="Main tool", ct_seconds=12.5),
+    )
+
+    tools = settings_service.list_moulding_tools(db_session)
+
+    assert created.id is not None
+    assert len(tools) == 1
+    assert tools[0].tool_pn == "T-100"
+    assert tools[0].ct_seconds == 12.5
+
+
+def test_create_moulding_tool_unique_tool_pn(db_session):
+    settings_service.create_moulding_tool(
+        db_session,
+        MouldingToolCreate(tool_pn="T-200", description=None, ct_seconds=8),
+    )
+
+    with pytest.raises(ValueError, match="Tool P/N already exists"):
+        settings_service.create_moulding_tool(
+            db_session,
+            MouldingToolCreate(tool_pn="T-200", description="Dup", ct_seconds=9),
+        )
+
+
+def test_create_moulding_machine_with_tool_assignments(db_session):
+    tool_a = settings_service.create_moulding_tool(
+        db_session,
+        MouldingToolCreate(tool_pn="T-A", description=None, ct_seconds=10),
+    )
+    tool_b = settings_service.create_moulding_tool(
+        db_session,
+        MouldingToolCreate(tool_pn="T-B", description=None, ct_seconds=11),
+    )
+
+    machine = settings_service.create_moulding_machine(
+        db_session,
+        MouldingMachineCreate(
+            machine_number="M-01",
+            tonnage=250,
+            tool_ids=[tool_a.id, tool_b.id],
+        ),
+    )
+
+    assert machine.id is not None
+    assert machine.machine_number == "M-01"
+    assert sorted(tool.tool_pn for tool in machine.tools) == ["T-A", "T-B"]
+
+
+def test_update_moulding_machine_assignments_replace_list(db_session):
+    tool_a = settings_service.create_moulding_tool(
+        db_session,
+        MouldingToolCreate(tool_pn="T-01", description=None, ct_seconds=10),
+    )
+    tool_b = settings_service.create_moulding_tool(
+        db_session,
+        MouldingToolCreate(tool_pn="T-02", description=None, ct_seconds=12),
+    )
+    tool_c = settings_service.create_moulding_tool(
+        db_session,
+        MouldingToolCreate(tool_pn="T-03", description=None, ct_seconds=14),
+    )
+    machine = settings_service.create_moulding_machine(
+        db_session,
+        MouldingMachineCreate(machine_number="M-55", tonnage=180, tool_ids=[tool_a.id, tool_b.id]),
+    )
+
+    updated = settings_service.update_moulding_machine(
+        db_session,
+        machine.id,
+        MouldingMachineUpdate(machine_number="M-55", tonnage=200, tool_ids=[tool_c.id]),
+    )
+
+    assert updated.tonnage == 200
+    assert [tool.tool_pn for tool in updated.tools] == ["T-03"]
+
+
+def test_list_moulding_machines_returns_assigned_tools(db_session):
+    tool = settings_service.create_moulding_tool(
+        db_session,
+        MouldingToolCreate(tool_pn="T-LIST", description="Listed", ct_seconds=6),
+    )
+    settings_service.create_moulding_machine(
+        db_session,
+        MouldingMachineCreate(machine_number="M-LIST", tonnage=None, tool_ids=[tool.id]),
+    )
+
+    machines = settings_service.list_moulding_machines(db_session)
+
+    assert len(machines) == 1
+    assert machines[0].machine_number == "M-LIST"
+    assert [(assigned.id, assigned.tool_pn) for assigned in machines[0].tools] == [(tool.id, "T-LIST")]
