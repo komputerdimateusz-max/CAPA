@@ -1,0 +1,20 @@
+{% extends "layout.html" %}
+{% block content %}
+  <div class="settings-page">
+    <section class="card">
+      <div class="card-header">
+        <h2>⚙️ Global Settings</h2>
+        <p class="muted">Manage shared reference data for actions, projects, and champions.</p>
+      </div>
+      {% include "partials/flash_message.html" %}
+
+      <div class="settings-tiles-grid">
+        <a class="settings-tile" href="/ui/settings/champions">Champions</a>
+        <a class="settings-tile" href="/ui/settings/projects">Projects</a>
+        <a class="settings-tile" href="/ui/settings/moulding-tools">Moulding Tools</a>
+        <a class="settings-tile" href="/ui/settings/moulding-machines">Moulding Machines</a>
+        <a class="settings-tile" href="/ui/settings/users">Users</a>
+      </div>
+    </section>
+  </div>
+{% endblock %}

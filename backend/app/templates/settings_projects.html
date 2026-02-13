@@ -1,0 +1,57 @@
+{% extends "layout.html" %}
+{% block content %}
+  <div class="settings-page">
+    <section class="card settings-section-card">
+      <div class="settings-subpage-header">
+        <a class="button secondary" href="/ui/settings">← Back to Settings</a>
+        <button class="button" type="button" data-open-modal="project">Add project</button>
+      </div>
+      <h2>Projects</h2>
+      {% include "partials/flash_message.html" %}
+
+      {% if projects %}
+        <div class="table-wrap">
+          <table class="table">
+            <thead><tr><th>Name</th><th>Status</th><th>Max Volume</th><th>Flex</th><th>Process Engineer</th><th>Due</th><th></th></tr></thead>
+            <tbody>
+              {% for project in projects %}
+                <tr>
+                  <td>{{ project.name }}</td><td>{{ project.status or '—' }}</td><td>{{ project.max_volume if project.max_volume is not none else '—' }}</td><td>{{ project.flex_percent if project.flex_percent is not none else '—' }}</td><td>{{ project.process_engineer.full_name if project.process_engineer else '—' }}</td><td>{{ format_date(project.due_date) }}</td>
+                  <td><a class="button secondary" href="/ui/settings/projects?project_id={{ project.id }}">Edit</a></td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% else %}<p class="muted">No projects yet. Use Add project to create one.</p>{% endif %}
+
+      {% if selected_project %}
+        <div class="card settings-inline-card">
+          <h4>Edit project</h4>
+          <form class="form-grid" method="post" action="/ui/settings/projects/{{ selected_project.id }}">
+            <label>Project name<input type="text" name="name" required value="{{ form.project_name or selected_project.name }}" /></label>
+            <label>Status<select name="status" required><option value="">Select status</option>{% for option in project_status_options %}<option value="{{ option }}" {% if (form.project_status or selected_project.status or '') == option %}selected{% endif %}>{{ option }}</option>{% endfor %}</select></label>
+            <label>Max Volume [parts/year]<input type="number" name="max_volume" min="0" step="1" required value="{{ form.project_max_volume or selected_project.max_volume or '' }}" /></label>
+            <label>Flex [%]<input type="number" name="flex_percent" min="0" max="100" step="0.01" required value="{{ form.project_flex_percent or selected_project.flex_percent or '' }}" /></label>
+            <label>Process Engineer<select name="process_engineer_id" required><option value="">Select process engineer</option>{% for champion in champions %}<option value="{{ champion.id }}" {% if (form.project_process_engineer_id or (selected_project.process_engineer_id|string if selected_project.process_engineer_id else '')) == champion.id|string %}selected{% endif %}>{{ champion.full_name }}</option>{% endfor %}</select></label>
+            <label>Due date<input type="date" name="due_date" value="{{ form.project_due_date or (selected_project.due_date.isoformat() if selected_project.due_date else '') }}" /></label>
+            <div class="form-actions"><button class="button" type="submit">Save project</button></div>
+          </form>
+        </div>
+      {% endif %}
+    </section>
+  </div>
+
+  <div class="modal-shell" id="project-modal" hidden><div class="modal-backdrop settings-modal-backdrop" data-close-modal="project"></div><aside class="create-action-panel settings-modal-panel"><div class="create-action-header"><h3>Add project</h3><button class="button secondary" type="button" data-close-modal="project">Cancel</button></div><form class="form-grid" method="post" action="/ui/settings/projects"><label>Project name<input type="text" name="name" required value="{{ form.project_name or '' }}" /></label><label>Status<select name="status" required><option value="">Select status</option>{% for option in project_status_options %}<option value="{{ option }}" {% if (form.project_status or '') == option %}selected{% endif %}>{{ option }}</option>{% endfor %}</select></label><label>Max Volume [parts/year]<input type="number" name="max_volume" min="0" step="1" required value="{{ form.project_max_volume or '' }}" /></label><label>Flex [%]<input type="number" name="flex_percent" min="0" max="100" step="0.01" required value="{{ form.project_flex_percent or '' }}" /></label><label>Process Engineer<select name="process_engineer_id" required><option value="">Select process engineer</option>{% for champion in champions %}<option value="{{ champion.id }}" {% if (form.project_process_engineer_id or '') == champion.id|string %}selected{% endif %}>{{ champion.full_name }}</option>{% endfor %}</select></label><label>Due date<input type="date" name="due_date" value="{{ form.project_due_date or '' }}" /></label><div class="form-actions"><button class="button" type="submit">Save project</button><button class="button secondary" type="button" data-close-modal="project">Cancel</button></div></form></aside></div>
+
+  <script>
+    (() => {
+      const modal = document.getElementById("project-modal");
+      const openModal = () => { modal.hidden = false; document.body.classList.add("no-scroll"); };
+      const closeModal = () => { modal.hidden = true; document.body.classList.remove("no-scroll"); };
+      document.querySelectorAll('[data-open-modal="project"]').forEach((button) => button.addEventListener("click", openModal));
+      document.querySelectorAll('[data-close-modal="project"]').forEach((button) => button.addEventListener("click", closeModal));
+      if ({{ (open_modal == "project") | tojson }}) openModal();
+    })();
+  </script>
+{% endblock %}

@@ -74,7 +74,25 @@ def _current_user(request: Request):
     return getattr(request.state, "user", None)
 
 
+def _base_settings_context(db: Session) -> dict[str, object]:
+    champions = champions_repo.list_champions(db)
+    projects = projects_repo.list_projects(db)
+    users = users_service.list_users(db)
+    moulding_tools = settings_service.list_moulding_tools(db)
+    moulding_machines = settings_service.list_moulding_machines(db)
+    return {
+        "champions": champions,
+        "projects": projects,
+        "users": users,
+        "moulding_tools": moulding_tools,
+        "moulding_machines": moulding_machines,
+        "project_status_options": settings_service.ALLOWED_PROJECT_STATUSES,
+        "user_role_options": users_service.ALLOWED_USER_ROLES,
+    }
+
+
 def _render_settings(
+    template_name: str,
     request: Request,
     db: Session,
     champion_id: int | None,
@@ -86,11 +104,11 @@ def _render_settings(
     form: dict[str, str] | None = None,
     open_modal: str | None = None,
 ):
-    champions = champions_repo.list_champions(db)
-    projects = projects_repo.list_projects(db)
-    users = users_service.list_users(db)
-    moulding_tools = settings_service.list_moulding_tools(db)
-    moulding_machines = settings_service.list_moulding_machines(db)
+    context = _base_settings_context(db)
+    champions = context["champions"]
+    projects = context["projects"]
+    moulding_tools = context["moulding_tools"]
+    moulding_machines = context["moulding_machines"]
     selected_champion = champions_repo.get_champion(db, champion_id) if champion_id else None
     selected_project = projects_repo.get_project(db, project_id) if project_id else None
     selected_moulding_tool = next((tool for tool in moulding_tools if tool.id == tool_id), None) if tool_id else None
@@ -98,14 +116,9 @@ def _render_settings(
         next((machine for machine in moulding_machines if machine.id == machine_id), None) if machine_id else None
     )
     return templates.TemplateResponse(
-        "settings.html",
+        template_name,
         {
             "request": request,
-            "champions": champions,
-            "projects": projects,
-            "users": users,
-            "moulding_tools": moulding_tools,
-            "moulding_machines": moulding_machines,
             "selected_champion": selected_champion,
             "selected_project": selected_project,
             "selected_moulding_tool": selected_moulding_tool,
@@ -115,8 +128,7 @@ def _render_settings(
             "form": form or {},
             "format_date": format_date,
             "open_modal": open_modal,
-            "project_status_options": settings_service.ALLOWED_PROJECT_STATUSES,
-            "user_role_options": users_service.ALLOWED_USER_ROLES,
+            **context,
         },
     )
 
@@ -124,40 +136,119 @@ def _render_settings(
 @router.get("/settings", response_class=HTMLResponse, response_model=None)
 def settings_page(
     request: Request,
+    message: str | None = None,
+    error: str | None = None,
+    db: Session = Depends(get_db),
+):
+    return templates.TemplateResponse(
+        "settings_home.html",
+        {
+            "request": request,
+            "message": message,
+            "error": error,
+        },
+    )
+
+
+@router.get("/settings/champions", response_class=HTMLResponse, response_model=None)
+def settings_champions_page(
+    request: Request,
     champion_id: int | None = None,
+    message: str | None = None,
+    created: str | None = None,
+    error: str | None = None,
+    db: Session = Depends(get_db),
+):
+    return _render_settings(
+        "settings_champions.html",
+        request,
+        db,
+        champion_id=champion_id,
+        project_id=None,
+        message=message or ("Champion added" if (created or "").strip().lower() == "champion" else None),
+        error=error,
+    )
+
+
+@router.get("/settings/projects", response_class=HTMLResponse, response_model=None)
+def settings_projects_page(
+    request: Request,
     project_id: int | None = None,
+    message: str | None = None,
+    created: str | None = None,
+    error: str | None = None,
+    db: Session = Depends(get_db),
+):
+    return _render_settings(
+        "settings_projects.html",
+        request,
+        db,
+        champion_id=None,
+        project_id=project_id,
+        message=message or ("Project added" if (created or "").strip().lower() == "project" else None),
+        error=error,
+    )
+
+
+@router.get("/settings/moulding-tools", response_class=HTMLResponse, response_model=None)
+def settings_moulding_tools_page(
+    request: Request,
     tool_id: int | None = None,
+    message: str | None = None,
+    created: str | None = None,
+    error: str | None = None,
+    db: Session = Depends(get_db),
+):
+    return _render_settings(
+        "settings_moulding_tools.html",
+        request,
+        db,
+        champion_id=None,
+        project_id=None,
+        tool_id=tool_id,
+        message=message or ("Moulding tool added" if (created or "").strip().lower() == "moulding_tool" else None),
+        error=error,
+    )
+
+
+@router.get("/settings/moulding-machines", response_class=HTMLResponse, response_model=None)
+def settings_moulding_machines_page(
+    request: Request,
     machine_id: int | None = None,
     message: str | None = None,
     created: str | None = None,
     error: str | None = None,
     db: Session = Depends(get_db),
 ):
-    created_message = {
-        "champion": "Champion added",
-        "project": "Project added",
-        "moulding_tool": "Moulding tool added",
-        "moulding_machine": "Moulding machine added",
-    }.get((created or "").strip().lower())
     return _render_settings(
+        "settings_moulding_machines.html",
         request,
         db,
-        champion_id=champion_id,
-        project_id=project_id,
-        tool_id=tool_id,
+        champion_id=None,
+        project_id=None,
         machine_id=machine_id,
-        message=message or created_message,
+        message=message
+        or ("Moulding machine added" if (created or "").strip().lower() == "moulding_machine" else None),
         error=error,
     )
 
 
-@router.get("/settings/users", response_model=None)
-def list_users(db: Session = Depends(get_db)):
-    users = users_service.list_users(db)
-    return [
-        {"id": user.id, "email": user.email, "role": user.role, "created_at": user.created_at}
-        for user in users
-    ]
+@router.get("/settings/users", response_class=HTMLResponse, response_model=None)
+def settings_users_page(
+    request: Request,
+    message: str | None = None,
+    error: str | None = None,
+    db: Session = Depends(get_db),
+):
+    return _render_settings(
+        "settings_users.html",
+        request,
+        db,
+        champion_id=None,
+        project_id=None,
+        message=message,
+        error=error,
+    )
 
 
 @router.post("/settings/users/{user_id}/role", response_model=None)
@@ -173,8 +264,8 @@ def update_user_role(
             raise ValueError("User not found.")
         users_service.upsert_user_role(db, user_id=user_id, email=user.email, role=role)
     except ValueError as exc:
-        return _render_settings(request, db, champion_id=None, project_id=None, error=str(exc))
-    return RedirectResponse(url="/ui/settings?message=User+role+updated", status_code=303)
+        return _render_settings("settings_users.html", request, db, champion_id=None, project_id=None, error=str(exc))
+    return RedirectResponse(url="/ui/settings/users?message=User+role+updated", status_code=303)
 
 
 @router.post("/settings/champions", response_model=None)
@@ -199,6 +290,7 @@ def add_champion(
         )
     except ValueError as exc:
         return _render_settings(
+            "settings_champions.html",
             request,
             db,
             champion_id=None,
@@ -213,7 +305,7 @@ def add_champion(
             },
             open_modal="champion",
         )
-    return RedirectResponse(url=f"/ui/settings?created=champion&champion_id={champion.id}", status_code=303)
+    return RedirectResponse(url=f"/ui/settings/champions?created=champion&champion_id={champion.id}", status_code=303)
 
 
 @router.post("/settings/champions/{champion_id}", response_model=None)
@@ -240,6 +332,7 @@ def update_champion(
         )
     except ValueError as exc:
         return _render_settings(
+            "settings_champions.html",
             request,
             db,
             champion_id=champion_id,
@@ -253,7 +346,7 @@ def update_champion(
                 "champion_birth_date": birth_date or "",
             },
         )
-    return RedirectResponse(url=f"/ui/settings?message=Champion+updated&champion_id={champion.id}", status_code=303)
+    return RedirectResponse(url=f"/ui/settings/champions?message=Champion+updated&champion_id={champion.id}", status_code=303)
 
 
 @router.post("/settings/projects", response_model=None)
@@ -280,6 +373,7 @@ def add_project(
         )
     except ValueError as exc:
         return _render_settings(
+            "settings_projects.html",
             request,
             db,
             champion_id=None,
@@ -295,7 +389,7 @@ def add_project(
             },
             open_modal="project",
         )
-    return RedirectResponse(url=f"/ui/settings?created=project&project_id={project.id}", status_code=303)
+    return RedirectResponse(url=f"/ui/settings/projects?created=project&project_id={project.id}", status_code=303)
 
 
 @router.post("/settings/projects/{project_id}", response_model=None)
@@ -324,6 +418,7 @@ def update_project(
         )
     except ValueError as exc:
         return _render_settings(
+            "settings_projects.html",
             request,
             db,
             champion_id=None,
@@ -338,7 +433,7 @@ def update_project(
                 "project_due_date": due_date or "",
             },
         )
-    return RedirectResponse(url=f"/ui/settings?message=Project+updated&project_id={project.id}", status_code=303)
+    return RedirectResponse(url=f"/ui/settings/projects?message=Project+updated&project_id={project.id}", status_code=303)
 
 
 @router.post("/settings/moulding-tools", response_model=None)
@@ -357,6 +452,7 @@ def add_moulding_tool(
         )
     except (ValidationError, ValueError, TypeError) as exc:
         return _render_settings(
+            "settings_moulding_tools.html",
             request,
             db,
             champion_id=None,
@@ -369,7 +465,7 @@ def add_moulding_tool(
             },
             open_modal="moulding-tool",
         )
-    return RedirectResponse(url=f"/ui/settings?created=moulding_tool&tool_id={tool.id}", status_code=303)
+    return RedirectResponse(url=f"/ui/settings/moulding-tools?created=moulding_tool&tool_id={tool.id}", status_code=303)
 
 
 @router.post("/settings/moulding-tools/{tool_id}", response_model=None)
@@ -390,6 +486,7 @@ def update_moulding_tool(
         )
     except (ValidationError, ValueError, TypeError) as exc:
         return _render_settings(
+            "settings_moulding_tools.html",
             request,
             db,
             champion_id=None,
@@ -402,7 +499,7 @@ def update_moulding_tool(
                 "tool_ct_seconds": ct_seconds,
             },
         )
-    return RedirectResponse(url=f"/ui/settings?message=Moulding+tool+updated&tool_id={tool.id}", status_code=303)
+    return RedirectResponse(url=f"/ui/settings/moulding-tools?message=Moulding+tool+updated&tool_id={tool.id}", status_code=303)
 
 
 @router.post("/settings/moulding-tools/{tool_id}/delete", response_model=None)
@@ -411,8 +508,15 @@ def delete_moulding_tool(tool_id: int, request: Request, db: Session = Depends(g
     try:
         settings_service.delete_moulding_tool(db, tool_id)
     except ValueError as exc:
-        return _render_settings(request, db, champion_id=None, project_id=None, error=str(exc))
-    return RedirectResponse(url="/ui/settings?message=Moulding+tool+deleted", status_code=303)
+        return _render_settings(
+            "settings_moulding_tools.html",
+            request,
+            db,
+            champion_id=None,
+            project_id=None,
+            error=str(exc),
+        )
+    return RedirectResponse(url="/ui/settings/moulding-tools?message=Moulding+tool+deleted", status_code=303)
 
 
 @router.post("/settings/moulding-machines", response_model=None)
@@ -436,6 +540,7 @@ def add_moulding_machine(
         )
     except (ValidationError, ValueError) as exc:
         return _render_settings(
+            "settings_moulding_machines.html",
             request,
             db,
             champion_id=None,
@@ -448,7 +553,10 @@ def add_moulding_machine(
             },
             open_modal="moulding-machine",
         )
-    return RedirectResponse(url=f"/ui/settings?created=moulding_machine&machine_id={machine.id}", status_code=303)
+    return RedirectResponse(
+        url=f"/ui/settings/moulding-machines?created=moulding_machine&machine_id={machine.id}",
+        status_code=303,
+    )
 
 
 @router.post("/settings/moulding-machines/{machine_id}", response_model=None)
@@ -474,6 +582,7 @@ def update_moulding_machine(
         )
     except (ValidationError, ValueError) as exc:
         return _render_settings(
+            "settings_moulding_machines.html",
             request,
             db,
             champion_id=None,
@@ -486,7 +595,10 @@ def update_moulding_machine(
                 "machine_tool_ids": ",".join(tool_ids),
             },
         )
-    return RedirectResponse(url=f"/ui/settings?message=Moulding+machine+updated&machine_id={machine.id}", status_code=303)
+    return RedirectResponse(
+        url=f"/ui/settings/moulding-machines?message=Moulding+machine+updated&machine_id={machine.id}",
+        status_code=303,
+    )
 
 
 @router.post("/settings/moulding-machines/{machine_id}/delete", response_model=None)
@@ -495,5 +607,12 @@ def delete_moulding_machine(machine_id: int, request: Request, db: Session = Dep
     try:
         settings_service.delete_moulding_machine(db, machine_id)
     except ValueError as exc:
-        return _render_settings(request, db, champion_id=None, project_id=None, error=str(exc))
-    return RedirectResponse(url="/ui/settings?message=Moulding+machine+deleted", status_code=303)
+        return _render_settings(
+            "settings_moulding_machines.html",
+            request,
+            db,
+            champion_id=None,
+            project_id=None,
+            error=str(exc),
+        )
+    return RedirectResponse(url="/ui/settings/moulding-machines?message=Moulding+machine+deleted", status_code=303)

@@ -1,0 +1,86 @@
+{% extends "layout.html" %}
+{% block content %}
+  <div class="settings-page">
+    <section class="card settings-section-card">
+      <div class="settings-subpage-header">
+        <a class="button secondary" href="/ui/settings">← Back to Settings</a>
+        <button class="button" type="button" data-open-modal="champion">Add champion</button>
+      </div>
+      <h2>Champions</h2>
+      {% include "partials/flash_message.html" %}
+
+      {% if champions %}
+        <div class="table-wrap">
+          <table class="table">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Email</th>
+                <th>Position</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for champion in champions %}
+                <tr>
+                  <td>{{ champion.full_name }}</td>
+                  <td>{{ champion.email or '—' }}</td>
+                  <td>{{ champion.position or '—' }}</td>
+                  <td><a class="button secondary" href="/ui/settings/champions?champion_id={{ champion.id }}">Edit</a></td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% else %}
+        <p class="muted">No champions yet. Use Add champion to create one.</p>
+      {% endif %}
+
+      {% if selected_champion %}
+        <div class="card settings-inline-card">
+          <h4>Edit champion</h4>
+          <form class="form-grid" method="post" action="/ui/settings/champions/{{ selected_champion.id }}">
+            <label>First name<input type="text" name="first_name" required value="{{ form.champion_first_name or selected_champion.first_name }}" /></label>
+            <label>Last name<input type="text" name="last_name" required value="{{ form.champion_last_name or selected_champion.last_name }}" /></label>
+            <label>Email<input type="email" name="email" value="{{ form.champion_email or selected_champion.email or '' }}" /></label>
+            <label>Position<input type="text" name="position" value="{{ form.champion_position or selected_champion.position or '' }}" /></label>
+            <label>Birth date<input type="date" name="birth_date" value="{{ form.champion_birth_date or (selected_champion.birth_date.isoformat() if selected_champion.birth_date else '') }}" /></label>
+            <div class="form-actions"><button class="button" type="submit">Save champion</button></div>
+          </form>
+        </div>
+      {% endif %}
+    </section>
+  </div>
+
+  <div class="modal-shell" id="champion-modal" hidden>
+    <div class="modal-backdrop settings-modal-backdrop" data-close-modal="champion"></div>
+    <aside class="create-action-panel settings-modal-panel" role="dialog" aria-modal="true" aria-labelledby="champion-modal-title">
+      <div class="create-action-header">
+        <h3 id="champion-modal-title">Add champion</h3>
+        <button class="button secondary" type="button" data-close-modal="champion">Cancel</button>
+      </div>
+      <form class="form-grid" method="post" action="/ui/settings/champions">
+        <label>First name<input type="text" name="first_name" required value="{{ form.champion_first_name or '' }}" /></label>
+        <label>Last name<input type="text" name="last_name" required value="{{ form.champion_last_name or '' }}" /></label>
+        <label>Email<input type="email" name="email" value="{{ form.champion_email or '' }}" /></label>
+        <label>Position<input type="text" name="position" value="{{ form.champion_position or '' }}" /></label>
+        <label>Birth date<input type="date" name="birth_date" value="{{ form.champion_birth_date or '' }}" /></label>
+        <div class="form-actions">
+          <button class="button" type="submit">Save champion</button>
+          <button class="button secondary" type="button" data-close-modal="champion">Cancel</button>
+        </div>
+      </form>
+    </aside>
+  </div>
+
+  <script>
+    (() => {
+      const modal = document.getElementById("champion-modal");
+      const openModal = () => { modal.hidden = false; document.body.classList.add("no-scroll"); };
+      const closeModal = () => { modal.hidden = true; document.body.classList.remove("no-scroll"); };
+      document.querySelectorAll('[data-open-modal="champion"]').forEach((button) => button.addEventListener("click", openModal));
+      document.querySelectorAll('[data-close-modal="champion"]').forEach((button) => button.addEventListener("click", closeModal));
+      if ({{ (open_modal == "champion") | tojson }}) openModal();
+    })();
+  </script>
+{% endblock %}
