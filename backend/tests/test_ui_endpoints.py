@@ -214,6 +214,49 @@ def test_ui_project_assignment_endpoints_and_assignments_page(client, db_session
     assert remove_line_resp.status_code == 303
 
 
+
+def test_ui_project_add_line_by_line_number_and_unknown_validation(client, db_session):
+    engineer = settings_service.create_champion(
+        db_session,
+        first_name="Lin",
+        last_name="Park",
+        email="lin.park@example.com",
+        position="Process Engineer",
+        birth_date=None,
+    )
+    line = settings_service.create_assembly_line(
+        db_session,
+        AssemblyLineCreate(line_number="PL74", ct_seconds=55.0, hc=19),
+    )
+    project = settings_service.create_project(
+        db_session,
+        "Line Search Project",
+        "Serial production",
+        100,
+        10,
+        engineer.id,
+        None,
+    )
+
+    add_line_resp = client.post(
+        f"/ui/settings/projects/{project.id}/lines/add",
+        data={"line_number": "pl74"},
+        allow_redirects=False,
+    )
+
+    assert add_line_resp.status_code == 303
+    db_session.refresh(project)
+    assert [assigned_line.id for assigned_line in project.assembly_lines] == [line.id]
+
+    unknown_line_resp = client.post(
+        f"/ui/settings/projects/{project.id}/lines/add",
+        data={"line_number": "PL999"},
+        allow_redirects=False,
+    )
+
+    assert unknown_line_resp.status_code == 303
+    assert "error=Unknown+line+number" in unknown_line_resp.headers["location"]
+
 def test_ui_settings_projects_table_has_assignments_links(client, db_session):
     engineer = settings_service.create_champion(
         db_session,
