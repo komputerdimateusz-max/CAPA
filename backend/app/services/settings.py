@@ -445,6 +445,11 @@ def _resolve_tools(db: Session, tool_ids: list[int]) -> list[MouldingTool]:
     return [tools_by_id[tool_id] for tool_id in tool_ids]
 
 
+def _resolve_tool_by_pn(db: Session, tool_pn: str) -> MouldingTool | None:
+    stmt = select(MouldingTool).where(func.lower(MouldingTool.tool_pn) == tool_pn.lower())
+    return db.scalar(stmt)
+
+
 def _ensure_unique_tool_pn(db: Session, tool_pn: str, exclude_id: int | None = None) -> None:
     stmt = select(MouldingTool).where(func.lower(MouldingTool.tool_pn) == tool_pn.lower())
     if exclude_id is not None:
@@ -541,6 +546,58 @@ def delete_moulding_machine(db: Session, machine_id: int) -> None:
     moulding_repo.delete_moulding_machine(db, machine=machine)
 
 
+def add_moulding_machine_tool(
+    db: Session,
+    machine_id: int,
+    *,
+    tool_id: int | None = None,
+    tool_pn: str | None = None,
+) -> MouldingMachine:
+    machine = moulding_repo.get_moulding_machine(db, machine_id)
+    if machine is None:
+        raise ValueError("Moulding machine not found.")
+
+    tool: MouldingTool | None = None
+    if tool_pn:
+        tool = _resolve_tool_by_pn(db, tool_pn.strip())
+    if tool is None and tool_id is not None:
+        tool = moulding_repo.get_moulding_tool(db, tool_id)
+    if tool is None:
+        raise ValueError("Selected moulding tool does not exist.")
+
+    if all(existing.id != tool.id for existing in machine.tools):
+        machine.tools.append(tool)
+    db.add(machine)
+    db.commit()
+    db.refresh(machine)
+    return machine
+
+
+def remove_moulding_machine_tool(
+    db: Session,
+    machine_id: int,
+    *,
+    tool_id: int | None = None,
+    tool_pn: str | None = None,
+) -> MouldingMachine:
+    machine = moulding_repo.get_moulding_machine(db, machine_id)
+    if machine is None:
+        raise ValueError("Moulding machine not found.")
+
+    resolved_tool_id = tool_id
+    if resolved_tool_id is None and tool_pn:
+        tool = _resolve_tool_by_pn(db, tool_pn.strip())
+        resolved_tool_id = tool.id if tool else None
+
+    if resolved_tool_id is not None:
+        machine.tools = [tool for tool in machine.tools if tool.id != resolved_tool_id]
+
+    db.add(machine)
+    db.commit()
+    db.refresh(machine)
+    return machine
+
+
 def _ensure_unique_assembly_line_number(db: Session, line_number: str, exclude_id: int | None = None) -> None:
     stmt = select(AssemblyLine).where(func.lower(AssemblyLine.line_number) == line_number.lower())
     if exclude_id is not None:
@@ -617,6 +674,11 @@ def _resolve_masks(db: Session, mask_ids: list[int]) -> list[MetalizationMask]:
         raise ValueError("Selected metalization masks do not exist.")
     masks_by_id = {mask.id: mask for mask in masks}
     return [masks_by_id[mask_id] for mask_id in mask_ids]
+
+
+def _resolve_mask_by_pn(db: Session, mask_pn: str) -> MetalizationMask | None:
+    stmt = select(MetalizationMask).where(func.lower(MetalizationMask.mask_pn) == mask_pn.lower())
+    return db.scalar(stmt)
 
 
 def _ensure_unique_mask_pn(db: Session, mask_pn: str, exclude_id: int | None = None) -> None:
@@ -709,3 +771,55 @@ def delete_metalization_chamber(db: Session, chamber_id: int) -> None:
     if chamber is None:
         raise ValueError("Metalization chamber not found.")
     metalization_repo.delete_metalization_chamber(db, chamber=chamber)
+
+
+def add_metalization_chamber_mask(
+    db: Session,
+    chamber_id: int,
+    *,
+    mask_id: int | None = None,
+    mask_pn: str | None = None,
+) -> MetalizationChamber:
+    chamber = metalization_repo.get_metalization_chamber(db, chamber_id)
+    if chamber is None:
+        raise ValueError("Metalization chamber not found.")
+
+    mask: MetalizationMask | None = None
+    if mask_pn:
+        mask = _resolve_mask_by_pn(db, mask_pn.strip())
+    if mask is None and mask_id is not None:
+        mask = metalization_repo.get_metalization_mask(db, mask_id)
+    if mask is None:
+        raise ValueError("Selected metalization mask does not exist.")
+
+    if all(existing.id != mask.id for existing in chamber.masks):
+        chamber.masks.append(mask)
+    db.add(chamber)
+    db.commit()
+    db.refresh(chamber)
+    return chamber
+
+
+def remove_metalization_chamber_mask(
+    db: Session,
+    chamber_id: int,
+    *,
+    mask_id: int | None = None,
+    mask_pn: str | None = None,
+) -> MetalizationChamber:
+    chamber = metalization_repo.get_metalization_chamber(db, chamber_id)
+    if chamber is None:
+        raise ValueError("Metalization chamber not found.")
+
+    resolved_mask_id = mask_id
+    if resolved_mask_id is None and mask_pn:
+        mask = _resolve_mask_by_pn(db, mask_pn.strip())
+        resolved_mask_id = mask.id if mask else None
+
+    if resolved_mask_id is not None:
+        chamber.masks = [mask for mask in chamber.masks if mask.id != resolved_mask_id]
+
+    db.add(chamber)
+    db.commit()
+    db.refresh(chamber)
+    return chamber

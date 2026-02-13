@@ -516,3 +516,90 @@ def test_project_metalization_assignments_add_remove_and_cascade(db_session):
     db_session.commit()
 
     assert db_session.scalars(select(ProjectMetalizationMask)).all() == []
+
+
+def test_add_tool_to_moulding_machine_by_tool_pn(db_session):
+    tool = settings_service.create_moulding_tool(
+        db_session,
+        MouldingToolCreate(tool_pn="TM-ADD", description=None, ct_seconds=10),
+    )
+    machine = settings_service.create_moulding_machine(
+        db_session,
+        MouldingMachineCreate(machine_number="M-ADD", tonnage=100, tool_ids=[]),
+    )
+
+    updated = settings_service.add_moulding_machine_tool(db_session, machine.id, tool_pn="tm-add")
+
+    assert [assigned.tool_pn for assigned in updated.tools] == [tool.tool_pn]
+
+
+def test_remove_tool_from_moulding_machine(db_session):
+    tool = settings_service.create_moulding_tool(
+        db_session,
+        MouldingToolCreate(tool_pn="TM-REMOVE", description=None, ct_seconds=10),
+    )
+    machine = settings_service.create_moulding_machine(
+        db_session,
+        MouldingMachineCreate(machine_number="M-REMOVE", tonnage=100, tool_ids=[tool.id]),
+    )
+
+    updated = settings_service.remove_moulding_machine_tool(db_session, machine.id, tool_id=tool.id)
+
+    assert updated.tools == []
+
+
+def test_add_mask_to_chamber_by_mask_pn(db_session):
+    mask = settings_service.create_metalization_mask(
+        db_session,
+        MetalizationMaskCreate(mask_pn="MSK-ADD", description=None, ct_seconds=10),
+    )
+    chamber = settings_service.create_metalization_chamber(
+        db_session,
+        MetalizationChamberCreate(chamber_number="C-ADD", mask_ids=[]),
+    )
+
+    updated = settings_service.add_metalization_chamber_mask(db_session, chamber.id, mask_pn="msk-add")
+
+    assert [assigned.mask_pn for assigned in updated.masks] == [mask.mask_pn]
+
+
+def test_remove_mask_from_chamber(db_session):
+    mask = settings_service.create_metalization_mask(
+        db_session,
+        MetalizationMaskCreate(mask_pn="MSK-REMOVE", description=None, ct_seconds=10),
+    )
+    chamber = settings_service.create_metalization_chamber(
+        db_session,
+        MetalizationChamberCreate(chamber_number="C-REMOVE", mask_ids=[mask.id]),
+    )
+
+    updated = settings_service.remove_metalization_chamber_mask(db_session, chamber.id, mask_id=mask.id)
+
+    assert updated.masks == []
+
+
+def test_machine_and_chamber_assignment_add_is_idempotent(db_session):
+    tool = settings_service.create_moulding_tool(
+        db_session,
+        MouldingToolCreate(tool_pn="TM-IDEMP", description=None, ct_seconds=10),
+    )
+    machine = settings_service.create_moulding_machine(
+        db_session,
+        MouldingMachineCreate(machine_number="M-IDEMP", tonnage=100, tool_ids=[]),
+    )
+    mask = settings_service.create_metalization_mask(
+        db_session,
+        MetalizationMaskCreate(mask_pn="MSK-IDEMP", description=None, ct_seconds=10),
+    )
+    chamber = settings_service.create_metalization_chamber(
+        db_session,
+        MetalizationChamberCreate(chamber_number="C-IDEMP", mask_ids=[]),
+    )
+
+    settings_service.add_moulding_machine_tool(db_session, machine.id, tool_pn=tool.tool_pn)
+    updated_machine = settings_service.add_moulding_machine_tool(db_session, machine.id, tool_id=tool.id)
+    settings_service.add_metalization_chamber_mask(db_session, chamber.id, mask_pn=mask.mask_pn)
+    updated_chamber = settings_service.add_metalization_chamber_mask(db_session, chamber.id, mask_id=mask.id)
+
+    assert [assigned.tool_pn for assigned in updated_machine.tools] == [tool.tool_pn]
+    assert [assigned.mask_pn for assigned in updated_chamber.masks] == [mask.mask_pn]

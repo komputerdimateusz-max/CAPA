@@ -108,6 +108,8 @@ def _resolve_mask_id(db: Session, value: str) -> int:
     if parsed is not None:
         return parsed
     raise ValueError("Selected metalization mask does not exist.")
+
+
 def _resolve_line_id(db: Session, value: str, *, from_line_number: bool = False) -> int:
     cleaned = value.strip()
     if not cleaned:
@@ -876,19 +878,23 @@ def update_moulding_machine(
     request: Request,
     machine_number: str = Form(...),
     tonnage: str | None = Form(default=None),
-    tool_ids: list[str] = Form(default=[]),
+    tool_ids: list[str] | None = Form(default=None),
     db: Session = Depends(get_db),
 ):
     enforce_admin(_current_user(request))
     try:
         parsed_tonnage = _parse_optional_int(tonnage, "Tonnage")
+        parsed_tool_ids = _parse_int_list(tool_ids, "Tools assigned") if tool_ids is not None else None
+        if parsed_tool_ids is None:
+            existing_machine = next((m for m in settings_service.list_moulding_machines(db) if m.id == machine_id), None)
+            parsed_tool_ids = [tool.id for tool in existing_machine.tools] if existing_machine else []
         machine = settings_service.update_moulding_machine(
             db,
             machine_id,
             MouldingMachineUpdate(
                 machine_number=machine_number,
                 tonnage=parsed_tonnage,
-                tool_ids=_parse_int_list(tool_ids, "Tools assigned"),
+                tool_ids=parsed_tool_ids,
             ),
         )
     except (ValidationError, ValueError) as exc:
@@ -903,13 +909,75 @@ def update_moulding_machine(
             form={
                 "machine_number": machine_number,
                 "machine_tonnage": tonnage or "",
-                "machine_tool_ids": ",".join(tool_ids),
+                "machine_tool_ids": ",".join(tool_ids or []),
             },
         )
     return RedirectResponse(
         url=f"/ui/settings/moulding-machines?message=Moulding+machine+updated&machine_id={machine.id}",
         status_code=303,
     )
+
+
+@router.post("/settings/moulding-machines/{machine_id}/tools/add", response_model=None)
+def add_moulding_machine_tool(
+    machine_id: int,
+    request: Request,
+    tool_pn: str | None = Form(default=None),
+    tool_id: str | None = Form(default=None),
+    db: Session = Depends(get_db),
+):
+    enforce_admin(_current_user(request))
+    try:
+        parsed_tool_id = _parse_optional_int(tool_id, "Moulding tool") if tool_id is not None else None
+        if not (tool_pn and tool_pn.strip()) and parsed_tool_id is None:
+            raise ValueError("Moulding tool is required.")
+        settings_service.add_moulding_machine_tool(
+            db,
+            machine_id,
+            tool_id=parsed_tool_id,
+            tool_pn=tool_pn,
+        )
+    except ValueError as exc:
+        return _render_settings(
+            "settings_moulding_machines.html",
+            request,
+            db,
+            champion_id=None,
+            project_id=None,
+            machine_id=machine_id,
+            error=str(exc),
+        )
+    return RedirectResponse(url=f"/ui/settings/moulding-machines?machine_id={machine_id}", status_code=303)
+
+
+@router.post("/settings/moulding-machines/{machine_id}/tools/remove", response_model=None)
+def remove_moulding_machine_tool(
+    machine_id: int,
+    request: Request,
+    tool_id: str | None = Form(default=None),
+    tool_pn: str | None = Form(default=None),
+    db: Session = Depends(get_db),
+):
+    enforce_admin(_current_user(request))
+    try:
+        parsed_tool_id = _parse_optional_int(tool_id, "Moulding tool") if tool_id is not None else None
+        settings_service.remove_moulding_machine_tool(
+            db,
+            machine_id,
+            tool_id=parsed_tool_id,
+            tool_pn=tool_pn,
+        )
+    except ValueError as exc:
+        return _render_settings(
+            "settings_moulding_machines.html",
+            request,
+            db,
+            champion_id=None,
+            project_id=None,
+            machine_id=machine_id,
+            error=str(exc),
+        )
+    return RedirectResponse(url=f"/ui/settings/moulding-machines?machine_id={machine_id}", status_code=303)
 
 
 @router.post("/settings/moulding-machines/{machine_id}/delete", response_model=None)
@@ -1121,15 +1189,19 @@ def update_metalization_chamber(
     chamber_id: int,
     request: Request,
     chamber_number: str = Form(...),
-    mask_ids: list[str] = Form(default=[]),
+    mask_ids: list[str] | None = Form(default=None),
     db: Session = Depends(get_db),
 ):
     enforce_admin(_current_user(request))
     try:
+        parsed_mask_ids = _parse_int_list(mask_ids, "Masks assigned") if mask_ids is not None else None
+        if parsed_mask_ids is None:
+            existing_chamber = next((c for c in settings_service.list_metalization_chambers(db) if c.id == chamber_id), None)
+            parsed_mask_ids = [mask.id for mask in existing_chamber.masks] if existing_chamber else []
         chamber = settings_service.update_metalization_chamber(
             db,
             chamber_id,
-            MetalizationChamberUpdate(chamber_number=chamber_number, mask_ids=_parse_int_list(mask_ids, "Masks assigned")),
+            MetalizationChamberUpdate(chamber_number=chamber_number, mask_ids=parsed_mask_ids),
         )
     except (ValidationError, ValueError) as exc:
         return _render_settings(
@@ -1140,9 +1212,71 @@ def update_metalization_chamber(
             project_id=None,
             chamber_id=chamber_id,
             error=str(exc),
-            form={"chamber_number": chamber_number, "chamber_mask_ids": ",".join(mask_ids)},
+            form={"chamber_number": chamber_number, "chamber_mask_ids": ",".join(mask_ids or [])},
         )
     return RedirectResponse(url=f"/ui/settings/metalization-chambers?message=Metalization+chamber+updated&chamber_id={chamber.id}", status_code=303)
+
+
+@router.post("/settings/metalization-chambers/{chamber_id}/masks/add", response_model=None)
+def add_metalization_chamber_mask(
+    chamber_id: int,
+    request: Request,
+    mask_pn: str | None = Form(default=None),
+    mask_id: str | None = Form(default=None),
+    db: Session = Depends(get_db),
+):
+    enforce_admin(_current_user(request))
+    try:
+        parsed_mask_id = _parse_optional_int(mask_id, "Metalization mask") if mask_id is not None else None
+        if not (mask_pn and mask_pn.strip()) and parsed_mask_id is None:
+            raise ValueError("Metalization mask is required.")
+        settings_service.add_metalization_chamber_mask(
+            db,
+            chamber_id,
+            mask_id=parsed_mask_id,
+            mask_pn=mask_pn,
+        )
+    except ValueError as exc:
+        return _render_settings(
+            "settings_metalization_chambers.html",
+            request,
+            db,
+            champion_id=None,
+            project_id=None,
+            chamber_id=chamber_id,
+            error=str(exc),
+        )
+    return RedirectResponse(url=f"/ui/settings/metalization-chambers?chamber_id={chamber_id}", status_code=303)
+
+
+@router.post("/settings/metalization-chambers/{chamber_id}/masks/remove", response_model=None)
+def remove_metalization_chamber_mask(
+    chamber_id: int,
+    request: Request,
+    mask_id: str | None = Form(default=None),
+    mask_pn: str | None = Form(default=None),
+    db: Session = Depends(get_db),
+):
+    enforce_admin(_current_user(request))
+    try:
+        parsed_mask_id = _parse_optional_int(mask_id, "Metalization mask") if mask_id is not None else None
+        settings_service.remove_metalization_chamber_mask(
+            db,
+            chamber_id,
+            mask_id=parsed_mask_id,
+            mask_pn=mask_pn,
+        )
+    except ValueError as exc:
+        return _render_settings(
+            "settings_metalization_chambers.html",
+            request,
+            db,
+            champion_id=None,
+            project_id=None,
+            chamber_id=chamber_id,
+            error=str(exc),
+        )
+    return RedirectResponse(url=f"/ui/settings/metalization-chambers?chamber_id={chamber_id}", status_code=303)
 
 
 @router.post("/settings/metalization-chambers/{chamber_id}/delete", response_model=None)

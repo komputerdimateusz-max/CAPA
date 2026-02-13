@@ -1,9 +1,82 @@
 {% extends "layout.html" %}
 {% block content %}
-  <div class="settings-page"><section class="card settings-section-card"><div class="settings-subpage-header"><a class="button secondary" href="/ui/settings">← Back to Settings</a><button class="button" type="button" data-open-modal="metalization-chamber">Add metalization chamber</button></div><h2>Metalization Chambers</h2>{% include "partials/flash_message.html" %}
-    {% if metalization_chambers %}<div class="table-wrap"><table class="table"><thead><tr><th>Chamber number</th><th>Masks assigned</th><th></th></tr></thead><tbody>{% for chamber in metalization_chambers %}<tr><td>{{ chamber.chamber_number }}</td><td>{% if chamber.masks %}{{ chamber.masks | map(attribute='mask_pn') | join(', ') }}{% else %}—{% endif %}</td><td><a class="button secondary" href="/ui/settings/metalization-chambers?chamber_id={{ chamber.id }}">Edit</a></td></tr>{% endfor %}</tbody></table></div>{% else %}<p class="muted">No metalization chambers yet. Use Add metalization chamber to create one.</p>{% endif %}
-    {% if selected_metalization_chamber %}{% set edit_chamber_mask_ids = (form.chamber_mask_ids.split(',') if form.chamber_mask_ids else selected_metalization_chamber.masks | map(attribute='id') | list) %}<div class="card settings-inline-card"><h4>Edit metalization chamber</h4><form class="form-grid" method="post" action="/ui/settings/metalization-chambers/{{ selected_metalization_chamber.id }}"><label>Chamber number<input type="text" name="chamber_number" required value="{{ form.chamber_number or selected_metalization_chamber.chamber_number }}" /></label><label>Masks assigned{% if metalization_masks %}<select name="mask_ids" multiple size="5">{% for mask in metalization_masks %}<option value="{{ mask.id }}" {% if mask.id in edit_chamber_mask_ids or mask.id|string in edit_chamber_mask_ids %}selected{% endif %}>{{ mask.mask_pn }}</option>{% endfor %}</select>{% else %}<p class="muted">Add metalization masks first.</p>{% endif %}</label><div class="form-actions"><button class="button" type="submit">Save metalization chamber</button></div></form><form method="post" action="/ui/settings/metalization-chambers/{{ selected_metalization_chamber.id }}/delete"><button class="button secondary" type="submit">Delete metalization chamber</button></form></div>{% endif %}
-  </section></div>
+  <div class="settings-page">
+    <section class="card settings-section-card">
+      <div class="settings-subpage-header">
+        <a class="button secondary" href="/ui/settings">← Back to Settings</a>
+        <button class="button" type="button" data-open-modal="metalization-chamber">Add metalization chamber</button>
+      </div>
+      <h2>Metalization Chambers</h2>
+      {% include "partials/flash_message.html" %}
+
+      {% if metalization_chambers %}
+        <div class="table-wrap">
+          <table class="table">
+            <thead>
+              <tr><th>Chamber number</th><th>Masks assigned</th><th></th></tr>
+            </thead>
+            <tbody>
+              {% for chamber in metalization_chambers %}
+                <tr>
+                  <td>{{ chamber.chamber_number }}</td>
+                  <td>{% if chamber.masks %}{{ chamber.masks | map(attribute='mask_pn') | join(', ') }}{% else %}—{% endif %}</td>
+                  <td><a class="button secondary" href="/ui/settings/metalization-chambers?chamber_id={{ chamber.id }}">Edit</a></td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% else %}
+        <p class="muted">No metalization chambers yet. Use Add metalization chamber to create one.</p>
+      {% endif %}
+
+      {% if selected_metalization_chamber %}
+        <div class="card settings-inline-card">
+          <h4>Edit metalization chamber</h4>
+          <form class="form-grid" method="post" action="/ui/settings/metalization-chambers/{{ selected_metalization_chamber.id }}">
+            <label>Chamber number<input type="text" name="chamber_number" required value="{{ form.chamber_number or selected_metalization_chamber.chamber_number }}" /></label>
+            <div class="form-actions"><button class="button" type="submit">Save metalization chamber</button></div>
+          </form>
+
+          <div class="assignment-widget">
+            <h5>Metalization masks assigned</h5>
+            {% if metalization_masks %}
+              <form class="assignment-add-form" method="post" action="/ui/settings/metalization-chambers/{{ selected_metalization_chamber.id }}/masks/add">
+                <input name="mask_pn" list="metal-mask-options" placeholder="Type mask P/N" autocomplete="off" required />
+                <datalist id="metal-mask-options">
+                  {% for mask in metalization_masks %}
+                    <option value="{{ mask.mask_pn }}">{{ mask.mask_pn }}{% if mask.description %} — {{ mask.description }}{% endif %} (CT {{ mask.ct_seconds }}s)</option>
+                  {% endfor %}
+                </datalist>
+                <button class="button secondary" type="submit">Add mask</button>
+              </form>
+              <small class="muted">Start typing to search, then click Add.</small>
+            {% else %}
+              <p class="muted">No masks defined yet. Add them in Settings → Metalization Masks.</p>
+            {% endif %}
+
+            <div class="assignment-chips">
+              {% for mask in selected_metalization_chamber.masks %}
+                <span class="chip assignment-chip">{{ mask.mask_pn }}
+                  <form method="post" action="/ui/settings/metalization-chambers/{{ selected_metalization_chamber.id }}/masks/remove">
+                    <input type="hidden" name="mask_id" value="{{ mask.id }}" />
+                    <button class="assignment-remove" type="submit" aria-label="Remove mask">×</button>
+                  </form>
+                </span>
+              {% else %}
+                <small class="muted">No metalization masks assigned.</small>
+              {% endfor %}
+            </div>
+          </div>
+
+          <form method="post" action="/ui/settings/metalization-chambers/{{ selected_metalization_chamber.id }}/delete">
+            <button class="button secondary" type="submit">Delete metalization chamber</button>
+          </form>
+        </div>
+      {% endif %}
+    </section>
+  </div>
+
   <div class="modal-shell" id="metalization-chamber-modal" hidden><div class="modal-backdrop settings-modal-backdrop" data-close-modal="metalization-chamber"></div><aside class="create-action-panel settings-modal-panel"><div class="create-action-header"><h3>Add metalization chamber</h3><button class="button secondary" type="button" data-close-modal="metalization-chamber">Cancel</button></div><form class="form-grid" method="post" action="/ui/settings/metalization-chambers"><label>Chamber number<input type="text" name="chamber_number" required value="{{ form.chamber_number or '' }}" /></label><label>Masks assigned{% set create_chamber_mask_ids = form.chamber_mask_ids.split(',') if form.chamber_mask_ids else [] %}{% if metalization_masks %}<select name="mask_ids" multiple size="5">{% for mask in metalization_masks %}<option value="{{ mask.id }}" {% if mask.id|string in create_chamber_mask_ids %}selected{% endif %}>{{ mask.mask_pn }}</option>{% endfor %}</select>{% else %}<p class="muted">Add metalization masks first.</p>{% endif %}</label><div class="form-actions"><button class="button" type="submit">Save metalization chamber</button><button class="button secondary" type="button" data-close-modal="metalization-chamber">Cancel</button></div></form></aside></div>
   <script>(()=>{const modal=document.getElementById("metalization-chamber-modal");const openModal=()=>{modal.hidden=false;document.body.classList.add("no-scroll")};const closeModal=()=>{modal.hidden=true;document.body.classList.remove("no-scroll")};document.querySelectorAll('[data-open-modal="metalization-chamber"]').forEach((button)=>button.addEventListener("click",openModal));document.querySelectorAll('[data-close-modal="metalization-chamber"]').forEach((button)=>button.addEventListener("click",closeModal));if({{ (open_modal == "metalization-chamber") | tojson }})openModal();})();</script>
 {% endblock %}
