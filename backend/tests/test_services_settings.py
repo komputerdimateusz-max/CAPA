@@ -648,7 +648,7 @@ def test_create_moulding_tool_with_hc_and_unit_cost(db_session):
     listed = settings_service.list_moulding_tools(db_session)
     listed_tool = next(item for item in listed if item.id == tool.id)
     assert listed_tool.hc_total == 3.5
-    assert listed_tool.unit_labour_cost == pytest.approx((3600 / 30) * 10 * 2 + (3600 / 30) * 20 * 1.5)
+    assert listed_tool.unit_labour_cost == pytest.approx((30 * 2 / 3600) * 10 + (30 * 1.5 / 3600) * 20)
 
 
 def test_create_metalization_mask_with_hc_and_zero_ct_cost(db_session):
@@ -670,3 +670,22 @@ def test_create_metalization_mask_with_hc_and_zero_ct_cost(db_session):
     listed_mask = next(item for item in listed if item.id == mask.id)
     assert listed_mask.hc_total == 3
     assert listed_mask.unit_labour_cost == 0
+
+
+def test_compute_unit_labour_cost_returns_zero_for_null_ct_and_missing_inputs(db_session):
+    tool = settings_service.create_moulding_tool(
+        db_session,
+        MouldingToolCreate(
+            tool_pn="HC-T-NULL",
+            description="tool",
+            ct_seconds=15,
+            hc_map={"Operator": 0.02},
+        ),
+    )
+
+    # missing labour rate rows/worker mappings are treated as 0
+    unit_cost = settings_service.compute_tool_unit_cost(db_session, tool, {"Operator": 0.02})
+    assert unit_cost == 0
+
+    # NULL or non-positive CT should always result in zero cost
+    assert settings_service._compute_unit_labour_cost(None, {"Operator": 1}, {"Operator": 10}) == 0
