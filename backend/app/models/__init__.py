@@ -6,6 +6,7 @@ from app.models.champion import Champion
 from app.models.tag import Tag
 from app.models.user import User
 from app.models.moulding import MouldingMachine, MouldingMachineTool, MouldingTool
+from app.models.assembly_line import AssemblyLine
 
 __all__ = [
     "Action",
@@ -18,4 +19,5 @@ __all__ = [
     "MouldingTool",
     "MouldingMachine",
     "MouldingMachineTool",
+    "AssemblyLine",
 ]

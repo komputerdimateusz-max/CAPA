@@ -16,6 +16,7 @@ def test_ui_settings_page(client):
     assert response.status_code == 200
     assert "Global Settings" in response.text
     assert "Moulding Machines" in response.text
+    assert "Assembly Lines" in response.text
 
 
 def test_ui_settings_champions_subpage(client):
@@ -138,3 +139,11 @@ def test_ui_settings_updates_user_role(client, db_session):
     assert response.status_code == 303
     db_session.refresh(user)
     assert user.role == "admin"
+
+
+def test_ui_settings_assembly_lines_subpage(client):
+    response = client.get("/ui/settings/assembly-lines")
+
+    assert response.status_code == 200
+    assert "Assembly Lines" in response.text
+    assert "Add assembly line" in response.text

@@ -4,6 +4,7 @@ from datetime import date
 
 import pytest
 
+from app.schemas.assembly_line import AssemblyLineCreate
 from app.schemas.moulding import MouldingMachineCreate, MouldingMachineUpdate, MouldingToolCreate
 from app.services import settings as settings_service
 
@@ -187,3 +188,32 @@ def test_list_moulding_machines_returns_assigned_tools(db_session):
     assert len(machines) == 1
     assert machines[0].machine_number == "M-LIST"
     assert [(assigned.id, assigned.tool_pn) for assigned in machines[0].tools] == [(tool.id, "T-LIST")]
+
+
+def test_create_assembly_line_and_list_order(db_session):
+    settings_service.create_assembly_line(
+        db_session,
+        AssemblyLineCreate(line_number="20", ct_seconds=8.5, hc=3),
+    )
+    created = settings_service.create_assembly_line(
+        db_session,
+        AssemblyLineCreate(line_number="10", ct_seconds=12, hc=5),
+    )
+
+    assembly_lines = settings_service.list_assembly_lines(db_session)
+
+    assert created.id is not None
+    assert [line.line_number for line in assembly_lines] == ["10", "20"]
+
+
+def test_create_assembly_line_requires_unique_line_number(db_session):
+    settings_service.create_assembly_line(
+        db_session,
+        AssemblyLineCreate(line_number="L-01", ct_seconds=10, hc=2),
+    )
+
+    with pytest.raises(ValueError, match="Line number already exists"):
+        settings_service.create_assembly_line(
+            db_session,
+            AssemblyLineCreate(line_number="L-01", ct_seconds=11, hc=4),
+        )
