@@ -1,0 +1,93 @@
+{% extends "layout.html" %}
+{% block content %}
+  <div class="settings-page">
+    <section class="card settings-section-card">
+      <div class="settings-subpage-header">
+        <a class="button secondary" href="/ui/settings">← Back to Settings</a>
+      </div>
+      <h2>Assembly Lines</h2>
+      <button class="button" type="button" data-open-modal="assembly-line-add">Add assembly line</button>
+      {% include "partials/flash_message.html" %}
+
+      {% if assembly_lines %}
+        <div class="table-wrap">
+          <table class="table">
+            <thead>
+              <tr><th>Line number</th><th>CT (s)</th><th>HC</th><th>Edit</th></tr>
+            </thead>
+            <tbody>
+              {% for assembly_line in assembly_lines %}
+                <tr>
+                  <td>{{ assembly_line.line_number }}</td>
+                  <td>{{ assembly_line.ct_seconds }}</td>
+                  <td>{{ assembly_line.hc }}</td>
+                  <td><a class="button secondary" href="/ui/settings/assembly-lines?assembly_line_id={{ assembly_line.id }}">Edit</a></td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% else %}
+        <p class="muted">No assembly lines yet. Use Add assembly line to create one.</p>
+      {% endif %}
+    </section>
+  </div>
+
+  <div class="modal-shell" id="assembly-line-add-modal" hidden>
+    <div class="modal-backdrop settings-modal-backdrop" data-close-modal="assembly-line-add"></div>
+    <aside class="create-action-panel settings-modal-panel">
+      <div class="create-action-header">
+        <h3>Add assembly line</h3>
+        <button class="button secondary" type="button" data-close-modal="assembly-line-add">Cancel</button>
+      </div>
+      <form class="form-grid" method="post" action="/ui/settings/assembly-lines">
+        <label>Line number<input type="text" name="line_number" required value="{{ form.assembly_line_number or '' }}" /></label>
+        <label>CT (s)<input type="number" name="ct_seconds" min="0" step="0.1" required value="{{ form.assembly_ct_seconds or '' }}" /></label>
+        <label>HC<input type="number" name="hc" min="0" step="1" required value="{{ form.assembly_hc or '' }}" /></label>
+        <div class="form-actions"><button class="button" type="submit">Save</button><button class="button secondary" type="button" data-close-modal="assembly-line-add">Cancel</button></div>
+      </form>
+    </aside>
+  </div>
+
+  {% if selected_assembly_line %}
+    <div class="modal-shell" id="assembly-line-edit-modal" hidden>
+      <div class="modal-backdrop settings-modal-backdrop" data-close-modal="assembly-line-edit"></div>
+      <aside class="create-action-panel settings-modal-panel">
+        <div class="create-action-header">
+          <h3>Edit assembly line</h3>
+          <button class="button secondary" type="button" data-close-modal="assembly-line-edit">Cancel</button>
+        </div>
+        <form class="form-grid" method="post" action="/ui/settings/assembly-lines/{{ selected_assembly_line.id }}">
+          <label>Line number<input type="text" name="line_number" required value="{{ form.assembly_line_number or selected_assembly_line.line_number }}" /></label>
+          <label>CT (s)<input type="number" name="ct_seconds" min="0" step="0.1" required value="{{ form.assembly_ct_seconds or selected_assembly_line.ct_seconds }}" /></label>
+          <label>HC<input type="number" name="hc" min="0" step="1" required value="{{ form.assembly_hc or selected_assembly_line.hc }}" /></label>
+          <div class="form-actions"><button class="button" type="submit">Save</button><button class="button secondary" type="button" data-close-modal="assembly-line-edit">Cancel</button></div>
+        </form>
+        <form method="post" action="/ui/settings/assembly-lines/{{ selected_assembly_line.id }}/delete">
+          <button class="button secondary" type="submit">Delete</button>
+        </form>
+      </aside>
+    </div>
+  {% endif %}
+
+  <script>
+    (() => {
+      const bindModal = (name) => {
+        const modal = document.getElementById(`${name}-modal`);
+        if (!modal) return;
+        const openModal = () => { modal.hidden = false; document.body.classList.add("no-scroll"); };
+        const closeModal = () => { modal.hidden = true; document.body.classList.remove("no-scroll"); };
+        document.querySelectorAll(`[data-open-modal="${name}"]`).forEach((button) => button.addEventListener("click", openModal));
+        document.querySelectorAll(`[data-close-modal="${name}"]`).forEach((button) => button.addEventListener("click", closeModal));
+        return openModal;
+      };
+
+      const openAddModal = bindModal("assembly-line-add");
+      const openEditModal = bindModal("assembly-line-edit");
+      if ({{ (open_modal == "assembly-line-add") | tojson }}) openAddModal && openAddModal();
+      if ({{ (open_modal == "assembly-line-edit") | tojson }} || {{ (selected_assembly_line is not none) | tojson }}) {
+        openEditModal && openEditModal();
+      }
+    })();
+  </script>
+{% endblock %}

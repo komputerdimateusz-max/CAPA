@@ -14,6 +14,7 @@ from app.db.session import get_db
 from app.models.user import User
 from app.repositories import champions as champions_repo
 from app.repositories import projects as projects_repo
+from app.schemas.assembly_line import AssemblyLineCreate, AssemblyLineUpdate
 from app.schemas.moulding import MouldingMachineCreate, MouldingMachineUpdate, MouldingToolCreate, MouldingToolUpdate
 from app.services import settings as settings_service
 from app.services import users as users_service
@@ -80,12 +81,14 @@ def _base_settings_context(db: Session) -> dict[str, object]:
     users = users_service.list_users(db)
     moulding_tools = settings_service.list_moulding_tools(db)
     moulding_machines = settings_service.list_moulding_machines(db)
+    assembly_lines = settings_service.list_assembly_lines(db)
     return {
         "champions": champions,
         "projects": projects,
         "users": users,
         "moulding_tools": moulding_tools,
         "moulding_machines": moulding_machines,
+        "assembly_lines": assembly_lines,
         "project_status_options": settings_service.ALLOWED_PROJECT_STATUSES,
         "user_role_options": users_service.ALLOWED_USER_ROLES,
     }
@@ -103,6 +106,7 @@ def _render_settings(
     error: str | None = None,
     form: dict[str, str] | None = None,
     open_modal: str | None = None,
+    assembly_line_id: int | None = None,
 ):
     context = _base_settings_context(db)
     champions = context["champions"]
@@ -115,6 +119,8 @@ def _render_settings(
     selected_moulding_machine = (
         next((machine for machine in moulding_machines if machine.id == machine_id), None) if machine_id else None
     )
+    assembly_lines = context["assembly_lines"]
+    selected_assembly_line = next((line for line in assembly_lines if line.id == assembly_line_id), None) if assembly_line_id else None
     return templates.TemplateResponse(
         template_name,
         {
@@ -128,6 +134,7 @@ def _render_settings(
             "form": form or {},
             "format_date": format_date,
             "open_modal": open_modal,
+            "selected_assembly_line": selected_assembly_line,
             **context,
         },
     )
@@ -232,6 +239,28 @@ def settings_moulding_machines_page(
         error=error,
     )
 
+
+
+
+@router.get("/settings/assembly-lines", response_class=HTMLResponse, response_model=None)
+def settings_assembly_lines_page(
+    request: Request,
+    assembly_line_id: int | None = None,
+    message: str | None = None,
+    created: str | None = None,
+    error: str | None = None,
+    db: Session = Depends(get_db),
+):
+    return _render_settings(
+        "settings_assembly_lines.html",
+        request,
+        db,
+        champion_id=None,
+        project_id=None,
+        message=message or ("Assembly line added" if (created or "").strip().lower() == "assembly_line" else None),
+        error=error,
+        assembly_line_id=assembly_line_id,
+    )
 
 @router.get("/settings/users", response_class=HTMLResponse, response_model=None)
 def settings_users_page(
@@ -616,3 +645,95 @@ def delete_moulding_machine(machine_id: int, request: Request, db: Session = Dep
             error=str(exc),
         )
     return RedirectResponse(url="/ui/settings/moulding-machines?message=Moulding+machine+deleted", status_code=303)
+
+
+@router.post("/settings/assembly-lines", response_model=None)
+def add_assembly_line(
+    request: Request,
+    line_number: str = Form(...),
+    ct_seconds: str = Form(...),
+    hc: str = Form(...),
+    db: Session = Depends(get_db),
+):
+    enforce_admin(_current_user(request))
+    try:
+        assembly_line = settings_service.create_assembly_line(
+            db,
+            AssemblyLineCreate(line_number=line_number, ct_seconds=float(ct_seconds), hc=int(hc)),
+        )
+    except (ValidationError, ValueError, TypeError) as exc:
+        return _render_settings(
+            "settings_assembly_lines.html",
+            request,
+            db,
+            champion_id=None,
+            project_id=None,
+            error=str(exc),
+            form={
+                "assembly_line_number": line_number,
+                "assembly_ct_seconds": ct_seconds,
+                "assembly_hc": hc,
+            },
+            open_modal="assembly-line-add",
+        )
+    return RedirectResponse(
+        url=f"/ui/settings/assembly-lines?created=assembly_line&assembly_line_id={assembly_line.id}",
+        status_code=303,
+    )
+
+
+@router.post("/settings/assembly-lines/{assembly_line_id}", response_model=None)
+def update_assembly_line(
+    assembly_line_id: int,
+    request: Request,
+    line_number: str = Form(...),
+    ct_seconds: str = Form(...),
+    hc: str = Form(...),
+    db: Session = Depends(get_db),
+):
+    enforce_admin(_current_user(request))
+    try:
+        assembly_line = settings_service.update_assembly_line(
+            db,
+            assembly_line_id,
+            AssemblyLineUpdate(line_number=line_number, ct_seconds=float(ct_seconds), hc=int(hc)),
+        )
+    except (ValidationError, ValueError, TypeError) as exc:
+        return _render_settings(
+            "settings_assembly_lines.html",
+            request,
+            db,
+            champion_id=None,
+            project_id=None,
+            assembly_line_id=assembly_line_id,
+            error=str(exc),
+            form={
+                "assembly_line_number": line_number,
+                "assembly_ct_seconds": ct_seconds,
+                "assembly_hc": hc,
+            },
+            open_modal="assembly-line-edit",
+        )
+    return RedirectResponse(
+        url=f"/ui/settings/assembly-lines?message=Assembly+line+updated&assembly_line_id={assembly_line.id}",
+        status_code=303,
+    )
+
+
+@router.post("/settings/assembly-lines/{assembly_line_id}/delete", response_model=None)
+def delete_assembly_line(assembly_line_id: int, request: Request, db: Session = Depends(get_db)):
+    enforce_admin(_current_user(request))
+    try:
+        settings_service.delete_assembly_line(db, assembly_line_id)
+    except ValueError as exc:
+        return _render_settings(
+            "settings_assembly_lines.html",
+            request,
+            db,
+            champion_id=None,
+            project_id=None,
+            assembly_line_id=assembly_line_id,
+            error=str(exc),
+            open_modal="assembly-line-edit",
+        )
+    return RedirectResponse(url="/ui/settings/assembly-lines?message=Assembly+line+deleted", status_code=303)

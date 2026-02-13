@@ -5,10 +5,13 @@ from datetime import date
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.models.assembly_line import AssemblyLine
 from app.models.champion import Champion
 from app.models.moulding import MouldingMachine, MouldingTool
 from app.models.project import Project
+from app.repositories import assembly_lines as assembly_lines_repo
 from app.repositories import moulding as moulding_repo
+from app.schemas.assembly_line import AssemblyLineCreate, AssemblyLineUpdate
 from app.schemas.moulding import (
     MouldingMachineCreate,
     MouldingMachineUpdate,
@@ -377,3 +380,61 @@ def delete_moulding_machine(db: Session, machine_id: int) -> None:
     if machine is None:
         raise ValueError("Moulding machine not found.")
     moulding_repo.delete_moulding_machine(db, machine=machine)
+
+
+def _ensure_unique_assembly_line_number(db: Session, line_number: str, exclude_id: int | None = None) -> None:
+    stmt = select(AssemblyLine).where(func.lower(AssemblyLine.line_number) == line_number.lower())
+    if exclude_id is not None:
+        stmt = stmt.where(AssemblyLine.id != exclude_id)
+    if db.scalar(stmt):
+        raise ValueError("Line number already exists.")
+
+
+def list_assembly_lines(db: Session) -> list[AssemblyLine]:
+    return assembly_lines_repo.list_assembly_lines(db)
+
+
+def get_assembly_line(db: Session, assembly_line_id: int) -> AssemblyLine | None:
+    return assembly_lines_repo.get_assembly_line(db, assembly_line_id)
+
+
+def create_assembly_line(db: Session, data: AssemblyLineCreate) -> AssemblyLine:
+    line_number = _normalize_required_text(data.line_number, "Line number")
+    _ensure_unique_assembly_line_number(db, line_number)
+    return assembly_lines_repo.create_assembly_line(
+        db,
+        line_number=line_number,
+        ct_seconds=_normalize_non_negative_ct(data.ct_seconds),
+        hc=data.hc,
+    )
+
+
+def update_assembly_line(db: Session, assembly_line_id: int, data: AssemblyLineUpdate) -> AssemblyLine:
+    assembly_line = assembly_lines_repo.get_assembly_line(db, assembly_line_id)
+    if assembly_line is None:
+        raise ValueError("Assembly line not found.")
+
+    next_line_number = _normalize_required_text(data.line_number or assembly_line.line_number, "Line number")
+    next_ct_seconds = _normalize_non_negative_ct(
+        data.ct_seconds if data.ct_seconds is not None else assembly_line.ct_seconds
+    )
+    next_hc = data.hc if data.hc is not None else assembly_line.hc
+    if next_hc < 0:
+        raise ValueError("HC must be greater than or equal to 0.")
+
+    _ensure_unique_assembly_line_number(db, next_line_number, exclude_id=assembly_line_id)
+
+    return assembly_lines_repo.update_assembly_line(
+        db,
+        assembly_line=assembly_line,
+        line_number=next_line_number,
+        ct_seconds=next_ct_seconds,
+        hc=next_hc,
+    )
+
+
+def delete_assembly_line(db: Session, assembly_line_id: int) -> None:
+    assembly_line = assembly_lines_repo.get_assembly_line(db, assembly_line_id)
+    if assembly_line is None:
+        raise ValueError("Assembly line not found.")
+    assembly_lines_repo.delete_assembly_line(db, assembly_line=assembly_line)
