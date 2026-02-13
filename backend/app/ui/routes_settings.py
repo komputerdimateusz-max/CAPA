@@ -63,6 +63,24 @@ def _parse_optional_float(value: str | None, label: str) -> float | None:
         raise ValueError(f"{label} must be a number.") from exc
 
 
+def _build_hc_map(
+    hc_operator: str,
+    hc_logistic: str,
+    hc_teamleader: str,
+    hc_inspector: str,
+    hc_specialist: str,
+    hc_technican: str,
+) -> dict[str, float]:
+    return {
+        "Operator": float(hc_operator),
+        "Logistic": float(hc_logistic),
+        "TeamLeader": float(hc_teamleader),
+        "Inspector": float(hc_inspector),
+        "Specialist": float(hc_specialist),
+        "Technican": float(hc_technican),
+    }
+
+
 def _parse_int_list(values: list[str] | None, label: str) -> list[int]:
     if not values:
         return []
@@ -145,6 +163,7 @@ def _base_settings_context(db: Session) -> dict[str, object]:
         "assembly_lines": assembly_lines,
         "metalization_masks": metalization_masks,
         "metalization_chambers": metalization_chambers,
+        "worker_types": settings_service.LABOUR_COST_WORKER_TYPES,
         "project_status_options": settings_service.ALLOWED_PROJECT_STATUSES,
         "user_role_options": users_service.ALLOWED_USER_ROLES,
     }
@@ -185,6 +204,8 @@ def _render_settings(
     selected_metalization_chamber = (
         next((chamber for chamber in metalization_chambers if chamber.id == chamber_id), None) if chamber_id else None
     )
+    selected_moulding_tool_hc_map = settings_service.get_tool_hc_map(db, selected_moulding_tool.id) if selected_moulding_tool else {}
+    selected_metalization_mask_hc_map = settings_service.get_mask_hc_map(db, selected_metalization_mask.id) if selected_metalization_mask else {}
     return templates.TemplateResponse(
         template_name,
         {
@@ -201,6 +222,8 @@ def _render_settings(
             "selected_assembly_line": selected_assembly_line,
             "selected_metalization_mask": selected_metalization_mask,
             "selected_metalization_chamber": selected_metalization_chamber,
+            "selected_moulding_tool_hc_map": selected_moulding_tool_hc_map,
+            "selected_metalization_mask_hc_map": selected_metalization_mask_hc_map,
             **context,
         },
     )
@@ -774,13 +797,21 @@ def add_moulding_tool(
     tool_pn: str = Form(...),
     description: str | None = Form(default=None),
     ct_seconds: str = Form(...),
+    hc_operator: str = Form(default="0"),
+    hc_logistic: str = Form(default="0"),
+    hc_teamleader: str = Form(default="0"),
+    hc_inspector: str = Form(default="0"),
+    hc_specialist: str = Form(default="0"),
+    hc_technican: str = Form(default="0"),
     db: Session = Depends(get_db),
 ):
     enforce_admin(_current_user(request))
+    hc_map: dict[str, float] = {}
     try:
+        hc_map = _build_hc_map(hc_operator, hc_logistic, hc_teamleader, hc_inspector, hc_specialist, hc_technican)
         tool = settings_service.create_moulding_tool(
             db,
-            MouldingToolCreate(tool_pn=tool_pn, description=description, ct_seconds=float(ct_seconds)),
+            MouldingToolCreate(tool_pn=tool_pn, description=description, ct_seconds=float(ct_seconds), hc_map=hc_map),
         )
     except (ValidationError, ValueError, TypeError) as exc:
         return _render_settings(
@@ -790,11 +821,7 @@ def add_moulding_tool(
             champion_id=None,
             project_id=None,
             error=str(exc),
-            form={
-                "tool_pn": tool_pn,
-                "tool_description": description or "",
-                "tool_ct_seconds": ct_seconds,
-            },
+            form={"tool_pn": tool_pn, "tool_description": description or "", "tool_ct_seconds": ct_seconds, **{f"hc_{k.lower()}": v for k, v in hc_map.items()}},
             open_modal="moulding-tool",
         )
     return RedirectResponse(url=f"/ui/settings/moulding-tools?created=moulding_tool&tool_id={tool.id}", status_code=303)
@@ -807,14 +834,22 @@ def update_moulding_tool(
     tool_pn: str = Form(...),
     description: str | None = Form(default=None),
     ct_seconds: str = Form(...),
+    hc_operator: str = Form(default="0"),
+    hc_logistic: str = Form(default="0"),
+    hc_teamleader: str = Form(default="0"),
+    hc_inspector: str = Form(default="0"),
+    hc_specialist: str = Form(default="0"),
+    hc_technican: str = Form(default="0"),
     db: Session = Depends(get_db),
 ):
     enforce_admin(_current_user(request))
+    hc_map: dict[str, float] = {}
     try:
+        hc_map = _build_hc_map(hc_operator, hc_logistic, hc_teamleader, hc_inspector, hc_specialist, hc_technican)
         tool = settings_service.update_moulding_tool(
             db,
             tool_id,
-            MouldingToolUpdate(tool_pn=tool_pn, description=description, ct_seconds=float(ct_seconds)),
+            MouldingToolUpdate(tool_pn=tool_pn, description=description, ct_seconds=float(ct_seconds), hc_map=hc_map),
         )
     except (ValidationError, ValueError, TypeError) as exc:
         return _render_settings(
@@ -825,11 +860,7 @@ def update_moulding_tool(
             project_id=None,
             tool_id=tool_id,
             error=str(exc),
-            form={
-                "tool_pn": tool_pn,
-                "tool_description": description or "",
-                "tool_ct_seconds": ct_seconds,
-            },
+            form={"tool_pn": tool_pn, "tool_description": description or "", "tool_ct_seconds": ct_seconds, **{f"hc_{k.lower()}": v for k, v in hc_map.items()}},
         )
     return RedirectResponse(url=f"/ui/settings/moulding-tools?message=Moulding+tool+updated&tool_id={tool.id}", status_code=303)
 
@@ -1114,13 +1145,21 @@ def add_metalization_mask(
     mask_pn: str = Form(...),
     description: str | None = Form(default=None),
     ct_seconds: str = Form(...),
+    hc_operator: str = Form(default="0"),
+    hc_logistic: str = Form(default="0"),
+    hc_teamleader: str = Form(default="0"),
+    hc_inspector: str = Form(default="0"),
+    hc_specialist: str = Form(default="0"),
+    hc_technican: str = Form(default="0"),
     db: Session = Depends(get_db),
 ):
     enforce_admin(_current_user(request))
+    hc_map: dict[str, float] = {}
     try:
+        hc_map = _build_hc_map(hc_operator, hc_logistic, hc_teamleader, hc_inspector, hc_specialist, hc_technican)
         mask = settings_service.create_metalization_mask(
             db,
-            MetalizationMaskCreate(mask_pn=mask_pn, description=description, ct_seconds=float(ct_seconds)),
+            MetalizationMaskCreate(mask_pn=mask_pn, description=description, ct_seconds=float(ct_seconds), hc_map=hc_map),
         )
     except (ValidationError, ValueError, TypeError) as exc:
         return _render_settings(
@@ -1130,7 +1169,7 @@ def add_metalization_mask(
             champion_id=None,
             project_id=None,
             error=str(exc),
-            form={"mask_pn": mask_pn, "mask_description": description or "", "mask_ct_seconds": ct_seconds},
+            form={"mask_pn": mask_pn, "mask_description": description or "", "mask_ct_seconds": ct_seconds, **{f"hc_{k.lower()}": v for k, v in hc_map.items()}},
             open_modal="metalization-mask",
         )
     return RedirectResponse(url=f"/ui/settings/metalization-masks?created=metalization_mask&mask_id={mask.id}", status_code=303)
@@ -1143,14 +1182,22 @@ def update_metalization_mask(
     mask_pn: str = Form(...),
     description: str | None = Form(default=None),
     ct_seconds: str = Form(...),
+    hc_operator: str = Form(default="0"),
+    hc_logistic: str = Form(default="0"),
+    hc_teamleader: str = Form(default="0"),
+    hc_inspector: str = Form(default="0"),
+    hc_specialist: str = Form(default="0"),
+    hc_technican: str = Form(default="0"),
     db: Session = Depends(get_db),
 ):
     enforce_admin(_current_user(request))
+    hc_map: dict[str, float] = {}
     try:
+        hc_map = _build_hc_map(hc_operator, hc_logistic, hc_teamleader, hc_inspector, hc_specialist, hc_technican)
         mask = settings_service.update_metalization_mask(
             db,
             mask_id,
-            MetalizationMaskUpdate(mask_pn=mask_pn, description=description, ct_seconds=float(ct_seconds)),
+            MetalizationMaskUpdate(mask_pn=mask_pn, description=description, ct_seconds=float(ct_seconds), hc_map=hc_map),
         )
     except (ValidationError, ValueError, TypeError) as exc:
         return _render_settings(
@@ -1161,7 +1208,7 @@ def update_metalization_mask(
             project_id=None,
             mask_id=mask_id,
             error=str(exc),
-            form={"mask_pn": mask_pn, "mask_description": description or "", "mask_ct_seconds": ct_seconds},
+            form={"mask_pn": mask_pn, "mask_description": description or "", "mask_ct_seconds": ct_seconds, **{f"hc_{k.lower()}": v for k, v in hc_map.items()}},
         )
     return RedirectResponse(url=f"/ui/settings/metalization-masks?message=Metalization+mask+updated&mask_id={mask.id}", status_code=303)
 

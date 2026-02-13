@@ -40,6 +40,13 @@ class MouldingTool(Base):
     description: Mapped[str | None] = mapped_column(String(500), nullable=True)
     ct_seconds: Mapped[float] = mapped_column(Float, nullable=False)
 
+    hc_rows = relationship(
+        "MouldingToolHC",
+        back_populates="tool",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+
     machines = relationship(
         "MouldingMachine",
         secondary="moulding_machine_tools",
@@ -67,3 +74,16 @@ class MouldingMachine(Base):
         back_populates="machines",
         passive_deletes=True,
     )
+
+
+class MouldingToolHC(Base):
+    __tablename__ = "moulding_tool_hc"
+
+    tool_id: Mapped[int] = mapped_column(
+        ForeignKey("moulding_tools.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    worker_type: Mapped[str] = mapped_column(String(100), primary_key=True)
+    hc: Mapped[float] = mapped_column(Float, nullable=False, default=0)
+
+    tool = relationship("MouldingTool", back_populates="hc_rows")

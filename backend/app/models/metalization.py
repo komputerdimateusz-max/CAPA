@@ -40,6 +40,13 @@ class MetalizationMask(Base):
     description: Mapped[str | None] = mapped_column(String(500), nullable=True)
     ct_seconds: Mapped[float] = mapped_column(Float, nullable=False)
 
+    hc_rows = relationship(
+        "MetalizationMaskHC",
+        back_populates="mask",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+
     chambers = relationship(
         "MetalizationChamber",
         secondary="metalization_chamber_masks",
@@ -66,3 +73,16 @@ class MetalizationChamber(Base):
         back_populates="chambers",
         passive_deletes=True,
     )
+
+
+class MetalizationMaskHC(Base):
+    __tablename__ = "metalization_mask_hc"
+
+    mask_id: Mapped[int] = mapped_column(
+        ForeignKey("metalization_masks.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    worker_type: Mapped[str] = mapped_column(String(100), primary_key=True)
+    hc: Mapped[float] = mapped_column(Float, nullable=False, default=0)
+
+    mask = relationship("MetalizationMask", back_populates="hc_rows")

@@ -1,18 +1,38 @@
 from __future__ import annotations
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session, selectinload
 
-from app.models.metalization import MetalizationChamber, MetalizationMask
+from app.models.metalization import MetalizationChamber, MetalizationMask, MetalizationMaskHC
 
 
 def list_metalization_masks(db: Session) -> list[MetalizationMask]:
-    stmt = select(MetalizationMask).order_by(MetalizationMask.mask_pn.asc())
+    stmt = (
+        select(MetalizationMask)
+        .options(selectinload(MetalizationMask.hc_rows))
+        .order_by(MetalizationMask.mask_pn.asc())
+    )
     return list(db.scalars(stmt).all())
 
 
 def get_metalization_mask(db: Session, mask_id: int) -> MetalizationMask | None:
-    return db.get(MetalizationMask, mask_id)
+    stmt = (
+        select(MetalizationMask)
+        .options(selectinload(MetalizationMask.hc_rows))
+        .where(MetalizationMask.id == mask_id)
+    )
+    return db.scalar(stmt)
+
+
+def get_mask_hc_map(db: Session, mask_id: int) -> dict[str, float]:
+    stmt = select(MetalizationMaskHC).where(MetalizationMaskHC.mask_id == mask_id)
+    return {row.worker_type: row.hc for row in db.scalars(stmt).all()}
+
+
+def set_mask_hc(db: Session, mask_id: int, hc_map: dict[str, float]) -> None:
+    db.execute(delete(MetalizationMaskHC).where(MetalizationMaskHC.mask_id == mask_id))
+    for worker_type, hc in hc_map.items():
+        db.add(MetalizationMaskHC(mask_id=mask_id, worker_type=worker_type, hc=hc))
 
 
 def create_metalization_mask(db: Session, *, mask_pn: str, description: str | None, ct_seconds: float) -> MetalizationMask:

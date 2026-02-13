@@ -470,19 +470,98 @@ def _ensure_unique_machine_number(db: Session, machine_number: str, exclude_id: 
         raise ValueError("Machine number already exists.")
 
 
+def _normalize_hc_map(hc_map: dict[str, float] | None) -> dict[str, float]:
+    normalized: dict[str, float] = {}
+    raw = hc_map or {}
+    for worker_type in LABOUR_COST_WORKER_TYPES:
+        value = raw.get(worker_type, 0)
+        try:
+            parsed = float(value)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"{worker_type} HC must be numeric.") from exc
+        if parsed < 0:
+            raise ValueError(f"{worker_type} HC must be greater than or equal to 0.")
+        normalized[worker_type] = parsed
+    return normalized
+
+
+def _labour_cost_map(db: Session) -> dict[str, float]:
+    ensure_labour_cost_rows(db)
+    return {row.worker_type: row.cost_pln for row in labour_costs_repo.list_labour_costs(db, LABOUR_COST_WORKER_TYPES)}
+
+
+def _compute_unit_labour_cost(ct_seconds: float, hc_map: dict[str, float], labour_cost_map: dict[str, float]) -> float:
+    if ct_seconds <= 0:
+        return 0
+    pieces_per_hour = 3600.0 / ct_seconds
+    return sum(pieces_per_hour * labour_cost_map.get(worker_type, 0) * hc_map.get(worker_type, 0) for worker_type in LABOUR_COST_WORKER_TYPES)
+
+
+def _attach_tool_cost_fields(db: Session, tools: list[MouldingTool]) -> list[MouldingTool]:
+    labour_cost_map = _labour_cost_map(db)
+    for tool in tools:
+        hc_map = moulding_repo.get_tool_hc_map(db, tool.id)
+        tool.hc_total = sum(hc_map.get(worker_type, 0) for worker_type in LABOUR_COST_WORKER_TYPES)
+        tool.unit_labour_cost = _compute_unit_labour_cost(tool.ct_seconds, hc_map, labour_cost_map)
+    return tools
+
+
+def _attach_mask_cost_fields(db: Session, masks: list[MetalizationMask]) -> list[MetalizationMask]:
+    labour_cost_map = _labour_cost_map(db)
+    for mask in masks:
+        hc_map = metalization_repo.get_mask_hc_map(db, mask.id)
+        mask.hc_total = sum(hc_map.get(worker_type, 0) for worker_type in LABOUR_COST_WORKER_TYPES)
+        mask.unit_labour_cost = _compute_unit_labour_cost(mask.ct_seconds, hc_map, labour_cost_map)
+    return masks
+
+
+def get_tool_hc_map(db: Session, tool_id: int) -> dict[str, float]:
+    existing = moulding_repo.get_tool_hc_map(db, tool_id)
+    return {worker_type: existing.get(worker_type, 0) for worker_type in LABOUR_COST_WORKER_TYPES}
+
+
+def set_tool_hc(db: Session, tool_id: int, hc_map: dict[str, float]) -> dict[str, float]:
+    normalized = _normalize_hc_map(hc_map)
+    moulding_repo.set_tool_hc(db, tool_id, normalized)
+    db.commit()
+    return normalized
+
+
+def get_mask_hc_map(db: Session, mask_id: int) -> dict[str, float]:
+    existing = metalization_repo.get_mask_hc_map(db, mask_id)
+    return {worker_type: existing.get(worker_type, 0) for worker_type in LABOUR_COST_WORKER_TYPES}
+
+
+def set_mask_hc(db: Session, mask_id: int, hc_map: dict[str, float]) -> dict[str, float]:
+    normalized = _normalize_hc_map(hc_map)
+    metalization_repo.set_mask_hc(db, mask_id, normalized)
+    db.commit()
+    return normalized
+
+
+def compute_tool_unit_cost(db: Session, tool: MouldingTool, hc_map: dict[str, float] | None = None) -> float:
+    return _compute_unit_labour_cost(tool.ct_seconds, _normalize_hc_map(hc_map), _labour_cost_map(db))
+
+
+def compute_mask_unit_cost(db: Session, mask: MetalizationMask, hc_map: dict[str, float] | None = None) -> float:
+    return _compute_unit_labour_cost(mask.ct_seconds, _normalize_hc_map(hc_map), _labour_cost_map(db))
+
+
 def list_moulding_tools(db: Session) -> list[MouldingTool]:
-    return moulding_repo.list_moulding_tools(db)
+    return _attach_tool_cost_fields(db, moulding_repo.list_moulding_tools(db))
 
 
 def create_moulding_tool(db: Session, data: MouldingToolCreate) -> MouldingTool:
     tool_pn = _normalize_required_text(data.tool_pn, "Tool P/N")
     _ensure_unique_tool_pn(db, tool_pn)
-    return moulding_repo.create_moulding_tool(
+    tool = moulding_repo.create_moulding_tool(
         db,
         tool_pn=tool_pn,
         description=_normalize_optional_text(data.description),
         ct_seconds=_normalize_non_negative_ct(data.ct_seconds),
     )
+    set_tool_hc(db, tool.id, data.hc_map)
+    return moulding_repo.get_moulding_tool(db, tool.id) or tool
 
 
 def update_moulding_tool(db: Session, tool_id: int, data: MouldingToolUpdate) -> MouldingTool:
@@ -491,13 +570,15 @@ def update_moulding_tool(db: Session, tool_id: int, data: MouldingToolUpdate) ->
         raise ValueError("Moulding tool not found.")
     tool_pn = _normalize_required_text(data.tool_pn, "Tool P/N")
     _ensure_unique_tool_pn(db, tool_pn, exclude_id=tool_id)
-    return moulding_repo.update_moulding_tool(
+    updated = moulding_repo.update_moulding_tool(
         db,
         tool=tool,
         tool_pn=tool_pn,
         description=_normalize_optional_text(data.description),
         ct_seconds=_normalize_non_negative_ct(data.ct_seconds),
     )
+    set_tool_hc(db, tool_id, data.hc_map)
+    return moulding_repo.get_moulding_tool(db, tool_id) or updated
 
 
 def delete_moulding_tool(db: Session, tool_id: int) -> None:
@@ -708,18 +789,20 @@ def _ensure_unique_chamber_number(db: Session, chamber_number: str, exclude_id: 
 
 
 def list_metalization_masks(db: Session) -> list[MetalizationMask]:
-    return metalization_repo.list_metalization_masks(db)
+    return _attach_mask_cost_fields(db, metalization_repo.list_metalization_masks(db))
 
 
 def create_metalization_mask(db: Session, data: MetalizationMaskCreate) -> MetalizationMask:
     mask_pn = _normalize_required_text(data.mask_pn, "Mask P/N")
     _ensure_unique_mask_pn(db, mask_pn)
-    return metalization_repo.create_metalization_mask(
+    mask = metalization_repo.create_metalization_mask(
         db,
         mask_pn=mask_pn,
         description=_normalize_optional_text(data.description),
         ct_seconds=_normalize_non_negative_ct(data.ct_seconds),
     )
+    set_mask_hc(db, mask.id, data.hc_map)
+    return metalization_repo.get_metalization_mask(db, mask.id) or mask
 
 
 def update_metalization_mask(db: Session, mask_id: int, data: MetalizationMaskUpdate) -> MetalizationMask:
@@ -728,13 +811,15 @@ def update_metalization_mask(db: Session, mask_id: int, data: MetalizationMaskUp
         raise ValueError("Metalization mask not found.")
     mask_pn = _normalize_required_text(data.mask_pn, "Mask P/N")
     _ensure_unique_mask_pn(db, mask_pn, exclude_id=mask_id)
-    return metalization_repo.update_metalization_mask(
+    updated = metalization_repo.update_metalization_mask(
         db,
         mask=mask,
         mask_pn=mask_pn,
         description=_normalize_optional_text(data.description),
         ct_seconds=_normalize_non_negative_ct(data.ct_seconds),
     )
+    set_mask_hc(db, mask_id, data.hc_map)
+    return metalization_repo.get_metalization_mask(db, mask_id) or updated
 
 
 def delete_metalization_mask(db: Session, mask_id: int) -> None:
