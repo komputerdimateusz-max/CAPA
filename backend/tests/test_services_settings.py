@@ -716,3 +716,92 @@ def test_material_create_list_unique_and_update(db_session):
     assert updated.description == "Updated"
     assert updated.unit == "pcs"
     assert updated.price_per_unit == 15
+
+
+def test_tool_material_add_update_remove(db_session):
+    tool = settings_service.create_moulding_tool(
+        db_session,
+        MouldingToolCreate(tool_pn="BOM-T-1", description=None, ct_seconds=10),
+    )
+    material = settings_service.create_material(
+        db_session,
+        MaterialCreate(part_number="BOM-M-1", description="Granulate", unit="kg", price_per_unit=1),
+    )
+
+    settings_service.add_material_to_tool(db_session, tool.id, material_id=material.id, qty_per_piece=1.5)
+    rows = settings_service.list_materials_for_tool(db_session, tool.id)
+    assert len(rows) == 1
+    assert rows[0].qty_per_piece == pytest.approx(1.5)
+
+    settings_service.add_material_to_tool(db_session, tool.id, material_id=material.id, qty_per_piece=2.5)
+    rows = settings_service.list_materials_for_tool(db_session, tool.id)
+    assert len(rows) == 1
+    assert rows[0].qty_per_piece == pytest.approx(2.5)
+
+    settings_service.update_tool_material_qty(db_session, tool.id, material.id, 3.5)
+    rows = settings_service.list_materials_for_tool(db_session, tool.id)
+    assert rows[0].qty_per_piece == pytest.approx(3.5)
+
+    settings_service.remove_material_from_tool(db_session, tool.id, material.id)
+    assert settings_service.list_materials_for_tool(db_session, tool.id) == []
+
+
+def test_mask_material_add_update_remove(db_session):
+    mask = settings_service.create_metalization_mask(
+        db_session,
+        MetalizationMaskCreate(mask_pn="BOM-K-1", description=None, ct_seconds=10),
+    )
+    material = settings_service.create_material(
+        db_session,
+        MaterialCreate(part_number="BOM-M-2", description="Paint", unit="ml", price_per_unit=1),
+    )
+
+    settings_service.add_material_to_mask(db_session, mask.id, material_id=material.id, qty_per_piece=0.25)
+    rows = settings_service.list_materials_for_mask(db_session, mask.id)
+    assert len(rows) == 1
+    assert rows[0].qty_per_piece == pytest.approx(0.25)
+
+    settings_service.update_mask_material_qty(db_session, mask.id, material.id, 0.4)
+    rows = settings_service.list_materials_for_mask(db_session, mask.id)
+    assert rows[0].qty_per_piece == pytest.approx(0.4)
+
+    settings_service.remove_material_from_mask(db_session, mask.id, material.id)
+    assert settings_service.list_materials_for_mask(db_session, mask.id) == []
+
+
+def test_reject_non_positive_qty_for_tool_and_mask(db_session):
+    tool = settings_service.create_moulding_tool(
+        db_session,
+        MouldingToolCreate(tool_pn="BOM-T-2", description=None, ct_seconds=10),
+    )
+    mask = settings_service.create_metalization_mask(
+        db_session,
+        MetalizationMaskCreate(mask_pn="BOM-K-2", description=None, ct_seconds=10),
+    )
+    material = settings_service.create_material(
+        db_session,
+        MaterialCreate(part_number="BOM-M-3", description="Resin", unit="kg", price_per_unit=1),
+    )
+
+    with pytest.raises(ValueError, match="greater than 0"):
+        settings_service.add_material_to_tool(db_session, tool.id, material_id=material.id, qty_per_piece=0)
+
+    with pytest.raises(ValueError, match="greater than 0"):
+        settings_service.add_material_to_mask(db_session, mask.id, material_id=material.id, qty_per_piece=-1)
+
+
+def test_reject_unknown_material_part_number_for_tool_and_mask(db_session):
+    tool = settings_service.create_moulding_tool(
+        db_session,
+        MouldingToolCreate(tool_pn="BOM-T-3", description=None, ct_seconds=10),
+    )
+    mask = settings_service.create_metalization_mask(
+        db_session,
+        MetalizationMaskCreate(mask_pn="BOM-K-3", description=None, ct_seconds=10),
+    )
+
+    with pytest.raises(ValueError, match="does not exist"):
+        settings_service.add_material_to_tool(db_session, tool.id, part_number="UNKNOWN", qty_per_piece=1)
+
+    with pytest.raises(ValueError, match="does not exist"):
+        settings_service.add_material_to_mask(db_session, mask.id, part_number="UNKNOWN", qty_per_piece=1)

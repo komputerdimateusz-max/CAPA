@@ -422,6 +422,16 @@ def _normalize_non_negative_ct(value: float) -> float:
     return value
 
 
+def _normalize_positive_qty_per_piece(value: float) -> float:
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("Qty / piece must be numeric.") from exc
+    if parsed <= 0:
+        raise ValueError("Qty / piece must be greater than 0.")
+    return parsed
+
+
 def _normalize_tonnage(value: int | None) -> int | None:
     if value is None:
         return None
@@ -452,6 +462,11 @@ def _resolve_tools(db: Session, tool_ids: list[int]) -> list[MouldingTool]:
 
 def _resolve_tool_by_pn(db: Session, tool_pn: str) -> MouldingTool | None:
     stmt = select(MouldingTool).where(func.lower(MouldingTool.tool_pn) == tool_pn.lower())
+    return db.scalar(stmt)
+
+
+def _resolve_material_by_part_number(db: Session, part_number: str) -> Material | None:
+    stmt = select(Material).where(func.lower(Material.part_number) == part_number.lower())
     return db.scalar(stmt)
 
 
@@ -592,6 +607,61 @@ def delete_moulding_tool(db: Session, tool_id: int) -> None:
     if tool is None:
         raise ValueError("Moulding tool not found.")
     moulding_repo.delete_moulding_tool(db, tool=tool)
+
+
+def list_materials_for_tool(db: Session, tool_id: int):
+    tool = moulding_repo.get_moulding_tool(db, tool_id)
+    if tool is None:
+        raise ValueError("Moulding tool not found.")
+    rows = moulding_repo.list_materials_for_tool(db, tool_id)
+    return sorted(rows, key=lambda row: row.material.part_number.lower())
+
+
+def add_material_to_tool(
+    db: Session,
+    tool_id: int,
+    *,
+    material_id: int | None = None,
+    part_number: str | None = None,
+    qty_per_piece: float,
+):
+    tool = moulding_repo.get_moulding_tool(db, tool_id)
+    if tool is None:
+        raise ValueError("Moulding tool not found.")
+    material = _resolve_material_by_part_number(db, part_number.strip()) if part_number and part_number.strip() else None
+    if material is None and material_id is not None:
+        material = materials_repo.get_material(db, material_id)
+    if material is None:
+        raise ValueError("Selected material does not exist.")
+    moulding_repo.upsert_tool_material(
+        db,
+        tool_id=tool_id,
+        material_id=material.id,
+        qty_per_piece=_normalize_positive_qty_per_piece(qty_per_piece),
+    )
+
+
+def update_tool_material_qty(db: Session, tool_id: int, material_id: int, qty_per_piece: float) -> None:
+    tool = moulding_repo.get_moulding_tool(db, tool_id)
+    if tool is None:
+        raise ValueError("Moulding tool not found.")
+    if materials_repo.get_material(db, material_id) is None:
+        raise ValueError("Selected material does not exist.")
+    if moulding_repo.get_tool_material(db, tool_id, material_id) is None:
+        raise ValueError("Tool material assignment not found.")
+    moulding_repo.upsert_tool_material(
+        db,
+        tool_id=tool_id,
+        material_id=material_id,
+        qty_per_piece=_normalize_positive_qty_per_piece(qty_per_piece),
+    )
+
+
+def remove_material_from_tool(db: Session, tool_id: int, material_id: int) -> None:
+    tool = moulding_repo.get_moulding_tool(db, tool_id)
+    if tool is None:
+        raise ValueError("Moulding tool not found.")
+    moulding_repo.delete_tool_material(db, tool_id=tool_id, material_id=material_id)
 
 
 def list_moulding_machines(db: Session) -> list[MouldingMachine]:
@@ -833,6 +903,61 @@ def delete_metalization_mask(db: Session, mask_id: int) -> None:
     if mask is None:
         raise ValueError("Metalization mask not found.")
     metalization_repo.delete_metalization_mask(db, mask=mask)
+
+
+def list_materials_for_mask(db: Session, mask_id: int):
+    mask = metalization_repo.get_metalization_mask(db, mask_id)
+    if mask is None:
+        raise ValueError("Metalization mask not found.")
+    rows = metalization_repo.list_materials_for_mask(db, mask_id)
+    return sorted(rows, key=lambda row: row.material.part_number.lower())
+
+
+def add_material_to_mask(
+    db: Session,
+    mask_id: int,
+    *,
+    material_id: int | None = None,
+    part_number: str | None = None,
+    qty_per_piece: float,
+):
+    mask = metalization_repo.get_metalization_mask(db, mask_id)
+    if mask is None:
+        raise ValueError("Metalization mask not found.")
+    material = _resolve_material_by_part_number(db, part_number.strip()) if part_number and part_number.strip() else None
+    if material is None and material_id is not None:
+        material = materials_repo.get_material(db, material_id)
+    if material is None:
+        raise ValueError("Selected material does not exist.")
+    metalization_repo.upsert_mask_material(
+        db,
+        mask_id=mask_id,
+        material_id=material.id,
+        qty_per_piece=_normalize_positive_qty_per_piece(qty_per_piece),
+    )
+
+
+def update_mask_material_qty(db: Session, mask_id: int, material_id: int, qty_per_piece: float) -> None:
+    mask = metalization_repo.get_metalization_mask(db, mask_id)
+    if mask is None:
+        raise ValueError("Metalization mask not found.")
+    if materials_repo.get_material(db, material_id) is None:
+        raise ValueError("Selected material does not exist.")
+    if metalization_repo.get_mask_material(db, mask_id, material_id) is None:
+        raise ValueError("Mask material assignment not found.")
+    metalization_repo.upsert_mask_material(
+        db,
+        mask_id=mask_id,
+        material_id=material_id,
+        qty_per_piece=_normalize_positive_qty_per_piece(qty_per_piece),
+    )
+
+
+def remove_material_from_mask(db: Session, mask_id: int, material_id: int) -> None:
+    mask = metalization_repo.get_metalization_mask(db, mask_id)
+    if mask is None:
+        raise ValueError("Metalization mask not found.")
+    metalization_repo.delete_mask_material(db, mask_id=mask_id, material_id=material_id)
 
 
 def list_metalization_chambers(db: Session) -> list[MetalizationChamber]:

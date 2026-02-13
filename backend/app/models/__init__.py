@@ -5,7 +5,7 @@ from app.models.project import Project
 from app.models.champion import Champion
 from app.models.tag import Tag
 from app.models.user import User
-from app.models.moulding import MouldingMachine, MouldingMachineTool, MouldingTool, MouldingToolHC
+from app.models.moulding import MouldingMachine, MouldingMachineTool, MouldingTool, MouldingToolHC, MouldingToolMaterial
 from app.models.assembly_line import AssemblyLine
 from app.models.labour_cost import LabourCost
 from app.models.material import Material
@@ -14,6 +14,7 @@ from app.models.metalization import (
     MetalizationChamberMask,
     MetalizationMask,
     MetalizationMaskHC,
+    MetalizationMaskMaterial,
     ProjectMetalizationMask,
 )
 
@@ -29,11 +30,13 @@ __all__ = [
     "MouldingMachine",
     "MouldingMachineTool",
     "MouldingToolHC",
+    "MouldingToolMaterial",
     "AssemblyLine",
     "LabourCost",
     "Material",
     "MetalizationMask",
     "MetalizationMaskHC",
+    "MetalizationMaskMaterial",
     "MetalizationChamber",
     "MetalizationChamberMask",
     "ProjectMetalizationMask",
