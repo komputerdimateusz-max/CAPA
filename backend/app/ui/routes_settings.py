@@ -55,7 +55,7 @@ def _parse_optional_int(value: str | None, label: str) -> int | None:
 def _parse_optional_float(value: str | None, label: str) -> float | None:
     if value is None:
         return None
-    cleaned = value.strip()
+    cleaned = value.strip().replace(",", ".")
     if not cleaned:
         return None
     try:
@@ -112,6 +112,19 @@ def _resolve_tool_id(db: Session, value: str) -> int:
     if parsed is not None:
         return parsed
     raise ValueError("Selected moulding tool does not exist.")
+
+
+def _resolve_material_id(db: Session, value: str) -> int:
+    cleaned = value.strip()
+    if not cleaned:
+        raise ValueError("Material is required.")
+    for material in settings_service.list_materials(db):
+        if material.part_number.lower() == cleaned.lower():
+            return material.id
+    parsed = _parse_optional_int(value, "Material")
+    if parsed is not None:
+        return parsed
+    raise ValueError("Selected material does not exist.")
 
 
 
@@ -212,6 +225,8 @@ def _render_settings(
     selected_material = next((material for material in materials if material.id == material_id), None) if material_id else None
     selected_moulding_tool_hc_map = settings_service.get_tool_hc_map(db, selected_moulding_tool.id) if selected_moulding_tool else {}
     selected_metalization_mask_hc_map = settings_service.get_mask_hc_map(db, selected_metalization_mask.id) if selected_metalization_mask else {}
+    selected_moulding_tool_materials = settings_service.list_materials_for_tool(db, selected_moulding_tool.id) if selected_moulding_tool else []
+    selected_metalization_mask_materials = settings_service.list_materials_for_mask(db, selected_metalization_mask.id) if selected_metalization_mask else []
     return templates.TemplateResponse(
         template_name,
         {
@@ -231,6 +246,8 @@ def _render_settings(
             "selected_material": selected_material,
             "selected_moulding_tool_hc_map": selected_moulding_tool_hc_map,
             "selected_metalization_mask_hc_map": selected_metalization_mask_hc_map,
+            "selected_moulding_tool_materials": selected_moulding_tool_materials,
+            "selected_metalization_mask_materials": selected_metalization_mask_materials,
             **context,
         },
     )
@@ -930,6 +947,67 @@ def delete_moulding_tool(tool_id: int, request: Request, db: Session = Depends(g
     return RedirectResponse(url="/ui/settings/moulding-tools?message=Moulding+tool+deleted", status_code=303)
 
 
+@router.post("/settings/moulding-tools/{tool_id}/materials/add", response_model=None)
+def add_moulding_tool_material(
+    tool_id: int,
+    request: Request,
+    part_number: str | None = Form(default=None),
+    material_id: str | None = Form(default=None),
+    qty_per_piece: str = Form(...),
+    db: Session = Depends(get_db),
+):
+    enforce_admin(_current_user(request))
+    try:
+        parsed_material_id = _parse_optional_int(material_id, "Material") if material_id else None
+        parsed_qty = _parse_optional_float(qty_per_piece, "Qty / piece")
+        if parsed_qty is None:
+            raise ValueError("Qty / piece is required.")
+        settings_service.add_material_to_tool(
+            db,
+            tool_id,
+            material_id=parsed_material_id,
+            part_number=part_number,
+            qty_per_piece=parsed_qty,
+        )
+    except ValueError as exc:
+        return RedirectResponse(url=f"/ui/settings/moulding-tools?tool_id={tool_id}&error={quote_plus(str(exc))}", status_code=303)
+    return RedirectResponse(url=f"/ui/settings/moulding-tools?tool_id={tool_id}&message=Material+added", status_code=303)
+
+
+@router.post("/settings/moulding-tools/{tool_id}/materials/{material_id}/qty", response_model=None)
+def update_moulding_tool_material_qty(
+    tool_id: int,
+    material_id: int,
+    request: Request,
+    qty_per_piece: str = Form(...),
+    db: Session = Depends(get_db),
+):
+    enforce_admin(_current_user(request))
+    try:
+        parsed_qty = _parse_optional_float(qty_per_piece, "Qty / piece")
+        if parsed_qty is None:
+            raise ValueError("Qty / piece is required.")
+        settings_service.update_tool_material_qty(db, tool_id, material_id, parsed_qty)
+    except ValueError as exc:
+        return RedirectResponse(url=f"/ui/settings/moulding-tools?tool_id={tool_id}&error={quote_plus(str(exc))}", status_code=303)
+    return RedirectResponse(url=f"/ui/settings/moulding-tools?tool_id={tool_id}&message=Material+qty+updated", status_code=303)
+
+
+@router.post("/settings/moulding-tools/{tool_id}/materials/{material_id}/remove", response_model=None)
+def remove_moulding_tool_material(
+    tool_id: int,
+    material_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    enforce_admin(_current_user(request))
+    try:
+        settings_service.remove_material_from_tool(db, tool_id, material_id)
+    except ValueError as exc:
+        return RedirectResponse(url=f"/ui/settings/moulding-tools?tool_id={tool_id}&error={quote_plus(str(exc))}", status_code=303)
+    return RedirectResponse(url=f"/ui/settings/moulding-tools?tool_id={tool_id}&message=Material+removed", status_code=303)
+
+
 @router.post("/settings/moulding-machines", response_model=None)
 def add_moulding_machine(
     request: Request,
@@ -1269,6 +1347,67 @@ def delete_metalization_mask(mask_id: int, request: Request, db: Session = Depen
     except ValueError as exc:
         return _render_settings("settings_metalization_masks.html", request, db, champion_id=None, project_id=None, error=str(exc))
     return RedirectResponse(url="/ui/settings/metalization-masks?message=Metalization+mask+deleted", status_code=303)
+
+
+@router.post("/settings/metalization-masks/{mask_id}/materials/add", response_model=None)
+def add_metalization_mask_material(
+    mask_id: int,
+    request: Request,
+    part_number: str | None = Form(default=None),
+    material_id: str | None = Form(default=None),
+    qty_per_piece: str = Form(...),
+    db: Session = Depends(get_db),
+):
+    enforce_admin(_current_user(request))
+    try:
+        parsed_material_id = _parse_optional_int(material_id, "Material") if material_id else None
+        parsed_qty = _parse_optional_float(qty_per_piece, "Qty / piece")
+        if parsed_qty is None:
+            raise ValueError("Qty / piece is required.")
+        settings_service.add_material_to_mask(
+            db,
+            mask_id,
+            material_id=parsed_material_id,
+            part_number=part_number,
+            qty_per_piece=parsed_qty,
+        )
+    except ValueError as exc:
+        return RedirectResponse(url=f"/ui/settings/metalization-masks?mask_id={mask_id}&error={quote_plus(str(exc))}", status_code=303)
+    return RedirectResponse(url=f"/ui/settings/metalization-masks?mask_id={mask_id}&message=Material+added", status_code=303)
+
+
+@router.post("/settings/metalization-masks/{mask_id}/materials/{material_id}/qty", response_model=None)
+def update_metalization_mask_material_qty(
+    mask_id: int,
+    material_id: int,
+    request: Request,
+    qty_per_piece: str = Form(...),
+    db: Session = Depends(get_db),
+):
+    enforce_admin(_current_user(request))
+    try:
+        parsed_qty = _parse_optional_float(qty_per_piece, "Qty / piece")
+        if parsed_qty is None:
+            raise ValueError("Qty / piece is required.")
+        settings_service.update_mask_material_qty(db, mask_id, material_id, parsed_qty)
+    except ValueError as exc:
+        return RedirectResponse(url=f"/ui/settings/metalization-masks?mask_id={mask_id}&error={quote_plus(str(exc))}", status_code=303)
+    return RedirectResponse(url=f"/ui/settings/metalization-masks?mask_id={mask_id}&message=Material+qty+updated", status_code=303)
+
+
+@router.post("/settings/metalization-masks/{mask_id}/materials/{material_id}/remove", response_model=None)
+def remove_metalization_mask_material(
+    mask_id: int,
+    material_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    enforce_admin(_current_user(request))
+    try:
+        settings_service.remove_material_from_mask(db, mask_id, material_id)
+    except ValueError as exc:
+        return RedirectResponse(url=f"/ui/settings/metalization-masks?mask_id={mask_id}&error={quote_plus(str(exc))}", status_code=303)
+    return RedirectResponse(url=f"/ui/settings/metalization-masks?mask_id={mask_id}&message=Material+removed", status_code=303)
 
 
 @router.post("/settings/metalization-chambers", response_model=None)

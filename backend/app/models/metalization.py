@@ -59,6 +59,12 @@ class MetalizationMask(Base):
         back_populates="metalization_masks",
         passive_deletes=True,
     )
+    material_rows = relationship(
+        "MetalizationMaskMaterial",
+        back_populates="mask",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
 
 
 class MetalizationChamber(Base):
@@ -86,3 +92,20 @@ class MetalizationMaskHC(Base):
     hc: Mapped[float] = mapped_column(Float, nullable=False, default=0)
 
     mask = relationship("MetalizationMask", back_populates="hc_rows")
+
+
+class MetalizationMaskMaterial(Base):
+    __tablename__ = "metalization_mask_materials"
+
+    mask_id: Mapped[int] = mapped_column(
+        ForeignKey("metalization_masks.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    material_id: Mapped[int] = mapped_column(
+        ForeignKey("materials.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    qty_per_piece: Mapped[float] = mapped_column(Float, nullable=False)
+
+    mask = relationship("MetalizationMask", back_populates="material_rows")
+    material = relationship("Material")

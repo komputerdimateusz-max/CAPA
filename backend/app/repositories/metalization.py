@@ -3,13 +3,13 @@ from __future__ import annotations
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session, selectinload
 
-from app.models.metalization import MetalizationChamber, MetalizationMask, MetalizationMaskHC
+from app.models.metalization import MetalizationChamber, MetalizationMask, MetalizationMaskHC, MetalizationMaskMaterial
 
 
 def list_metalization_masks(db: Session) -> list[MetalizationMask]:
     stmt = (
         select(MetalizationMask)
-        .options(selectinload(MetalizationMask.hc_rows))
+        .options(selectinload(MetalizationMask.hc_rows), selectinload(MetalizationMask.material_rows).selectinload(MetalizationMaskMaterial.material))
         .order_by(MetalizationMask.mask_pn.asc())
     )
     return list(db.scalars(stmt).all())
@@ -18,7 +18,7 @@ def list_metalization_masks(db: Session) -> list[MetalizationMask]:
 def get_metalization_mask(db: Session, mask_id: int) -> MetalizationMask | None:
     stmt = (
         select(MetalizationMask)
-        .options(selectinload(MetalizationMask.hc_rows))
+        .options(selectinload(MetalizationMask.hc_rows), selectinload(MetalizationMask.material_rows).selectinload(MetalizationMaskMaterial.material))
         .where(MetalizationMask.id == mask_id)
     )
     return db.scalar(stmt)
@@ -62,6 +62,44 @@ def update_metalization_mask(
 
 def delete_metalization_mask(db: Session, *, mask: MetalizationMask) -> None:
     db.delete(mask)
+    db.commit()
+
+
+def list_materials_for_mask(db: Session, mask_id: int) -> list[MetalizationMaskMaterial]:
+    stmt = (
+        select(MetalizationMaskMaterial)
+        .options(selectinload(MetalizationMaskMaterial.material))
+        .where(MetalizationMaskMaterial.mask_id == mask_id)
+        .order_by(MetalizationMaskMaterial.material_id.asc())
+    )
+    return list(db.scalars(stmt).all())
+
+
+def get_mask_material(db: Session, mask_id: int, material_id: int) -> MetalizationMaskMaterial | None:
+    stmt = select(MetalizationMaskMaterial).where(
+        MetalizationMaskMaterial.mask_id == mask_id,
+        MetalizationMaskMaterial.material_id == material_id,
+    )
+    return db.scalar(stmt)
+
+
+def upsert_mask_material(db: Session, *, mask_id: int, material_id: int, qty_per_piece: float) -> MetalizationMaskMaterial:
+    row = get_mask_material(db, mask_id, material_id)
+    if row is None:
+        row = MetalizationMaskMaterial(mask_id=mask_id, material_id=material_id, qty_per_piece=qty_per_piece)
+    else:
+        row.qty_per_piece = qty_per_piece
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+def delete_mask_material(db: Session, *, mask_id: int, material_id: int) -> None:
+    row = get_mask_material(db, mask_id, material_id)
+    if row is None:
+        return
+    db.delete(row)
     db.commit()
 
 

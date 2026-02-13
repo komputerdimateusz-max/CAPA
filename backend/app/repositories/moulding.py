@@ -3,13 +3,13 @@ from __future__ import annotations
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session, selectinload
 
-from app.models.moulding import MouldingMachine, MouldingTool, MouldingToolHC
+from app.models.moulding import MouldingMachine, MouldingTool, MouldingToolHC, MouldingToolMaterial
 
 
 def list_moulding_tools(db: Session) -> list[MouldingTool]:
     stmt = (
         select(MouldingTool)
-        .options(selectinload(MouldingTool.hc_rows))
+        .options(selectinload(MouldingTool.hc_rows), selectinload(MouldingTool.material_rows).selectinload(MouldingToolMaterial.material))
         .order_by(MouldingTool.tool_pn.asc())
     )
     return list(db.scalars(stmt).all())
@@ -18,7 +18,7 @@ def list_moulding_tools(db: Session) -> list[MouldingTool]:
 def get_moulding_tool(db: Session, tool_id: int) -> MouldingTool | None:
     stmt = (
         select(MouldingTool)
-        .options(selectinload(MouldingTool.hc_rows))
+        .options(selectinload(MouldingTool.hc_rows), selectinload(MouldingTool.material_rows).selectinload(MouldingToolMaterial.material))
         .where(MouldingTool.id == tool_id)
     )
     return db.scalar(stmt)
@@ -62,6 +62,44 @@ def update_moulding_tool(
 
 def delete_moulding_tool(db: Session, *, tool: MouldingTool) -> None:
     db.delete(tool)
+    db.commit()
+
+
+def list_materials_for_tool(db: Session, tool_id: int) -> list[MouldingToolMaterial]:
+    stmt = (
+        select(MouldingToolMaterial)
+        .options(selectinload(MouldingToolMaterial.material))
+        .where(MouldingToolMaterial.tool_id == tool_id)
+        .order_by(MouldingToolMaterial.material_id.asc())
+    )
+    return list(db.scalars(stmt).all())
+
+
+def get_tool_material(db: Session, tool_id: int, material_id: int) -> MouldingToolMaterial | None:
+    stmt = select(MouldingToolMaterial).where(
+        MouldingToolMaterial.tool_id == tool_id,
+        MouldingToolMaterial.material_id == material_id,
+    )
+    return db.scalar(stmt)
+
+
+def upsert_tool_material(db: Session, *, tool_id: int, material_id: int, qty_per_piece: float) -> MouldingToolMaterial:
+    row = get_tool_material(db, tool_id, material_id)
+    if row is None:
+        row = MouldingToolMaterial(tool_id=tool_id, material_id=material_id, qty_per_piece=qty_per_piece)
+    else:
+        row.qty_per_piece = qty_per_piece
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+def delete_tool_material(db: Session, *, tool_id: int, material_id: int) -> None:
+    row = get_tool_material(db, tool_id, material_id)
+    if row is None:
+        return
+    db.delete(row)
     db.commit()
 
 
