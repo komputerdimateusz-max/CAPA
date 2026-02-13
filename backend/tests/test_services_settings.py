@@ -626,3 +626,47 @@ def test_labour_cost_seeding_occurs(db_session):
     rows = settings_service.list_labour_costs(db_session)
     assert len(rows) == 6
     assert [row.worker_type for row in rows] == list(settings_service.LABOUR_COST_WORKER_TYPES)
+
+
+def test_create_moulding_tool_with_hc_and_unit_cost(db_session):
+    settings_service.update_labour_cost(db_session, "Operator", 10)
+    settings_service.update_labour_cost(db_session, "Inspector", 20)
+    tool = settings_service.create_moulding_tool(
+        db_session,
+        MouldingToolCreate(
+            tool_pn="HC-T-1",
+            description="tool",
+            ct_seconds=30,
+            hc_map={"Operator": 2, "Inspector": 1.5},
+        ),
+    )
+
+    hc_map = settings_service.get_tool_hc_map(db_session, tool.id)
+    assert hc_map["Operator"] == 2
+    assert hc_map["Inspector"] == 1.5
+
+    listed = settings_service.list_moulding_tools(db_session)
+    listed_tool = next(item for item in listed if item.id == tool.id)
+    assert listed_tool.hc_total == 3.5
+    assert listed_tool.unit_labour_cost == pytest.approx((3600 / 30) * 10 * 2 + (3600 / 30) * 20 * 1.5)
+
+
+def test_create_metalization_mask_with_hc_and_zero_ct_cost(db_session):
+    settings_service.update_labour_cost(db_session, "Specialist", 42)
+    mask = settings_service.create_metalization_mask(
+        db_session,
+        MetalizationMaskCreate(
+            mask_pn="HC-M-1",
+            description="mask",
+            ct_seconds=0,
+            hc_map={"Specialist": 3},
+        ),
+    )
+
+    hc_map = settings_service.get_mask_hc_map(db_session, mask.id)
+    assert hc_map["Specialist"] == 3
+
+    listed = settings_service.list_metalization_masks(db_session)
+    listed_mask = next(item for item in listed if item.id == mask.id)
+    assert listed_mask.hc_total == 3
+    assert listed_mask.unit_labour_cost == 0

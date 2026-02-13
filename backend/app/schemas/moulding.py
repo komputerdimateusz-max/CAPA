@@ -7,6 +7,7 @@ class MouldingToolBase(BaseModel):
     tool_pn: str = Field(..., min_length=1)
     description: str | None = None
     ct_seconds: float = Field(..., ge=0)
+    hc_map: dict[str, float] = Field(default_factory=dict)
 
     @field_validator("tool_pn")
     @classmethod

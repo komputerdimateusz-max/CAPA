@@ -369,3 +369,56 @@ def test_ui_settings_labour_cost_validation_errors(client):
     assert "error=" in invalid_worker_response.headers["location"]
     assert invalid_cost_response.status_code == 303
     assert "error=" in invalid_cost_response.headers["location"]
+
+
+def test_ui_moulding_tools_list_shows_hc_total_and_unit_cost(client, db_session):
+    settings_service.update_labour_cost(db_session, "Operator", 10)
+    settings_service.create_moulding_tool(
+        db_session,
+        MouldingToolCreate(tool_pn="UI-HC-T", description="desc", ct_seconds=60, hc_map={"Operator": 2}),
+    )
+
+    response = client.get("/ui/settings/moulding-tools")
+
+    assert response.status_code == 200
+    assert "HC total" in response.text
+    assert "Unit labour cost [PLN]" in response.text
+    assert "1200.00" in response.text
+
+
+def test_ui_metalization_masks_list_shows_hc_total_and_unit_cost(client, db_session):
+    settings_service.update_labour_cost(db_session, "Operator", 10)
+    settings_service.create_metalization_mask(
+        db_session,
+        MetalizationMaskCreate(mask_pn="UI-HC-M", description="desc", ct_seconds=60, hc_map={"Operator": 1.5}),
+    )
+
+    response = client.get("/ui/settings/metalization-masks")
+
+    assert response.status_code == 200
+    assert "HC total" in response.text
+    assert "Unit labour cost [PLN]" in response.text
+    assert "900.00" in response.text
+
+
+def test_ui_add_moulding_tool_persists_hc_breakdown(client, db_session):
+    response = client.post(
+        "/ui/settings/moulding-tools",
+        data={
+            "tool_pn": "UI-HC-T2",
+            "description": "x",
+            "ct_seconds": "60",
+            "hc_operator": "1.25",
+            "hc_logistic": "0.75",
+            "hc_teamleader": "0",
+            "hc_inspector": "0",
+            "hc_specialist": "0",
+            "hc_technican": "0",
+        },
+        allow_redirects=False,
+    )
+    assert response.status_code == 303
+    tool = next(t for t in settings_service.list_moulding_tools(db_session) if t.tool_pn == "UI-HC-T2")
+    hc_map = settings_service.get_tool_hc_map(db_session, tool.id)
+    assert hc_map["Operator"] == 1.25
+    assert hc_map["Logistic"] == 0.75
