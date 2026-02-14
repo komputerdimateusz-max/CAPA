@@ -48,6 +48,30 @@ analysis_actions = Table(
 )
 
 
+analysis_5why_moulding_tools = Table(
+    "analysis_5why_moulding_tools",
+    Base.metadata,
+    Column("analysis_id", String(64), ForeignKey("analyses.id", ondelete="CASCADE"), primary_key=True),
+    Column("tool_id", ForeignKey("moulding_tools.id", ondelete="CASCADE"), primary_key=True),
+)
+
+
+analysis_5why_metalization_masks = Table(
+    "analysis_5why_metalization_masks",
+    Base.metadata,
+    Column("analysis_id", String(64), ForeignKey("analyses.id", ondelete="CASCADE"), primary_key=True),
+    Column("mask_id", ForeignKey("metalization_masks.id", ondelete="CASCADE"), primary_key=True),
+)
+
+
+analysis_5why_assembly_references = Table(
+    "analysis_5why_assembly_references",
+    Base.metadata,
+    Column("analysis_id", String(64), ForeignKey("analyses.id", ondelete="CASCADE"), primary_key=True),
+    Column("reference_id", ForeignKey("assembly_line_references.id", ondelete="CASCADE"), primary_key=True),
+)
+
+
 class Analysis5Why(Base):
     __tablename__ = "analysis_5why"
 
@@ -73,55 +97,22 @@ class Analysis5Why(Base):
     analysis = relationship("Analysis", back_populates="details_5why")
     moulding_tools = relationship(
         "MouldingTool",
-        secondary="analysis_5why_moulding_tools",
+        secondary=analysis_5why_moulding_tools,
+        primaryjoin="Analysis5Why.analysis_id == analysis_5why_moulding_tools.c.analysis_id",
+        secondaryjoin="MouldingTool.id == analysis_5why_moulding_tools.c.tool_id",
         passive_deletes=True,
     )
     metalization_masks = relationship(
         "MetalizationMask",
-        secondary="analysis_5why_metalization_masks",
+        secondary=analysis_5why_metalization_masks,
+        primaryjoin="Analysis5Why.analysis_id == analysis_5why_metalization_masks.c.analysis_id",
+        secondaryjoin="MetalizationMask.id == analysis_5why_metalization_masks.c.mask_id",
         passive_deletes=True,
     )
     assembly_references = relationship(
         "AssemblyLineReference",
-        secondary="analysis_5why_assembly_references",
+        secondary=analysis_5why_assembly_references,
+        primaryjoin="Analysis5Why.analysis_id == analysis_5why_assembly_references.c.analysis_id",
+        secondaryjoin="AssemblyLineReference.id == analysis_5why_assembly_references.c.reference_id",
         passive_deletes=True,
-    )
-
-
-class Analysis5WhyMouldingTool(Base):
-    __tablename__ = "analysis_5why_moulding_tools"
-
-    analysis_id: Mapped[str] = mapped_column(
-        ForeignKey("analyses.id", ondelete="CASCADE"),
-        primary_key=True,
-    )
-    tool_id: Mapped[int] = mapped_column(
-        ForeignKey("moulding_tools.id", ondelete="CASCADE"),
-        primary_key=True,
-    )
-
-
-class Analysis5WhyMetalizationMask(Base):
-    __tablename__ = "analysis_5why_metalization_masks"
-
-    analysis_id: Mapped[str] = mapped_column(
-        ForeignKey("analyses.id", ondelete="CASCADE"),
-        primary_key=True,
-    )
-    mask_id: Mapped[int] = mapped_column(
-        ForeignKey("metalization_masks.id", ondelete="CASCADE"),
-        primary_key=True,
-    )
-
-
-class Analysis5WhyAssemblyReference(Base):
-    __tablename__ = "analysis_5why_assembly_references"
-
-    analysis_id: Mapped[str] = mapped_column(
-        ForeignKey("analyses.id", ondelete="CASCADE"),
-        primary_key=True,
-    )
-    reference_id: Mapped[int] = mapped_column(
-        ForeignKey("assembly_line_references.id", ondelete="CASCADE"),
-        primary_key=True,
     )
