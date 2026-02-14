@@ -6,6 +6,7 @@ from datetime import date
 from sqlalchemy.orm import Session
 
 from app.models.analysis import (
+    Analysis5Why,
     OBSERVED_PROCESS_TYPE_ASSEMBLY,
     OBSERVED_PROCESS_TYPE_METALIZATION,
     OBSERVED_PROCESS_TYPE_MOULDING,
@@ -68,7 +69,9 @@ def create_analysis(
     return analyses_repo.create_analysis(db, payload)
 
 
-def set_observed_process(db: Session, analysis_id: str, process_type: str | None):
+def set_observed_process(db: Session, analysis_id: str, details: Analysis5Why, process_type: str | None):
+    if details.observed_process_type == process_type:
+        return details
     return analyses_repo.set_analysis_observed_components(db, analysis_id, process_type, [])
 
 
