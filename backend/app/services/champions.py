@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import date
 
@@ -173,17 +174,37 @@ def score_actions(actions: list[Action], today: date | None = None) -> list[Acti
     return scored
 
 
-def summarize_champions(scores: list[ActionScore], *, include_unassigned: bool = True) -> list[ChampionScoreSummary]:
-    summaries: dict[tuple[int | None, str], dict[str, int]] = {}
-    action_refs: dict[tuple[int | None, str], list[ActionScore]] = {}
+def _bucket_champion(
+    score: ActionScore,
+    *,
+    valid_champion_ids: set[int] | None,
+) -> tuple[int | None, str]:
+    champion_id = score.action.champion_id
+    if champion_id is None:
+        return None, "Unassigned"
+    if valid_champion_ids is not None and champion_id not in valid_champion_ids:
+        return None, "Unassigned"
+    if score.action.champion is None:
+        return None, "Unassigned"
+    return champion_id, score.action.champion.full_name
+
+
+def summarize_champions(
+    scores: list[ActionScore],
+    *,
+    include_unassigned: bool = True,
+    valid_champion_ids: Iterable[int] | None = None,
+) -> list[ChampionScoreSummary]:
+    valid_ids = set(valid_champion_ids) if valid_champion_ids is not None else None
+    summaries: dict[int | None, dict[str, int]] = {}
+    champion_labels: dict[int | None, str] = {}
 
     for score in scores:
-        champion_id = score.action.champion_id if score.action.champion is not None else None
+        champion_id, champion_label = _bucket_champion(score, valid_champion_ids=valid_ids)
         if champion_id is None and not include_unassigned:
             continue
-        key = (champion_id, score.champion_label)
         summaries.setdefault(
-            key,
+            champion_id,
             {
                 "total_score": 0,
                 "created_points": 0,
@@ -196,9 +217,9 @@ def summarize_champions(scores: list[ActionScore], *, include_unassigned: bool =
                 "actions_late": 0,
             },
         )
-        action_refs.setdefault(key, []).append(score)
+        champion_labels[champion_id] = champion_label
 
-        bucket = summaries[key]
+        bucket = summaries[champion_id]
         bucket["total_score"] += score.total_points
         bucket["actions_total"] += 1
         if _normalize_status(score.action.status) in ACTION_STATUS_CLOSED:
@@ -219,11 +240,11 @@ def summarize_champions(scores: list[ActionScore], *, include_unassigned: bool =
                 bucket["aging_penalty"] += event.points
 
     results: list[ChampionScoreSummary] = []
-    for (champion_id, label), bucket in summaries.items():
+    for champion_id, bucket in summaries.items():
         results.append(
             ChampionScoreSummary(
                 champion_id=champion_id,
-                champion_label=label,
+                champion_label=champion_labels.get(champion_id, "Unassigned"),
                 total_score=bucket["total_score"],
                 created_points=bucket["created_points"],
                 closed_points=bucket["closed_points"],
