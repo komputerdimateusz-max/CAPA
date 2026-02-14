@@ -5,7 +5,7 @@ from datetime import date
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.models.assembly_line import AssemblyLine
+from app.models.assembly_line import AssemblyLine, AssemblyLineReference
 from app.models.champion import Champion
 from app.models.labour_cost import LabourCost
 from app.models.material import Material
@@ -17,7 +17,12 @@ from app.repositories import labour_costs as labour_costs_repo
 from app.repositories import materials as materials_repo
 from app.repositories import metalization as metalization_repo
 from app.repositories import moulding as moulding_repo
-from app.schemas.assembly_line import AssemblyLineCreate, AssemblyLineUpdate
+from app.schemas.assembly_line import (
+    AssemblyLineCreate,
+    AssemblyLineReferenceCreate,
+    AssemblyLineReferenceUpdate,
+    AssemblyLineUpdate,
+)
 from app.schemas.material import MaterialCreate, MaterialUpdate
 from app.schemas.metalization import (
     MetalizationChamberCreate,
@@ -546,11 +551,37 @@ def _attach_mask_cost_fields(db: Session, masks: list[MetalizationMask]) -> list
 
 
 
+def _compute_reference_cost_fields(
+    db: Session,
+    references: list[AssemblyLineReference],
+    labour_cost_map: dict[str, float] | None = None,
+) -> list[AssemblyLineReference]:
+    labour_cost_map = labour_cost_map or _labour_cost_map(db)
+    material_in_cost_map = assembly_lines_repo.material_in_cost_map_for_references(db)
+    material_out_cost_map = assembly_lines_repo.material_out_cost_map_for_references(db)
+    for reference in references:
+        hc_map = assembly_lines_repo.get_reference_hc_map(db, reference.id)
+        reference.hc_total = sum(hc_map.get(worker_type, 0) for worker_type in LABOUR_COST_WORKER_TYPES)
+        reference.unit_labour_cost = _compute_unit_labour_cost(reference.ct_seconds, hc_map, labour_cost_map)
+        reference.material_cost = material_in_cost_map.get(reference.id, 0.0)
+        reference.material_out_cost = material_out_cost_map.get(reference.id, 0.0)
+    return references
+
+
 def _attach_assembly_line_cost_fields(db: Session, lines: list[AssemblyLine]) -> list[AssemblyLine]:
     labour_cost_map = _labour_cost_map(db)
     material_in_cost_map = assembly_lines_repo.material_in_cost_map_for_lines(db)
     material_out_cost_map = assembly_lines_repo.material_out_cost_map_for_lines(db)
     for line in lines:
+        references = _compute_reference_cost_fields(db, assembly_lines_repo.list_references_for_line(db, line.id), labour_cost_map)
+        line.reference_count = len(references)
+        if references:
+            line.ct_seconds = sum(ref.ct_seconds for ref in references) / len(references)
+            line.hc_total = sum(ref.hc_total for ref in references) / len(references)
+            line.unit_labour_cost = sum(ref.unit_labour_cost for ref in references) / len(references)
+            line.material_cost = sum(ref.material_cost for ref in references) / len(references)
+            line.material_out_cost = sum(ref.material_out_cost for ref in references) / len(references)
+            continue
         hc_map = assembly_lines_repo.get_line_hc_map(db, line.id)
         line.hc_total = sum(hc_map.get(worker_type, 0) for worker_type in LABOUR_COST_WORKER_TYPES)
         line.unit_labour_cost = _compute_unit_labour_cost(line.ct_seconds, hc_map, labour_cost_map)
@@ -1032,6 +1063,165 @@ def delete_assembly_line(db: Session, assembly_line_id: int) -> None:
     assembly_lines_repo.delete_assembly_line(db, assembly_line=assembly_line)
 
 
+def _ensure_unique_reference_name(db: Session, line_id: int, reference_name: str, exclude_id: int | None = None) -> None:
+    existing = assembly_lines_repo.get_reference_by_name(db, line_id, reference_name)
+    if existing is not None and existing.id != exclude_id:
+        raise ValueError("Reference name already exists for this line.")
+
+
+def _resolve_fg_material(db: Session, fg_material_id: int | None) -> int | None:
+    if fg_material_id is None:
+        return None
+    if materials_repo.get_material(db, fg_material_id) is None:
+        raise ValueError("Selected material does not exist.")
+    return fg_material_id
+
+
+def list_assembly_line_references(db: Session, line_id: int) -> list[AssemblyLineReference]:
+    if assembly_lines_repo.get_assembly_line(db, line_id) is None:
+        raise ValueError("Assembly line not found.")
+    return _compute_reference_cost_fields(db, assembly_lines_repo.list_references_for_line(db, line_id))
+
+
+def get_assembly_line_reference(db: Session, reference_id: int) -> AssemblyLineReference | None:
+    return assembly_lines_repo.get_reference(db, reference_id)
+
+
+def get_assembly_line_reference_hc_map(db: Session, reference_id: int) -> dict[str, float]:
+    existing = assembly_lines_repo.get_reference_hc_map(db, reference_id)
+    return {worker_type: existing.get(worker_type, 0) for worker_type in LABOUR_COST_WORKER_TYPES}
+
+
+def create_assembly_line_reference(db: Session, line_id: int, data: AssemblyLineReferenceCreate) -> AssemblyLineReference:
+    if assembly_lines_repo.get_assembly_line(db, line_id) is None:
+        raise ValueError("Assembly line not found.")
+    reference_name = _normalize_required_text(data.reference_name, "Reference name")
+    _ensure_unique_reference_name(db, line_id, reference_name)
+    created = assembly_lines_repo.create_reference(
+        db,
+        line_id=line_id,
+        reference_name=reference_name,
+        fg_material_id=_resolve_fg_material(db, data.fg_material_id),
+        ct_seconds=_normalize_non_negative_ct(data.ct_seconds),
+    )
+    assembly_lines_repo.set_reference_hc(db, created.id, _normalize_hc_map(data.hc_map))
+    db.commit()
+    return assembly_lines_repo.get_reference(db, created.id) or created
+
+
+def update_assembly_line_reference(db: Session, reference_id: int, data: AssemblyLineReferenceUpdate) -> AssemblyLineReference:
+    reference = assembly_lines_repo.get_reference(db, reference_id)
+    if reference is None:
+        raise ValueError("Assembly line reference not found.")
+
+    reference_name = _normalize_required_text(data.reference_name or reference.reference_name, "Reference name")
+    _ensure_unique_reference_name(db, reference.line_id, reference_name, exclude_id=reference_id)
+
+    updated = assembly_lines_repo.update_reference(
+        db,
+        reference=reference,
+        reference_name=reference_name,
+        fg_material_id=_resolve_fg_material(db, data.fg_material_id if data.fg_material_id is not None else reference.fg_material_id),
+        ct_seconds=_normalize_non_negative_ct(data.ct_seconds if data.ct_seconds is not None else reference.ct_seconds),
+    )
+    if data.hc_map is not None:
+        assembly_lines_repo.set_reference_hc(db, reference_id, _normalize_hc_map(data.hc_map))
+        db.commit()
+    return assembly_lines_repo.get_reference(db, reference_id) or updated
+
+
+def delete_assembly_line_reference(db: Session, reference_id: int) -> None:
+    reference = assembly_lines_repo.get_reference(db, reference_id)
+    if reference is None:
+        raise ValueError("Assembly line reference not found.")
+    assembly_lines_repo.delete_reference(db, reference=reference)
+
+
+def list_materials_in_for_reference(db: Session, reference_id: int):
+    reference = assembly_lines_repo.get_reference(db, reference_id)
+    if reference is None:
+        raise ValueError("Assembly line reference not found.")
+    rows = assembly_lines_repo.list_materials_in_for_reference(db, reference_id)
+    return sorted(rows, key=lambda row: row.material.part_number.lower())
+
+
+def list_materials_out_for_reference(db: Session, reference_id: int):
+    reference = assembly_lines_repo.get_reference(db, reference_id)
+    if reference is None:
+        raise ValueError("Assembly line reference not found.")
+    rows = assembly_lines_repo.list_materials_out_for_reference(db, reference_id)
+    return sorted(rows, key=lambda row: row.material.part_number.lower())
+
+
+def add_material_in_to_reference(db: Session, reference_id: int, *, material_id: int | None = None, part_number: str | None = None, qty_per_piece: float):
+    if assembly_lines_repo.get_reference(db, reference_id) is None:
+        raise ValueError("Assembly line reference not found.")
+    material = _resolve_material_for_line(db, material_id, part_number)
+    assembly_lines_repo.upsert_reference_material_in(
+        db,
+        reference_id=reference_id,
+        material_id=material.id,
+        qty_per_piece=_normalize_positive_qty_per_piece(qty_per_piece),
+    )
+
+
+def update_reference_material_in_qty(db: Session, reference_id: int, material_id: int, qty_per_piece: float) -> None:
+    if assembly_lines_repo.get_reference(db, reference_id) is None:
+        raise ValueError("Assembly line reference not found.")
+    if materials_repo.get_material(db, material_id) is None:
+        raise ValueError("Selected material does not exist.")
+    if assembly_lines_repo.get_reference_material_in(db, reference_id, material_id) is None:
+        raise ValueError("Reference material assignment not found.")
+    assembly_lines_repo.upsert_reference_material_in(
+        db,
+        reference_id=reference_id,
+        material_id=material_id,
+        qty_per_piece=_normalize_positive_qty_per_piece(qty_per_piece),
+    )
+
+
+def remove_material_in_from_reference(db: Session, reference_id: int, material_id: int) -> None:
+    if assembly_lines_repo.get_reference(db, reference_id) is None:
+        raise ValueError("Assembly line reference not found.")
+    assembly_lines_repo.delete_reference_material_in(db, reference_id=reference_id, material_id=material_id)
+
+
+def add_material_out_to_reference(db: Session, reference_id: int, *, material_id: int | None = None, part_number: str | None = None, qty_per_piece: float):
+    reference = assembly_lines_repo.get_reference(db, reference_id)
+    if reference is None:
+        raise ValueError("Assembly line reference not found.")
+    material = _resolve_material_for_line(db, material_id, part_number)
+    assembly_lines_repo.upsert_reference_material_out(
+        db,
+        reference_id=reference_id,
+        material_id=material.id,
+        qty_per_piece=_normalize_positive_qty_per_piece(qty_per_piece),
+    )
+    _update_make_material_prices_from_process_cost(db, [material.id], _compute_assembly_reference_unit_process_cost(db, reference_id))
+
+
+def update_reference_material_out_qty(db: Session, reference_id: int, material_id: int, qty_per_piece: float) -> None:
+    if assembly_lines_repo.get_reference(db, reference_id) is None:
+        raise ValueError("Assembly line reference not found.")
+    if materials_repo.get_material(db, material_id) is None:
+        raise ValueError("Selected material does not exist.")
+    if assembly_lines_repo.get_reference_material_out(db, reference_id, material_id) is None:
+        raise ValueError("Reference material assignment not found.")
+    assembly_lines_repo.upsert_reference_material_out(
+        db,
+        reference_id=reference_id,
+        material_id=material_id,
+        qty_per_piece=_normalize_positive_qty_per_piece(qty_per_piece),
+    )
+    _update_make_material_prices_from_process_cost(db, [material_id], _compute_assembly_reference_unit_process_cost(db, reference_id))
+
+
+def remove_material_out_from_reference(db: Session, reference_id: int, material_id: int) -> None:
+    if assembly_lines_repo.get_reference(db, reference_id) is None:
+        raise ValueError("Assembly line reference not found.")
+    assembly_lines_repo.delete_reference_material_out(db, reference_id=reference_id, material_id=material_id)
+
+
 def _normalize_mask_ids(mask_ids: list[int] | None) -> list[int]:
     normalized = mask_ids or []
     if len(normalized) != len(set(normalized)):
@@ -1416,6 +1606,15 @@ def _compute_mask_unit_process_cost(db: Session, mask_id: int) -> float:
         raise ValueError("Metalization mask not found.")
     labour_cost = compute_mask_unit_cost(db, mask, metalization_repo.get_mask_hc_map(db, mask_id))
     material_income_cost = compute_material_cost_for_mask(db, mask_id)
+    return float(labour_cost + material_income_cost)
+
+
+def _compute_assembly_reference_unit_process_cost(db: Session, reference_id: int) -> float:
+    reference = assembly_lines_repo.get_reference(db, reference_id)
+    if reference is None:
+        raise ValueError("Assembly line reference not found.")
+    labour_cost = _compute_unit_labour_cost(reference.ct_seconds, assembly_lines_repo.get_reference_hc_map(db, reference_id), _labour_cost_map(db))
+    material_income_cost = assembly_lines_repo.material_in_cost_map_for_references(db).get(reference_id, 0.0)
     return float(labour_cost + material_income_cost)
 
 

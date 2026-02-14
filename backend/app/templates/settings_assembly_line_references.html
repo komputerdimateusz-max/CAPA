@@ -1,0 +1,114 @@
+{% extends "layout.html" %}
+{% block content %}
+<div class="settings-page">
+  <section class="card settings-section-card">
+    <div class="settings-subpage-header">
+      <a class="button secondary" href="/ui/settings/assembly-lines">← Back to Assembly Lines</a>
+    </div>
+    <h2>Assembly Line References</h2>
+    <p class="muted">Line: {{ line.line_number }}</p>
+    <button class="button" type="button" data-open-modal="reference-add">Add reference</button>
+    {% include "partials/flash_message.html" %}
+
+    {% if references %}
+    <div class="table-wrap">
+      <table class="table">
+        <thead>
+          <tr><th>Reference name</th><th>FG material (part_number)</th><th class="num-col">CT (s)</th><th class="num-col">HC total</th><th class="num-col">Unit labour cost [PLN]</th><th class="num-col">Material cost [PLN]</th><th class="num-col">Outcome cost [PLN]</th><th>Edit</th></tr>
+        </thead>
+        <tbody>
+          {% for reference in references %}
+          <tr>
+            <td>{{ reference.reference_name }}</td>
+            <td>{{ reference.fg_material.part_number if reference.fg_material else '—' }}</td>
+            <td class="num-col">{{ '%.2f'|format(reference.ct_seconds or 0) }}</td>
+            <td class="num-col">{{ '%.2f'|format(reference.hc_total or 0) }}</td>
+            <td class="num-col">{{ '%.2f'|format(reference.unit_labour_cost or 0) }}</td>
+            <td class="num-col">{{ '%.2f'|format(reference.material_cost or 0) }}</td>
+            <td class="num-col">{{ '%.2f'|format(reference.material_out_cost or 0) }}</td>
+            <td><a class="button secondary" href="/ui/settings/assembly-lines/{{ line.id }}/references?reference_id={{ reference.id }}">Edit</a></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+      <p class="muted">No references yet.</p>
+    {% endif %}
+  </section>
+</div>
+
+<div class="modal-shell" id="reference-add-modal" hidden>
+  <div class="modal-backdrop settings-modal-backdrop" data-close-modal="reference-add"></div>
+  <aside class="create-action-panel settings-modal-panel">
+    <div class="create-action-header"><h3>Add reference</h3><button class="button secondary" type="button" data-close-modal="reference-add">Cancel</button></div>
+    <form class="form-grid" method="post" action="/ui/settings/assembly-lines/{{ line.id }}/references/create">
+      {% include "settings_reference_form_fields.html" %}
+      <div class="form-actions"><button class="button" type="submit">Save</button></div>
+    </form>
+  </aside>
+</div>
+
+{% if selected_reference %}
+<div class="modal-shell" id="reference-edit-modal" hidden>
+  <div class="modal-backdrop settings-modal-backdrop" data-close-modal="reference-edit"></div>
+  <aside class="create-action-panel settings-modal-panel">
+    <div class="create-action-header"><h3>Edit reference</h3><button class="button secondary" type="button" data-close-modal="reference-edit">Cancel</button></div>
+    <form class="form-grid" method="post" action="/ui/settings/assembly-lines/references/{{ selected_reference.id }}/update">
+      {% include "settings_reference_form_fields.html" %}
+      <div class="form-actions"><button class="button" type="submit">Save</button></div>
+    </form>
+
+    <h5>Material input (per 1 piece)</h5>
+    <form class="form-grid" method="post" action="/ui/settings/assembly-lines/references/{{ selected_reference.id }}/materials-in/add">
+      <label>Material part number<input list="ref-materials-in" name="part_number" required /></label>
+      <datalist id="ref-materials-in">{% for material in materials %}<option value="{{ material.part_number }}">{{ material.description or '' }}</option>{% endfor %}</datalist>
+      <label>Qty / piece<input name="qty_per_piece" required /></label>
+      <button class="button" type="submit">Add material</button>
+    </form>
+    {% for row in selected_reference_materials_in %}
+    <form method="post" action="/ui/settings/assembly-lines/references/{{ selected_reference.id }}/materials-in/{{ row.material_id }}/qty" style="display:flex;gap:.5rem;align-items:center;margin:.25rem 0;">
+      <span>{{ row.material.part_number }}</span><input name="qty_per_piece" value="{{ row.qty_per_piece }}" style="max-width:100px" />
+      <button class="button secondary" type="submit">Save</button>
+    </form>
+    <form method="post" action="/ui/settings/assembly-lines/references/{{ selected_reference.id }}/materials-in/{{ row.material_id }}/remove"><button class="button secondary" type="submit">Remove</button></form>
+    {% endfor %}
+
+    <h5>Material outcome (per 1 piece)</h5>
+    <form class="form-grid" method="post" action="/ui/settings/assembly-lines/references/{{ selected_reference.id }}/materials-out/add">
+      <label>Material part number<input list="ref-materials-out" name="part_number" required /></label>
+      <datalist id="ref-materials-out">{% for material in materials %}<option value="{{ material.part_number }}">{{ material.description or '' }}</option>{% endfor %}</datalist>
+      <label>Qty / piece<input name="qty_per_piece" required /></label>
+      <button class="button" type="submit">Add outcome</button>
+    </form>
+    {% for row in selected_reference_materials_out %}
+    <form method="post" action="/ui/settings/assembly-lines/references/{{ selected_reference.id }}/materials-out/{{ row.material_id }}/qty" style="display:flex;gap:.5rem;align-items:center;margin:.25rem 0;">
+      <span>{{ row.material.part_number }}</span><input name="qty_per_piece" value="{{ row.qty_per_piece }}" style="max-width:100px" />
+      <button class="button secondary" type="submit">Save</button>
+    </form>
+    <form method="post" action="/ui/settings/assembly-lines/references/{{ selected_reference.id }}/materials-out/{{ row.material_id }}/remove"><button class="button secondary" type="submit">Remove</button></form>
+    {% endfor %}
+
+    <form method="post" action="/ui/settings/assembly-lines/references/{{ selected_reference.id }}/delete"><button class="button secondary" type="submit">Delete</button></form>
+  </aside>
+</div>
+{% endif %}
+
+<script>
+(() => {
+  const bindModal = (name) => {
+    const modal = document.getElementById(`${name}-modal`);
+    if (!modal) return;
+    const openModal = () => { modal.hidden = false; document.body.classList.add("no-scroll"); };
+    const closeModal = () => { modal.hidden = true; document.body.classList.remove("no-scroll"); };
+    document.querySelectorAll(`[data-open-modal="${name}"]`).forEach((button) => button.addEventListener("click", openModal));
+    document.querySelectorAll(`[data-close-modal="${name}"]`).forEach((button) => button.addEventListener("click", closeModal));
+    return openModal;
+  };
+  const openAdd = bindModal("reference-add");
+  const openEdit = bindModal("reference-edit");
+  if ({{ (open_modal == 'reference-add') | tojson }}) openAdd && openAdd();
+  if ({{ (selected_reference is not none) | tojson }} || {{ (open_modal == 'reference-edit') | tojson }}) openEdit && openEdit();
+})();
+</script>
+{% endblock %}
