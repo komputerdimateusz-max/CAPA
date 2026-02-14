@@ -31,6 +31,14 @@ def build_action_rows(actions: list[Action], subtasks: list[Subtask]) -> list[di
         days_late = calculate_action_days_late(action, subtask_map.get(action.id, []))
         owner = action.owner or "—"
         champion = action.champion.full_name if action.champion else "—"
+        if action.process_type == "moulding":
+            process_components = f"Moulding ({len(action.moulding_tools)})"
+        elif action.process_type == "metalization":
+            process_components = f"Metalization ({len(action.metalization_masks)})"
+        elif action.process_type == "assembly":
+            process_components = f"Assembly ({len(action.assembly_references)})"
+        else:
+            process_components = "—"
         rows.append(
             {
                 "id": action.id,
@@ -40,6 +48,8 @@ def build_action_rows(actions: list[Action], subtasks: list[Subtask]) -> list[di
                 "owner": owner,
                 "owner_display": f"{owner} / {champion}" if owner != "—" else champion,
                 "project": action.project.name if action.project else "—",
+                "process": action.process_type or "—",
+                "process_components": process_components,
                 "due_date": format_date(action.due_date),
                 "created_at": format_date(action.created_at),
                 "closed_at": format_date(action.closed_at),

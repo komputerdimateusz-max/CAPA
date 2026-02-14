@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.core.auth import enforce_action_create_permission, enforce_action_ownership, enforce_write_access, require_auth
 from app.db.session import get_db
-from app.models.action import Action
+from app.models.action import ALLOWED_PROCESS_TYPES, Action
 from app.models.subtask import Subtask
 from app.models.user import User
 from app.repositories import actions as actions_repo
@@ -22,6 +22,27 @@ from app.core.config import settings
 
 router = APIRouter(prefix="/api/actions", tags=["actions"])
 logger = logging.getLogger("app.api")
+
+
+def _validate_process_type(process_type: str | None, *, required: bool = False) -> None:
+    if process_type is None:
+        if required:
+            raise HTTPException(status_code=422, detail="process_type is required")
+        return
+    if process_type not in ALLOWED_PROCESS_TYPES:
+        raise HTTPException(status_code=422, detail=f"Invalid process_type '{process_type}'")
+
+
+def _clear_non_matching_components(action: Action) -> None:
+    if action.process_type == "moulding":
+        action.metalization_masks = []
+        action.assembly_references = []
+    elif action.process_type == "metalization":
+        action.moulding_tools = []
+        action.assembly_references = []
+    elif action.process_type == "assembly":
+        action.moulding_tools = []
+        action.metalization_masks = []
 
 
 def _serialize_action(action: Action, metrics, include_metrics: bool = True) -> ActionRead:
@@ -42,6 +63,10 @@ def _serialize_action(action: Action, metrics, include_metrics: bool = True) -> 
         closed_at=action.closed_at,
         tags=[TagRead.model_validate(tag) for tag in action.tags],
         priority=action.priority,
+        process_type=action.process_type,
+        moulding_tool_ids=[tool.id for tool in action.moulding_tools],
+        metalization_mask_ids=[mask.id for mask in action.metalization_masks],
+        assembly_reference_ids=[reference.id for reference in action.assembly_references],
         days_late=metrics.days_late if include_metrics else 0,
         time_to_close_days=metrics.time_to_close_days if include_metrics else None,
         on_time_close=metrics.on_time_close if include_metrics else None,
@@ -103,6 +128,7 @@ def create_action(
     db: Session = Depends(get_db),
     user: User | None = Depends(require_auth),
 ) -> ActionDetailResponse:
+    _validate_process_type(payload.process_type, required=True)
     enforce_action_create_permission(user, payload.champion_id)
     action = Action(
         title=payload.title,
@@ -115,7 +141,9 @@ def create_action(
         due_date=payload.due_date,
         closed_at=payload.closed_at,
         priority=payload.priority,
+        process_type=payload.process_type,
     )
+    _clear_non_matching_components(action)
     action.tags = [tags_repo.get_or_create_tag(db, name) for name in payload.tags]
     action = actions_repo.create_action(db, action)
     return _serialize_action(action, build_action_metrics(action, []))
@@ -144,9 +172,14 @@ def update_action(
     enforce_action_ownership(user, action)
 
     updates = payload.model_dump(exclude_unset=True)
+    _validate_process_type(updates.get("process_type"), required=False)
+    if "process_type" not in updates and action.process_type is None and updates:
+        raise HTTPException(status_code=422, detail="process_type is required when editing this legacy action")
     tags = updates.pop("tags", None)
     for field, value in updates.items():
         setattr(action, field, value)
+    if "process_type" in updates:
+        _clear_non_matching_components(action)
     if tags is not None:
         action.tags = [tags_repo.get_or_create_tag(db, name) for name in tags]
 

@@ -18,6 +18,7 @@ class ActionBase(BaseModel):
     closed_at: datetime | None = Field(None, examples=["2024-01-19T12:30:00"])
     tags: list[str] = Field(default_factory=list, examples=[["scrap", "line-a"]])
     priority: str | None = Field(None, examples=["HIGH"])
+    process_type: str | None = Field(None, examples=["assembly"])
 
 
 class ActionCreate(ActionBase):
@@ -35,6 +36,7 @@ class ActionUpdate(BaseModel):
     closed_at: datetime | None = None
     tags: list[str] | None = None
     priority: str | None = None
+    process_type: str | None = None
 
 
 class ActionProjectRef(BaseModel):
@@ -59,6 +61,10 @@ class ActionRead(BaseModel):
     closed_at: datetime | None = None
     tags: list[TagRead] = Field(default_factory=list)
     priority: str | None = None
+    process_type: str | None = None
+    moulding_tool_ids: list[int] = Field(default_factory=list)
+    metalization_mask_ids: list[int] = Field(default_factory=list)
+    assembly_reference_ids: list[int] = Field(default_factory=list)
     days_late: int = 0
     time_to_close_days: int | None = None
     on_time_close: bool | None = None
