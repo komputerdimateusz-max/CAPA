@@ -68,6 +68,7 @@ def list_actions(
         selectinload(Action.moulding_tools),
         selectinload(Action.metalization_masks),
         selectinload(Action.assembly_references),
+        selectinload(Action.analyses),
     )
 
     if statuses:
@@ -156,6 +157,7 @@ def list_actions_created_between(
         selectinload(Action.moulding_tools),
         selectinload(Action.metalization_masks),
         selectinload(Action.assembly_references),
+        selectinload(Action.analyses),
     )
     created_date = func.date(Action.created_at).cast(Date)
     if date_from:
@@ -178,6 +180,7 @@ def get_action(db: Session, action_id: int) -> Action | None:
         selectinload(Action.moulding_tools),
         selectinload(Action.metalization_masks),
         selectinload(Action.assembly_references),
+        selectinload(Action.analyses),
     ).where(Action.id == action_id)
     return db.scalar(stmt)
 

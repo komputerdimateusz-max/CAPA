@@ -1,5 +1,5 @@
 from app.models.action import Action, ActionAssemblyReference, ActionMetalizationMask, ActionMouldingTool
-from app.models.analysis import Analysis
+from app.models.analysis import Analysis, Analysis5Why
 from app.models.subtask import Subtask
 from app.models.project import Project
 from app.models.champion import Champion
@@ -34,6 +34,7 @@ __all__ = [
     "ActionMetalizationMask",
     "ActionAssemblyReference",
     "Analysis",
+    "Analysis5Why",
     "Subtask",
     "Project",
     "Champion",

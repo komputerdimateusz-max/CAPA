@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 
 from sqlalchemy.exc import OperationalError
 
@@ -702,3 +702,65 @@ def test_switching_process_clears_old_assignments(client, db_session):
     db_session.refresh(action)
     assert action.process_type == "assembly"
     assert action.moulding_tools == []
+
+
+from app.models.analysis import Analysis, Analysis5Why
+
+
+def test_analysis_detail_renders_5why_form(client, db_session):
+    analysis = Analysis(
+        id="5WHY-2026-0002",
+        type="5WHY",
+        title="Defect investigation",
+        description="",
+        champion="Alex Smith",
+        status="Open",
+        created_at=date.today(),
+        closed_at=None,
+    )
+    db_session.add(analysis)
+    db_session.commit()
+
+    response = client.get(f"/ui/analyses/{analysis.id}")
+
+    assert response.status_code == 200
+    assert "Problem statement" in response.text
+    assert "Create Action from this Analysis" in response.text
+
+
+def test_save_5why_and_create_linked_action(client, db_session):
+    analysis = Analysis(
+        id="5WHY-2026-0003",
+        type="5WHY",
+        title="Seal issue",
+        description="",
+        champion="",
+        status="Open",
+        created_at=date.today(),
+        closed_at=None,
+    )
+    db_session.add(analysis)
+    db_session.commit()
+
+    save_response = client.post(
+        f"/ui/analyses/{analysis.id}/save-5why",
+        data={
+            "problem_statement": "Leakage at station 4",
+            "root_cause": "Incorrect torque setup",
+            "proposed_action": "Lock torque settings and retrain operators",
+        },
+        allow_redirects=False,
+    )
+    assert save_response.status_code == 303
+
+    details = db_session.get(Analysis5Why, analysis.id)
+    assert details is not None
+    assert details.problem_statement == "Leakage at station 4"
+
+    create_response = client.post(f"/ui/analyses/{analysis.id}/create-action", allow_redirects=False)
+    assert create_response.status_code == 303
+    assert create_response.headers["location"].startswith("/ui/actions/")
+
+    db_session.refresh(analysis)
+    assert len(analysis.actions) == 1
+    assert analysis.actions[0].title.startswith("Action from 5WHY")
