@@ -8,6 +8,7 @@ from sqlalchemy import select
 from app.models.assembly_line import ProjectAssemblyLine
 from app.models.metalization import ProjectMetalizationMask
 from app.models.moulding import ProjectMouldingTool
+from app.repositories import champions as champions_repo
 from app.schemas.assembly_line import AssemblyLineCreate, AssemblyLineReferenceCreate
 from app.schemas.material import MaterialCreate, MaterialUpdate
 from app.schemas.metalization import MetalizationChamberCreate, MetalizationMaskCreate
@@ -37,6 +38,25 @@ def test_create_champion_unique(db_session):
             position=None,
             birth_date=None,
         )
+
+
+def test_deactivate_champion_soft_delete(db_session):
+    champion = settings_service.create_champion(
+        db_session,
+        first_name="Inactive",
+        last_name="Champion",
+        email="inactive.champion@example.com",
+        position="Engineer",
+        birth_date=None,
+    )
+
+    deactivated = settings_service.deactivate_champion(db_session, champion.id)
+
+    assert deactivated.is_active is False
+    active = champions_repo.list_champions(db_session)
+    assert [row.id for row in active] == []
+    all_champions = champions_repo.list_champions(db_session, active_only=False)
+    assert [row.id for row in all_champions] == [champion.id]
 
 
 def test_update_project_fields(db_session):
@@ -93,12 +113,15 @@ def test_create_project_validates_required_fields(db_session):
     with pytest.raises(ValueError, match="must be one of"):
         settings_service.create_project(db_session, "Line", "Open", 0, 10, engineer.id, None)
     with pytest.raises(ValueError, match="greater than or equal to 0"):
-        settings_service.create_project(db_session, "Line", "Serial production", -1, 10, engineer.id, None)
+        settings_service.create_project(
+            db_session, "Line", "Serial production", -1, 10, engineer.id, None
+        )
     with pytest.raises(ValueError, match="between 0 and 100"):
-        settings_service.create_project(db_session, "Line", "Serial production", 1, 120, engineer.id, None)
+        settings_service.create_project(
+            db_session, "Line", "Serial production", 1, 120, engineer.id, None
+        )
     with pytest.raises(ValueError, match="does not exist"):
         settings_service.create_project(db_session, "Line", "Serial production", 1, 10, 9999, None)
-
 
 
 def test_create_project_with_tools_and_lines(db_session):
@@ -148,10 +171,18 @@ def test_update_project_replaces_tools_and_lines(db_session):
         position="Process Engineer",
         birth_date=None,
     )
-    tool_a = settings_service.create_moulding_tool(db_session, MouldingToolCreate(tool_pn="U-1", description=None, ct_seconds=10))
-    tool_b = settings_service.create_moulding_tool(db_session, MouldingToolCreate(tool_pn="U-2", description=None, ct_seconds=12))
-    line_a = settings_service.create_assembly_line(db_session, AssemblyLineCreate(line_number="UL-1", ct_seconds=9, hc=2))
-    line_b = settings_service.create_assembly_line(db_session, AssemblyLineCreate(line_number="UL-2", ct_seconds=7, hc=4))
+    tool_a = settings_service.create_moulding_tool(
+        db_session, MouldingToolCreate(tool_pn="U-1", description=None, ct_seconds=10)
+    )
+    tool_b = settings_service.create_moulding_tool(
+        db_session, MouldingToolCreate(tool_pn="U-2", description=None, ct_seconds=12)
+    )
+    line_a = settings_service.create_assembly_line(
+        db_session, AssemblyLineCreate(line_number="UL-1", ct_seconds=9, hc=2)
+    )
+    line_b = settings_service.create_assembly_line(
+        db_session, AssemblyLineCreate(line_number="UL-2", ct_seconds=7, hc=4)
+    )
 
     project = settings_service.create_project(
         db_session,
@@ -180,8 +211,6 @@ def test_update_project_replaces_tools_and_lines(db_session):
 
     assert [tool.id for tool in updated.moulding_tools] == [tool_b.id]
     assert [line.id for line in updated.assembly_lines] == [line_b.id]
-
-
 
 
 def test_add_project_assignments_is_idempotent(db_session):
@@ -255,8 +284,12 @@ def test_delete_project_cascades_assignment_rows(db_session):
         position="Process Engineer",
         birth_date=None,
     )
-    tool = settings_service.create_moulding_tool(db_session, MouldingToolCreate(tool_pn="C-1", description=None, ct_seconds=10))
-    line = settings_service.create_assembly_line(db_session, AssemblyLineCreate(line_number="CL-1", ct_seconds=8, hc=2))
+    tool = settings_service.create_moulding_tool(
+        db_session, MouldingToolCreate(tool_pn="C-1", description=None, ct_seconds=10)
+    )
+    line = settings_service.create_assembly_line(
+        db_session, AssemblyLineCreate(line_number="CL-1", ct_seconds=8, hc=2)
+    )
     project = settings_service.create_project(
         db_session,
         "Project C",
@@ -311,6 +344,7 @@ def test_project_assignment_validation_rejects_non_existing_ids(db_session):
             moulding_tool_ids=[],
             assembly_line_ids=[999],
         )
+
 
 def test_create_and_list_moulding_tool(db_session):
     created = settings_service.create_moulding_tool(
@@ -405,7 +439,9 @@ def test_list_moulding_machines_returns_assigned_tools(db_session):
 
     assert len(machines) == 1
     assert machines[0].machine_number == "M-LIST"
-    assert [(assigned.id, assigned.tool_pn) for assigned in machines[0].tools] == [(tool.id, "T-LIST")]
+    assert [(assigned.id, assigned.tool_pn) for assigned in machines[0].tools] == [
+        (tool.id, "T-LIST")
+    ]
 
 
 def test_create_assembly_line_and_list_order(db_session):
@@ -559,7 +595,9 @@ def test_add_mask_to_chamber_by_mask_pn(db_session):
         MetalizationChamberCreate(chamber_number="C-ADD", mask_ids=[]),
     )
 
-    updated = settings_service.add_metalization_chamber_mask(db_session, chamber.id, mask_pn="msk-add")
+    updated = settings_service.add_metalization_chamber_mask(
+        db_session, chamber.id, mask_pn="msk-add"
+    )
 
     assert [assigned.mask_pn for assigned in updated.masks] == [mask.mask_pn]
 
@@ -574,7 +612,9 @@ def test_remove_mask_from_chamber(db_session):
         MetalizationChamberCreate(chamber_number="C-REMOVE", mask_ids=[mask.id]),
     )
 
-    updated = settings_service.remove_metalization_chamber_mask(db_session, chamber.id, mask_id=mask.id)
+    updated = settings_service.remove_metalization_chamber_mask(
+        db_session, chamber.id, mask_id=mask.id
+    )
 
     assert updated.masks == []
 
@@ -598,9 +638,13 @@ def test_machine_and_chamber_assignment_add_is_idempotent(db_session):
     )
 
     settings_service.add_moulding_machine_tool(db_session, machine.id, tool_pn=tool.tool_pn)
-    updated_machine = settings_service.add_moulding_machine_tool(db_session, machine.id, tool_id=tool.id)
+    updated_machine = settings_service.add_moulding_machine_tool(
+        db_session, machine.id, tool_id=tool.id
+    )
     settings_service.add_metalization_chamber_mask(db_session, chamber.id, mask_pn=mask.mask_pn)
-    updated_chamber = settings_service.add_metalization_chamber_mask(db_session, chamber.id, mask_id=mask.id)
+    updated_chamber = settings_service.add_metalization_chamber_mask(
+        db_session, chamber.id, mask_id=mask.id
+    )
 
     assert [assigned.tool_pn for assigned in updated_machine.tools] == [tool.tool_pn]
     assert [assigned.mask_pn for assigned in updated_chamber.masks] == [mask.mask_pn]
@@ -649,7 +693,9 @@ def test_create_moulding_tool_with_hc_and_unit_cost(db_session):
     listed = settings_service.list_moulding_tools(db_session)
     listed_tool = next(item for item in listed if item.id == tool.id)
     assert listed_tool.hc_total == 3.5
-    assert listed_tool.unit_labour_cost == pytest.approx((30 * 2 / 3600) * 10 + (30 * 1.5 / 3600) * 20)
+    assert listed_tool.unit_labour_cost == pytest.approx(
+        (30 * 2 / 3600) * 10 + (30 * 1.5 / 3600) * 20
+    )
 
 
 def test_create_metalization_mask_with_hc_and_zero_ct_cost(db_session):
@@ -695,7 +741,14 @@ def test_compute_unit_labour_cost_returns_zero_for_null_ct_and_missing_inputs(db
 def test_material_create_list_unique_and_update(db_session):
     created = settings_service.create_material(
         db_session,
-        MaterialCreate(part_number="MAT-01", description="Pellets", unit="kg", price_per_unit=12.5, category="Raw material", make_buy=False),
+        MaterialCreate(
+            part_number="MAT-01",
+            description="Pellets",
+            unit="kg",
+            price_per_unit=12.5,
+            category="Raw material",
+            make_buy=False,
+        ),
     )
 
     materials = settings_service.list_materials(db_session)
@@ -707,13 +760,27 @@ def test_material_create_list_unique_and_update(db_session):
     with pytest.raises(ValueError, match="already exists"):
         settings_service.create_material(
             db_session,
-            MaterialCreate(part_number="mat-01", description="dup", unit="kg", price_per_unit=1, category="Raw material", make_buy=False),
+            MaterialCreate(
+                part_number="mat-01",
+                description="dup",
+                unit="kg",
+                price_per_unit=1,
+                category="Raw material",
+                make_buy=False,
+            ),
         )
 
     updated = settings_service.update_material(
         db_session,
         created.id,
-        MaterialUpdate(part_number="MAT-01", description="Updated", unit="pcs", price_per_unit=15, category="FG", make_buy=True),
+        MaterialUpdate(
+            part_number="MAT-01",
+            description="Updated",
+            unit="pcs",
+            price_per_unit=15,
+            category="FG",
+            make_buy=True,
+        ),
     )
     assert updated.description == "Updated"
     assert updated.unit == "pcs"
@@ -722,12 +789,17 @@ def test_material_create_list_unique_and_update(db_session):
     assert updated.make_buy is True
 
 
-
-
 def test_material_make_sets_price_to_null(db_session):
     created = settings_service.create_material(
         db_session,
-        MaterialCreate(part_number="MAT-MAKE", description="Internal", unit="kg", price_per_unit=99, category="FG", make_buy=True),
+        MaterialCreate(
+            part_number="MAT-MAKE",
+            description="Internal",
+            unit="kg",
+            price_per_unit=99,
+            category="FG",
+            make_buy=True,
+        ),
     )
     assert created.price_per_unit is None
 
@@ -736,7 +808,14 @@ def test_material_buy_requires_price(db_session):
     with pytest.raises(ValueError, match="Price per unit is required for BUY material"):
         settings_service.create_material(
             db_session,
-            MaterialCreate(part_number="MAT-BUY", description="Purchased", unit="kg", price_per_unit=None, category="Raw material", make_buy=False),
+            MaterialCreate(
+                part_number="MAT-BUY",
+                description="Purchased",
+                unit="kg",
+                price_per_unit=None,
+                category="Raw material",
+                make_buy=False,
+            ),
         )
 
 
@@ -744,31 +823,61 @@ def test_outcome_save_updates_make_material_price_and_not_buy(db_session):
     settings_service.update_labour_cost(db_session, "Operator", 36)
     tool = settings_service.create_moulding_tool(
         db_session,
-        MouldingToolCreate(tool_pn="OUT-TOOL", description=None, ct_seconds=120, hc_map={"Operator": 2}),
+        MouldingToolCreate(
+            tool_pn="OUT-TOOL", description=None, ct_seconds=120, hc_map={"Operator": 2}
+        ),
     )
     mat_in = settings_service.create_material(
         db_session,
-        MaterialCreate(part_number="OUT-IN", description="in", unit="kg", price_per_unit=4, category="Raw material", make_buy=False),
+        MaterialCreate(
+            part_number="OUT-IN",
+            description="in",
+            unit="kg",
+            price_per_unit=4,
+            category="Raw material",
+            make_buy=False,
+        ),
     )
     make_out = settings_service.create_material(
         db_session,
-        MaterialCreate(part_number="OUT-MAKE", description="make", unit="pcs", price_per_unit=None, category="FG", make_buy=True),
+        MaterialCreate(
+            part_number="OUT-MAKE",
+            description="make",
+            unit="pcs",
+            price_per_unit=None,
+            category="FG",
+            make_buy=True,
+        ),
     )
     buy_out = settings_service.create_material(
         db_session,
-        MaterialCreate(part_number="OUT-BUY", description="buy", unit="pcs", price_per_unit=50, category="FG", make_buy=False),
+        MaterialCreate(
+            part_number="OUT-BUY",
+            description="buy",
+            unit="pcs",
+            price_per_unit=50,
+            category="FG",
+            make_buy=False,
+        ),
     )
 
-    settings_service.add_material_to_tool(db_session, tool.id, material_id=mat_in.id, qty_per_piece=1.5)
-    settings_service.add_material_out_to_tool(db_session, tool.id, material_id=make_out.id, qty_per_piece=1)
+    settings_service.add_material_to_tool(
+        db_session, tool.id, material_id=mat_in.id, qty_per_piece=1.5
+    )
+    settings_service.add_material_out_to_tool(
+        db_session, tool.id, material_id=make_out.id, qty_per_piece=1
+    )
     refreshed_make = settings_service.list_materials(db_session)
     make_material = next(m for m in refreshed_make if m.id == make_out.id)
     assert make_material.price_per_unit == pytest.approx(7.2)
 
-    settings_service.add_material_out_to_tool(db_session, tool.id, material_id=buy_out.id, qty_per_piece=1)
+    settings_service.add_material_out_to_tool(
+        db_session, tool.id, material_id=buy_out.id, qty_per_piece=1
+    )
     refreshed_buy = settings_service.list_materials(db_session)
     buy_material = next(m for m in refreshed_buy if m.id == buy_out.id)
     assert buy_material.price_per_unit == pytest.approx(50)
+
 
 def test_material_invalid_category_rejected(db_session):
     with pytest.raises(ValueError, match="Category must be one of"):
@@ -792,15 +901,26 @@ def test_tool_material_add_update_remove(db_session):
     )
     material = settings_service.create_material(
         db_session,
-        MaterialCreate(part_number="BOM-M-1", description="Granulate", unit="kg", price_per_unit=1, category="Raw material", make_buy=False),
+        MaterialCreate(
+            part_number="BOM-M-1",
+            description="Granulate",
+            unit="kg",
+            price_per_unit=1,
+            category="Raw material",
+            make_buy=False,
+        ),
     )
 
-    settings_service.add_material_to_tool(db_session, tool.id, material_id=material.id, qty_per_piece=1.5)
+    settings_service.add_material_to_tool(
+        db_session, tool.id, material_id=material.id, qty_per_piece=1.5
+    )
     rows = settings_service.list_materials_for_tool(db_session, tool.id)
     assert len(rows) == 1
     assert rows[0].qty_per_piece == pytest.approx(1.5)
 
-    settings_service.add_material_to_tool(db_session, tool.id, material_id=material.id, qty_per_piece=2.5)
+    settings_service.add_material_to_tool(
+        db_session, tool.id, material_id=material.id, qty_per_piece=2.5
+    )
     rows = settings_service.list_materials_for_tool(db_session, tool.id)
     assert len(rows) == 1
     assert rows[0].qty_per_piece == pytest.approx(2.5)
@@ -820,10 +940,19 @@ def test_mask_material_add_update_remove(db_session):
     )
     material = settings_service.create_material(
         db_session,
-        MaterialCreate(part_number="BOM-M-2", description="Paint", unit="ml", price_per_unit=1, category="Raw material", make_buy=False),
+        MaterialCreate(
+            part_number="BOM-M-2",
+            description="Paint",
+            unit="ml",
+            price_per_unit=1,
+            category="Raw material",
+            make_buy=False,
+        ),
     )
 
-    settings_service.add_material_to_mask(db_session, mask.id, material_id=material.id, qty_per_piece=0.25)
+    settings_service.add_material_to_mask(
+        db_session, mask.id, material_id=material.id, qty_per_piece=0.25
+    )
     rows = settings_service.list_materials_for_mask(db_session, mask.id)
     assert len(rows) == 1
     assert rows[0].qty_per_piece == pytest.approx(0.25)
@@ -847,14 +976,25 @@ def test_reject_non_positive_qty_for_tool_and_mask(db_session):
     )
     material = settings_service.create_material(
         db_session,
-        MaterialCreate(part_number="BOM-M-3", description="Resin", unit="kg", price_per_unit=1, category="Raw material", make_buy=False),
+        MaterialCreate(
+            part_number="BOM-M-3",
+            description="Resin",
+            unit="kg",
+            price_per_unit=1,
+            category="Raw material",
+            make_buy=False,
+        ),
     )
 
     with pytest.raises(ValueError, match="greater than 0"):
-        settings_service.add_material_to_tool(db_session, tool.id, material_id=material.id, qty_per_piece=0)
+        settings_service.add_material_to_tool(
+            db_session, tool.id, material_id=material.id, qty_per_piece=0
+        )
 
     with pytest.raises(ValueError, match="greater than 0"):
-        settings_service.add_material_to_mask(db_session, mask.id, material_id=material.id, qty_per_piece=-1)
+        settings_service.add_material_to_mask(
+            db_session, mask.id, material_id=material.id, qty_per_piece=-1
+        )
 
 
 def test_reject_unknown_material_part_number_for_tool_and_mask(db_session):
@@ -868,10 +1008,14 @@ def test_reject_unknown_material_part_number_for_tool_and_mask(db_session):
     )
 
     with pytest.raises(ValueError, match="does not exist"):
-        settings_service.add_material_to_tool(db_session, tool.id, part_number="UNKNOWN", qty_per_piece=1)
+        settings_service.add_material_to_tool(
+            db_session, tool.id, part_number="UNKNOWN", qty_per_piece=1
+        )
 
     with pytest.raises(ValueError, match="does not exist"):
-        settings_service.add_material_to_mask(db_session, mask.id, part_number="UNKNOWN", qty_per_piece=1)
+        settings_service.add_material_to_mask(
+            db_session, mask.id, part_number="UNKNOWN", qty_per_piece=1
+        )
 
 
 def test_compute_material_cost_helpers_for_tool_and_mask(db_session):
@@ -885,21 +1029,43 @@ def test_compute_material_cost_helpers_for_tool_and_mask(db_session):
     )
     material_a = settings_service.create_material(
         db_session,
-        MaterialCreate(part_number="BOM-M-COST-1", description="A", unit="kg", price_per_unit=2.5, category="Raw material", make_buy=False),
+        MaterialCreate(
+            part_number="BOM-M-COST-1",
+            description="A",
+            unit="kg",
+            price_per_unit=2.5,
+            category="Raw material",
+            make_buy=False,
+        ),
     )
     material_b = settings_service.create_material(
         db_session,
-        MaterialCreate(part_number="BOM-M-COST-2", description="B", unit="kg", price_per_unit=3, category="Raw material", make_buy=False),
+        MaterialCreate(
+            part_number="BOM-M-COST-2",
+            description="B",
+            unit="kg",
+            price_per_unit=3,
+            category="Raw material",
+            make_buy=False,
+        ),
     )
 
     assert settings_service.compute_material_cost_for_tool(db_session, tool.id) == pytest.approx(0)
     assert settings_service.compute_material_cost_for_mask(db_session, mask.id) == pytest.approx(0)
 
-    settings_service.add_material_to_tool(db_session, tool.id, material_id=material_a.id, qty_per_piece=2)
-    settings_service.add_material_to_tool(db_session, tool.id, material_id=material_b.id, qty_per_piece=1.5)
-    settings_service.add_material_to_mask(db_session, mask.id, material_id=material_b.id, qty_per_piece=4)
+    settings_service.add_material_to_tool(
+        db_session, tool.id, material_id=material_a.id, qty_per_piece=2
+    )
+    settings_service.add_material_to_tool(
+        db_session, tool.id, material_id=material_b.id, qty_per_piece=1.5
+    )
+    settings_service.add_material_to_mask(
+        db_session, mask.id, material_id=material_b.id, qty_per_piece=4
+    )
 
-    assert settings_service.compute_material_cost_for_tool(db_session, tool.id) == pytest.approx(9.5)
+    assert settings_service.compute_material_cost_for_tool(db_session, tool.id) == pytest.approx(
+        9.5
+    )
     assert settings_service.compute_material_cost_for_mask(db_session, mask.id) == pytest.approx(12)
 
 
@@ -908,18 +1074,38 @@ def test_assembly_line_labour_and_material_costs(db_session):
     settings_service.update_labour_cost(db_session, "Logistic", 10)
     line = settings_service.create_assembly_line(
         db_session,
-        AssemblyLineCreate(line_number="AL-COST", ct_seconds=120, hc=0, hc_map={"Operator": 2, "Logistic": 1}),
+        AssemblyLineCreate(
+            line_number="AL-COST", ct_seconds=120, hc=0, hc_map={"Operator": 2, "Logistic": 1}
+        ),
     )
     mat_in = settings_service.create_material(
         db_session,
-        MaterialCreate(part_number="AL-IN", description="in", unit="kg", price_per_unit=4, category="metal parts", make_buy=True),
+        MaterialCreate(
+            part_number="AL-IN",
+            description="in",
+            unit="kg",
+            price_per_unit=4,
+            category="metal parts",
+            make_buy=True,
+        ),
     )
     mat_out = settings_service.create_material(
         db_session,
-        MaterialCreate(part_number="AL-OUT", description="out", unit="kg", price_per_unit=5, category="FG", make_buy=False),
+        MaterialCreate(
+            part_number="AL-OUT",
+            description="out",
+            unit="kg",
+            price_per_unit=5,
+            category="FG",
+            make_buy=False,
+        ),
     )
-    settings_service.add_material_in_to_assembly_line(db_session, line.id, material_id=mat_in.id, qty_per_piece=2)
-    settings_service.add_material_out_to_assembly_line(db_session, line.id, material_id=mat_out.id, qty_per_piece=0.5)
+    settings_service.add_material_in_to_assembly_line(
+        db_session, line.id, material_id=mat_in.id, qty_per_piece=2
+    )
+    settings_service.add_material_out_to_assembly_line(
+        db_session, line.id, material_id=mat_out.id, qty_per_piece=0.5
+    )
 
     listed = next(l for l in settings_service.list_assembly_lines(db_session) if l.id == line.id)
 
@@ -937,31 +1123,64 @@ def test_assembly_line_reference_averages_and_costs(db_session):
     )
     mat_a = settings_service.create_material(
         db_session,
-        MaterialCreate(part_number="AL-REF-IN", description="in", unit="kg", price_per_unit=4, category="Raw material", make_buy=False),
+        MaterialCreate(
+            part_number="AL-REF-IN",
+            description="in",
+            unit="kg",
+            price_per_unit=4,
+            category="Raw material",
+            make_buy=False,
+        ),
     )
     fg_1 = settings_service.create_material(
         db_session,
-        MaterialCreate(part_number="AL-REF-FG-1", description="fg1", unit="pc", price_per_unit=3, category="FG", make_buy=False),
+        MaterialCreate(
+            part_number="AL-REF-FG-1",
+            description="fg1",
+            unit="pc",
+            price_per_unit=3,
+            category="FG",
+            make_buy=False,
+        ),
     )
     fg_2 = settings_service.create_material(
         db_session,
-        MaterialCreate(part_number="AL-REF-FG-2", description="fg2", unit="pc", price_per_unit=5, category="FG", make_buy=False),
+        MaterialCreate(
+            part_number="AL-REF-FG-2",
+            description="fg2",
+            unit="pc",
+            price_per_unit=5,
+            category="FG",
+            make_buy=False,
+        ),
     )
 
     ref_a = settings_service.create_assembly_line_reference(
         db_session,
         line.id,
-        AssemblyLineReferenceCreate(reference_name="Ref A", fg_material_id=fg_1.id, ct_seconds=60, hc_map={"Operator": 1}),
+        AssemblyLineReferenceCreate(
+            reference_name="Ref A", fg_material_id=fg_1.id, ct_seconds=60, hc_map={"Operator": 1}
+        ),
     )
     ref_b = settings_service.create_assembly_line_reference(
         db_session,
         line.id,
-        AssemblyLineReferenceCreate(reference_name="Ref B", fg_material_id=fg_2.id, ct_seconds=120, hc_map={"Operator": 2}),
+        AssemblyLineReferenceCreate(
+            reference_name="Ref B", fg_material_id=fg_2.id, ct_seconds=120, hc_map={"Operator": 2}
+        ),
     )
-    settings_service.add_material_in_to_reference(db_session, ref_a.id, material_id=mat_a.id, qty_per_piece=1)
-    settings_service.add_material_in_to_reference(db_session, ref_b.id, material_id=mat_a.id, qty_per_piece=3)
-    settings_service.add_material_out_to_reference(db_session, ref_a.id, material_id=fg_1.id, qty_per_piece=1)
-    settings_service.add_material_out_to_reference(db_session, ref_b.id, material_id=fg_2.id, qty_per_piece=1)
+    settings_service.add_material_in_to_reference(
+        db_session, ref_a.id, material_id=mat_a.id, qty_per_piece=1
+    )
+    settings_service.add_material_in_to_reference(
+        db_session, ref_b.id, material_id=mat_a.id, qty_per_piece=3
+    )
+    settings_service.add_material_out_to_reference(
+        db_session, ref_a.id, material_id=fg_1.id, qty_per_piece=1
+    )
+    settings_service.add_material_out_to_reference(
+        db_session, ref_b.id, material_id=fg_2.id, qty_per_piece=1
+    )
 
     listed = next(l for l in settings_service.list_assembly_lines(db_session) if l.id == line.id)
 
@@ -980,7 +1199,14 @@ def test_assembly_line_reference_name_unique_within_line(db_session):
     )
     fg = settings_service.create_material(
         db_session,
-        MaterialCreate(part_number="AL-REF-U-FG", description="fg", unit="pc", price_per_unit=1, category="FG", make_buy=False),
+        MaterialCreate(
+            part_number="AL-REF-U-FG",
+            description="fg",
+            unit="pc",
+            price_per_unit=1,
+            category="FG",
+            make_buy=False,
+        ),
     )
     settings_service.create_assembly_line_reference(
         db_session,
@@ -992,5 +1218,7 @@ def test_assembly_line_reference_name_unique_within_line(db_session):
         settings_service.create_assembly_line_reference(
             db_session,
             line.id,
-            AssemblyLineReferenceCreate(reference_name="Ref-X", fg_material_id=fg.id, ct_seconds=12),
+            AssemblyLineReferenceCreate(
+                reference_name="Ref-X", fg_material_id=fg.id, ct_seconds=12
+            ),
         )

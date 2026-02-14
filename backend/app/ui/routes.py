@@ -8,7 +8,11 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
-from app.core.auth import enforce_action_create_permission, enforce_action_ownership, enforce_write_access
+from app.core.auth import (
+    enforce_action_create_permission,
+    enforce_action_ownership,
+    enforce_write_access,
+)
 from app.core.config import settings
 from app.db.session import get_db
 from app.models.action import ALLOWED_PROCESS_TYPES, Action
@@ -49,7 +53,10 @@ PROCESS_LABELS = {
 def _validate_process_type_or_422(process_type: str | None) -> str:
     normalized = (process_type or "").strip().lower()
     if normalized not in ALLOWED_PROCESS_TYPES:
-        raise HTTPException(status_code=422, detail="Process is required and must be moulding, metalization, or assembly")
+        raise HTTPException(
+            status_code=422,
+            detail="Process is required and must be moulding, metalization, or assembly",
+        )
     return normalized
 
 
@@ -349,7 +356,9 @@ def action_detail(
             "format_date": format_date,
             "all_tags": tags_repo.list_tags(db),
             "projects": projects_repo.list_projects(db),
-            "champions": champions_repo.list_champions(db),
+            "champions": champions_repo.list_champions(
+                db, include_ids=[action.champion_id] if action.champion_id else None
+            ),
             "status_options": STATUS_OPTIONS,
             "priority_options": PRIORITY_OPTIONS,
             "edit_mode": edit,
@@ -440,7 +449,6 @@ def create_action(
     _clear_non_matching_components(action)
     action = actions_repo.create_action(db, action)
     return RedirectResponse(url=f"/ui/actions/{action.id}?edit=1", status_code=303)
-
 
 
 @router.post("/actions/{action_id}/moulding-tools/add", response_model=None)
@@ -549,7 +557,9 @@ def add_action_assembly_reference(
     enforce_action_ownership(user, action)
     if action.process_type != "assembly":
         raise HTTPException(status_code=400, detail="Action process_type must be assembly")
-    reference = actions_repo.get_assembly_reference_by_id(db, int(reference_id)) if reference_id else None
+    reference = (
+        actions_repo.get_assembly_reference_by_id(db, int(reference_id)) if reference_id else None
+    )
     if reference is None and reference_name:
         reference = actions_repo.get_assembly_reference_by_name(db, reference_name.strip())
     if not reference:
@@ -573,10 +583,11 @@ def remove_action_assembly_reference(
     user = _current_user(request)
     enforce_write_access(user)
     enforce_action_ownership(user, action)
-    action.assembly_references = [reference for reference in action.assembly_references if reference.id != reference_id]
+    action.assembly_references = [
+        reference for reference in action.assembly_references if reference.id != reference_id
+    ]
     actions_repo.update_action(db, action)
     return RedirectResponse(url=f"/ui/actions/{action_id}?edit=1", status_code=303)
-
 
 
 @router.post("/actions/{action_id}/tags", response_model=None)
@@ -615,6 +626,7 @@ def remove_action_tag(
     action.tags = [tag for tag in action.tags if tag.id != tag_id]
     actions_repo.update_action(db, action)
     return RedirectResponse(url=f"/ui/actions/{action_id}", status_code=303)
+
 
 @router.post("/actions/{action_id}/delete", response_model=None)
 def delete_action(action_id: int, request: Request, db: Session = Depends(get_db)):

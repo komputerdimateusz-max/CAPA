@@ -45,7 +45,14 @@
             <label>Email<input type="email" name="email" value="{{ form.champion_email or selected_champion.email or '' }}" /></label>
             <label>Position<input type="text" name="position" value="{{ form.champion_position or selected_champion.position or '' }}" /></label>
             <label>Birth date<input type="date" name="birth_date" value="{{ form.champion_birth_date or (selected_champion.birth_date.isoformat() if selected_champion.birth_date else '') }}" /></label>
-            <div class="form-actions"><button class="button" type="submit">Save champion</button></div>
+            <div class="form-actions">
+              <button class="button" type="submit">Save champion</button>
+            </div>
+          </form>
+          <form method="post" action="/ui/settings/champions/{{ selected_champion.id }}/delete" onsubmit="return confirm('Delete this champion?');">
+            <div class="form-actions">
+              <button class="button secondary" type="submit">Delete champion</button>
+            </div>
           </form>
         </div>
       {% endif %}

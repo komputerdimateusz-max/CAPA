@@ -6,6 +6,7 @@ from sqlalchemy.exc import OperationalError
 
 from app.core.config import settings
 from app.models.action import Action
+from app.models.champion import Champion
 from app.models.project import Project
 from app.models.user import User
 from app.schemas.assembly_line import AssemblyLineCreate, AssemblyLineReferenceCreate
@@ -34,6 +35,50 @@ def test_ui_settings_champions_subpage(client):
     assert response.status_code == 200
     assert "Back to Settings" in response.text
     assert "Add champion" in response.text
+
+
+def test_ui_settings_soft_delete_champion(client, db_session):
+    champion = settings_service.create_champion(
+        db_session,
+        first_name="Delete",
+        last_name="Me",
+        email="delete.me@example.com",
+        position="PE",
+        birth_date=None,
+    )
+
+    response = client.post(f"/ui/settings/champions/{champion.id}/delete", allow_redirects=False)
+
+    assert response.status_code == 303
+    assert response.headers["location"] == "/ui/settings/champions?deleted=champion"
+    db_session.refresh(champion)
+    assert champion.is_active is False
+
+    list_response = client.get("/ui/settings/champions")
+    assert "Delete Me" not in list_response.text
+
+
+def test_ui_action_detail_keeps_inactive_champion_visible(client, db_session):
+    champion = settings_service.create_champion(
+        db_session,
+        first_name="Legacy",
+        last_name="Owner",
+        email="legacy.owner@example.com",
+        position="PE",
+        birth_date=None,
+    )
+    action = Action(
+        title="Legacy Action", status="OPEN", champion_id=champion.id, created_at=datetime.utcnow()
+    )
+    db_session.add(action)
+    db_session.commit()
+
+    settings_service.deactivate_champion(db_session, champion.id)
+
+    response = client.get(f"/ui/actions/{action.id}?edit=1")
+
+    assert response.status_code == 200
+    assert "Legacy Owner" in response.text
 
 
 def test_ui_analyses_page(client, monkeypatch, tmp_path):
@@ -75,9 +120,13 @@ def test_login_alias_redirects_to_ui_login(client):
 
 def test_login_shows_schema_error_when_users_email_missing(client, monkeypatch):
     def _raise_operational_error(db, username):
-        raise OperationalError("SELECT users.email FROM users", {}, Exception("no such column: users.email"))
+        raise OperationalError(
+            "SELECT users.email FROM users", {}, Exception("no such column: users.email")
+        )
 
-    monkeypatch.setattr("app.ui.routes_auth.users_repo.get_user_by_username", _raise_operational_error)
+    monkeypatch.setattr(
+        "app.ui.routes_auth.users_repo.get_user_by_username", _raise_operational_error
+    )
 
     response = client.post("/ui/login", data={"username": "u", "password": "p"})
 
@@ -143,7 +192,9 @@ def test_ui_settings_updates_user_role(client, db_session):
     db_session.add(user)
     db_session.commit()
 
-    response = client.post(f"/ui/settings/users/{user.id}/role", data={"role": "admin"}, allow_redirects=False)
+    response = client.post(
+        f"/ui/settings/users/{user.id}/role", data={"role": "admin"}, allow_redirects=False
+    )
 
     assert response.status_code == 303
     db_session.refresh(user)
@@ -156,7 +207,6 @@ def test_ui_settings_assembly_lines_subpage(client):
     assert response.status_code == 200
     assert "Assembly Lines" in response.text
     assert "Add assembly line" in response.text
-
 
 
 def test_ui_moulding_machine_tools_page_and_count_link(client, db_session):
@@ -191,7 +241,6 @@ def test_ui_moulding_machine_tools_page_returns_404_for_missing_machine(client):
     assert response.status_code == 404
 
 
-
 def test_ui_metalization_chamber_masks_page_and_count_link(client, db_session):
     mask_a = settings_service.create_metalization_mask(
         db_session,
@@ -211,7 +260,9 @@ def test_ui_metalization_chamber_masks_page_and_count_link(client, db_session):
 
     list_response = client.get("/ui/settings/metalization-chambers")
     assert list_response.status_code == 200
-    assert f'href="/ui/settings/metalization-chambers/{chamber.id}/masks">2</a>' in list_response.text
+    assert (
+        f'href="/ui/settings/metalization-chambers/{chamber.id}/masks">2</a>' in list_response.text
+    )
 
     masks_response = client.get(f"/ui/settings/metalization-chambers/{chamber.id}/masks")
     assert masks_response.status_code == 200
@@ -224,7 +275,14 @@ def test_ui_metalization_chamber_masks_page_and_count_link(client, db_session):
 def test_ui_materials_crud_endpoints(client, db_session):
     create_response = client.post(
         "/ui/settings/materials",
-        data={"part_number": "MAT-01", "description": "Granulate", "unit": "kg", "price_per_unit": "9.5", "category": "Raw material", "make_buy": "1"},
+        data={
+            "part_number": "MAT-01",
+            "description": "Granulate",
+            "unit": "kg",
+            "price_per_unit": "9.5",
+            "category": "Raw material",
+            "make_buy": "1",
+        },
         allow_redirects=False,
     )
     assert create_response.status_code == 303
@@ -237,18 +295,31 @@ def test_ui_materials_crud_endpoints(client, db_session):
     material = settings_service.list_materials(db_session)[0]
     update_response = client.post(
         f"/ui/settings/materials/{material.id}",
-        data={"part_number": "MAT-01", "description": "Updated", "unit": "pcs", "price_per_unit": "11", "category": "FG"},
+        data={
+            "part_number": "MAT-01",
+            "description": "Updated",
+            "unit": "pcs",
+            "price_per_unit": "11",
+            "category": "FG",
+        },
         allow_redirects=False,
     )
     assert update_response.status_code == 303
 
     duplicate_response = client.post(
         "/ui/settings/materials",
-        data={"part_number": "mat-01", "description": "Dup", "unit": "pcs", "price_per_unit": "1", "category": "metal parts"},
+        data={
+            "part_number": "mat-01",
+            "description": "Dup",
+            "unit": "pcs",
+            "price_per_unit": "1",
+            "category": "metal parts",
+        },
         allow_redirects=True,
     )
     assert duplicate_response.status_code == 200
     assert "already exists" in duplicate_response.text
+
 
 def test_ui_project_assignment_endpoints_and_assignments_page(client, db_session):
     engineer = settings_service.create_champion(
@@ -329,7 +400,6 @@ def test_ui_project_assignment_endpoints_and_assignments_page(client, db_session
     assert remove_mask_resp.status_code == 303
 
 
-
 def test_ui_project_add_line_by_line_number_and_unknown_validation(client, db_session):
     engineer = settings_service.create_champion(
         db_session,
@@ -372,6 +442,7 @@ def test_ui_project_add_line_by_line_number_and_unknown_validation(client, db_se
     assert unknown_line_resp.status_code == 303
     assert "error=Unknown+line+number" in unknown_line_resp.headers["location"]
 
+
 def test_ui_settings_projects_table_has_assignments_links(client, db_session):
     engineer = settings_service.create_champion(
         db_session,
@@ -394,7 +465,7 @@ def test_ui_settings_projects_table_has_assignments_links(client, db_session):
     response = client.get("/ui/settings/projects")
 
     assert response.status_code == 200
-    assert f'/ui/settings/projects/{project.id}/assignments' in response.text
+    assert f"/ui/settings/projects/{project.id}/assignments" in response.text
     assert "0 masks" in response.text
 
 
@@ -402,7 +473,14 @@ def test_ui_settings_labour_cost_page_and_update(client):
     response = client.get("/ui/settings/labour-cost")
 
     assert response.status_code == 200
-    for worker_type in ("Operator", "Logistic", "TeamLeader", "Inspector", "Specialist", "Technican"):
+    for worker_type in (
+        "Operator",
+        "Logistic",
+        "TeamLeader",
+        "Inspector",
+        "Specialist",
+        "Technican",
+    ):
         assert worker_type in response.text
 
     update_response = client.post(
@@ -437,18 +515,38 @@ def test_ui_moulding_tools_list_shows_hc_total_unit_and_material_cost(client, db
     settings_service.update_labour_cost(db_session, "Operator", 10)
     tool = settings_service.create_moulding_tool(
         db_session,
-        MouldingToolCreate(tool_pn="UI-HC-T", description="desc", ct_seconds=60, hc_map={"Operator": 2}),
+        MouldingToolCreate(
+            tool_pn="UI-HC-T", description="desc", ct_seconds=60, hc_map={"Operator": 2}
+        ),
     )
     material_a = settings_service.create_material(
         db_session,
-        MaterialCreate(part_number="UI-MAT-T-1", description="mat-a", unit="kg", price_per_unit=3, category="Raw material", make_buy=False),
+        MaterialCreate(
+            part_number="UI-MAT-T-1",
+            description="mat-a",
+            unit="kg",
+            price_per_unit=3,
+            category="Raw material",
+            make_buy=False,
+        ),
     )
     material_b = settings_service.create_material(
         db_session,
-        MaterialCreate(part_number="UI-MAT-T-2", description="mat-b", unit="kg", price_per_unit=4, category="metal parts", make_buy=True),
+        MaterialCreate(
+            part_number="UI-MAT-T-2",
+            description="mat-b",
+            unit="kg",
+            price_per_unit=4,
+            category="metal parts",
+            make_buy=True,
+        ),
     )
-    settings_service.add_material_to_tool(db_session, tool.id, material_id=material_a.id, qty_per_piece=2)
-    settings_service.add_material_to_tool(db_session, tool.id, material_id=material_b.id, qty_per_piece=1.5)
+    settings_service.add_material_to_tool(
+        db_session, tool.id, material_id=material_a.id, qty_per_piece=2
+    )
+    settings_service.add_material_to_tool(
+        db_session, tool.id, material_id=material_b.id, qty_per_piece=1.5
+    )
 
     response = client.get("/ui/settings/moulding-tools")
 
@@ -464,13 +562,24 @@ def test_ui_metalization_masks_list_shows_hc_total_unit_and_material_cost(client
     settings_service.update_labour_cost(db_session, "Operator", 10)
     mask = settings_service.create_metalization_mask(
         db_session,
-        MetalizationMaskCreate(mask_pn="UI-HC-M", description="desc", ct_seconds=60, hc_map={"Operator": 1.5}),
+        MetalizationMaskCreate(
+            mask_pn="UI-HC-M", description="desc", ct_seconds=60, hc_map={"Operator": 1.5}
+        ),
     )
     material = settings_service.create_material(
         db_session,
-        MaterialCreate(part_number="UI-MAT-M-1", description="mat", unit="ml", price_per_unit=10, category="sub-group", make_buy=False),
+        MaterialCreate(
+            part_number="UI-MAT-M-1",
+            description="mat",
+            unit="ml",
+            price_per_unit=10,
+            category="sub-group",
+            make_buy=False,
+        ),
     )
-    settings_service.add_material_to_mask(db_session, mask.id, material_id=material.id, qty_per_piece=0.5)
+    settings_service.add_material_to_mask(
+        db_session, mask.id, material_id=material.id, qty_per_piece=0.5
+    )
 
     response = client.get("/ui/settings/metalization-masks")
 
@@ -499,7 +608,9 @@ def test_ui_add_moulding_tool_persists_hc_breakdown(client, db_session):
         allow_redirects=False,
     )
     assert response.status_code == 303
-    tool = next(t for t in settings_service.list_moulding_tools(db_session) if t.tool_pn == "UI-HC-T2")
+    tool = next(
+        t for t in settings_service.list_moulding_tools(db_session) if t.tool_pn == "UI-HC-T2"
+    )
     hc_map = settings_service.get_tool_hc_map(db_session, tool.id)
     assert hc_map["Operator"] == 1.25
     assert hc_map["Logistic"] == 0.75
@@ -508,18 +619,33 @@ def test_ui_add_moulding_tool_persists_hc_breakdown(client, db_session):
 def test_ui_lists_show_outcome_material_cost_columns(client, db_session):
     tool = settings_service.create_moulding_tool(
         db_session,
-        MouldingToolCreate(tool_pn="UI-OUT-T", description="desc", ct_seconds=60, hc_map={"Operator": 1}),
+        MouldingToolCreate(
+            tool_pn="UI-OUT-T", description="desc", ct_seconds=60, hc_map={"Operator": 1}
+        ),
     )
     mask = settings_service.create_metalization_mask(
         db_session,
-        MetalizationMaskCreate(mask_pn="UI-OUT-M", description="desc", ct_seconds=60, hc_map={"Operator": 1}),
+        MetalizationMaskCreate(
+            mask_pn="UI-OUT-M", description="desc", ct_seconds=60, hc_map={"Operator": 1}
+        ),
     )
     material = settings_service.create_material(
         db_session,
-        MaterialCreate(part_number="UI-OUT-MAT", description="mat", unit="kg", price_per_unit=2, category="Raw material", make_buy=False),
+        MaterialCreate(
+            part_number="UI-OUT-MAT",
+            description="mat",
+            unit="kg",
+            price_per_unit=2,
+            category="Raw material",
+            make_buy=False,
+        ),
     )
-    settings_service.add_material_out_to_tool(db_session, tool.id, material_id=material.id, qty_per_piece=3)
-    settings_service.add_material_out_to_mask(db_session, mask.id, material_id=material.id, qty_per_piece=4)
+    settings_service.add_material_out_to_tool(
+        db_session, tool.id, material_id=material.id, qty_per_piece=3
+    )
+    settings_service.add_material_out_to_mask(
+        db_session, mask.id, material_id=material.id, qty_per_piece=4
+    )
 
     tool_response = client.get("/ui/settings/moulding-tools")
     mask_response = client.get("/ui/settings/metalization-masks")
@@ -540,10 +666,21 @@ def test_ui_assembly_lines_list_shows_labour_and_material_costs(client, db_sessi
     )
     material = settings_service.create_material(
         db_session,
-        MaterialCreate(part_number="UI-AL-MAT", description="mat", unit="kg", price_per_unit=5, category="FG", make_buy=True),
+        MaterialCreate(
+            part_number="UI-AL-MAT",
+            description="mat",
+            unit="kg",
+            price_per_unit=5,
+            category="FG",
+            make_buy=True,
+        ),
     )
-    settings_service.add_material_in_to_assembly_line(db_session, line.id, material_id=material.id, qty_per_piece=1)
-    settings_service.add_material_out_to_assembly_line(db_session, line.id, material_id=material.id, qty_per_piece=0.2)
+    settings_service.add_material_in_to_assembly_line(
+        db_session, line.id, material_id=material.id, qty_per_piece=1
+    )
+    settings_service.add_material_out_to_assembly_line(
+        db_session, line.id, material_id=material.id, qty_per_piece=0.2
+    )
 
     response = client.get("/ui/settings/assembly-lines")
 
@@ -561,12 +698,21 @@ def test_ui_assembly_line_references_page_and_average_link(client, db_session):
     )
     fg = settings_service.create_material(
         db_session,
-        MaterialCreate(part_number="UI-AL-REF-FG", description="fg", unit="pc", price_per_unit=2, category="FG", make_buy=False),
+        MaterialCreate(
+            part_number="UI-AL-REF-FG",
+            description="fg",
+            unit="pc",
+            price_per_unit=2,
+            category="FG",
+            make_buy=False,
+        ),
     )
     settings_service.create_assembly_line_reference(
         db_session,
         line.id,
-        AssemblyLineReferenceCreate(reference_name="R1", fg_material_id=fg.id, ct_seconds=12, hc_map={"Operator": 1}),
+        AssemblyLineReferenceCreate(
+            reference_name="R1", fg_material_id=fg.id, ct_seconds=12, hc_map={"Operator": 1}
+        ),
     )
 
     list_response = client.get("/ui/settings/assembly-lines")
@@ -584,7 +730,12 @@ def test_ui_action_add_remove_moulding_tools(client, db_session):
         db_session,
         MouldingToolCreate(tool_pn="T-100", description="Form", ct_seconds=10),
     )
-    action = Action(title="Moulding action", status="OPEN", process_type="moulding", created_at=datetime.utcnow())
+    action = Action(
+        title="Moulding action",
+        status="OPEN",
+        process_type="moulding",
+        created_at=datetime.utcnow(),
+    )
     db_session.add(action)
     db_session.commit()
 
@@ -613,7 +764,12 @@ def test_ui_action_add_remove_metalization_masks(client, db_session):
         db_session,
         MetalizationMaskCreate(mask_pn="M-200", description="Mask", ct_seconds=11),
     )
-    action = Action(title="Metalization action", status="OPEN", process_type="metalization", created_at=datetime.utcnow())
+    action = Action(
+        title="Metalization action",
+        status="OPEN",
+        process_type="metalization",
+        created_at=datetime.utcnow(),
+    )
     db_session.add(action)
     db_session.commit()
 
@@ -640,15 +796,26 @@ def test_ui_action_add_remove_metalization_masks(client, db_session):
 def test_ui_action_add_remove_assembly_references(client, db_session):
     fg = settings_service.create_material(
         db_session,
-        MaterialCreate(part_number="FG-10", description="FG", unit="pcs", price_per_unit=1.0, category="FG"),
+        MaterialCreate(
+            part_number="FG-10", description="FG", unit="pcs", price_per_unit=1.0, category="FG"
+        ),
     )
-    line = settings_service.create_assembly_line(db_session, AssemblyLineCreate(line_number="L-1", labor_cost_per_h=20.0))
+    line = settings_service.create_assembly_line(
+        db_session, AssemblyLineCreate(line_number="L-1", labor_cost_per_h=20.0)
+    )
     reference = settings_service.create_assembly_line_reference(
         db_session,
         line.id,
-        AssemblyLineReferenceCreate(reference_name="REF-1", fg_part_number=fg.part_number, ct_seconds=8),
+        AssemblyLineReferenceCreate(
+            reference_name="REF-1", fg_part_number=fg.part_number, ct_seconds=8
+        ),
     )
-    action = Action(title="Assembly action", status="OPEN", process_type="assembly", created_at=datetime.utcnow())
+    action = Action(
+        title="Assembly action",
+        status="OPEN",
+        process_type="assembly",
+        created_at=datetime.utcnow(),
+    )
     db_session.add(action)
     db_session.commit()
 
@@ -660,7 +827,9 @@ def test_ui_action_add_remove_assembly_references(client, db_session):
     assert add_response.status_code == 303
 
     db_session.refresh(action)
-    assert [item.reference_name for item in action.assembly_references] == [reference.reference_name]
+    assert [item.reference_name for item in action.assembly_references] == [
+        reference.reference_name
+    ]
 
     remove_response = client.post(
         f"/ui/actions/{action.id}/assembly-references/remove",
@@ -677,7 +846,9 @@ def test_switching_process_clears_old_assignments(client, db_session):
         db_session,
         MouldingToolCreate(tool_pn="T-101", description="Form", ct_seconds=10),
     )
-    action = Action(title="Switch process", status="OPEN", process_type="moulding", created_at=datetime.utcnow())
+    action = Action(
+        title="Switch process", status="OPEN", process_type="moulding", created_at=datetime.utcnow()
+    )
     action.moulding_tools.append(tool)
     db_session.add(action)
     db_session.commit()
@@ -791,7 +962,9 @@ def test_save_5why_and_create_linked_action(client, db_session):
     assert details is not None
     assert details.problem_statement == "Leakage at station 4"
 
-    create_response = client.post(f"/ui/analyses/{analysis.id}/create-action", allow_redirects=False)
+    create_response = client.post(
+        f"/ui/analyses/{analysis.id}/create-action", allow_redirects=False
+    )
     assert create_response.status_code == 303
     assert create_response.headers["location"].startswith("/ui/actions/")
 
@@ -816,7 +989,9 @@ def test_observed_process_switch_clears_previous_components(client, db_session):
     mask = MetalizationMask(mask_pn="MASK-100", description="Test mask", ct_seconds=5.1)
     line = AssemblyLine(line_number="L-01", ct_seconds=7.2, hc=2)
     fg = Material(part_number="FG-01", description="FG", unit="pcs", price_per_unit=1.0)
-    reference = AssemblyLineReference(line=line, reference_name="REF-100", fg_material=fg, ct_seconds=6.2)
+    reference = AssemblyLineReference(
+        line=line, reference_name="REF-100", fg_material=fg, ct_seconds=6.2
+    )
 
     db_session.add_all([analysis, details, tool, mask, line, fg, reference])
     db_session.commit()
@@ -930,7 +1105,9 @@ def test_observed_component_add_remove_for_each_process(client, db_session):
     mask = MetalizationMask(mask_pn="MASK-300", description="Test mask", ct_seconds=5.1)
     line = AssemblyLine(line_number="L-03", ct_seconds=7.2, hc=2)
     fg = Material(part_number="FG-03", description="FG", unit="pcs", price_per_unit=1.0)
-    reference = AssemblyLineReference(line=line, reference_name="REF-300", fg_material=fg, ct_seconds=6.2)
+    reference = AssemblyLineReference(
+        line=line, reference_name="REF-300", fg_material=fg, ct_seconds=6.2
+    )
     db_session.add_all([analysis, details, tool, mask, line, fg, reference])
     db_session.commit()
 
