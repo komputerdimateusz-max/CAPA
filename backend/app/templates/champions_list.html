@@ -1,17 +1,17 @@
 {% extends "layout.html" %}
 {% block content %}
+  {% include "partials/flash.html" with context %}
   <section class="card">
     <div class="card-header">
       <h2>🏅 Champions</h2>
       <div class="button-row">
-        <button
-          class="button secondary"
-          hx-get="/ui/champions/_table"
-          hx-target="#champions-table"
-          hx-swap="outerHTML"
-        >
-          Refresh
-        </button>
+        <form method="post" action="/ui/champions/refresh">
+          <input type="hidden" name="from" value="{{ filters.from }}" />
+          <input type="hidden" name="to" value="{{ filters.to }}" />
+          <input type="hidden" name="project_id" value="{{ filters.project_id or '' }}" />
+          <input type="hidden" name="status_scope" value="{{ filters.status_scope }}" />
+          <button class="button secondary" type="submit">Refresh</button>
+        </form>
       </div>
     </div>
     {% from "partials/filters_bar.html" import filter_bar %}

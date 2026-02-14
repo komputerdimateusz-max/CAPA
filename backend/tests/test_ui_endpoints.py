@@ -1220,3 +1220,43 @@ def test_ui_champions_ranking_excludes_deleted_and_shows_unassigned(client, db_s
     assert response.status_code == 200
     assert "Rank Owner" not in response.text
     assert "Unassigned" in response.text
+
+
+def test_ui_champions_refresh_reassigns_orphan_actions_to_unassigned(client, db_session):
+    orphan_action = Action(
+        title="Orphan champion action",
+        status="OPEN",
+        champion_id=987654,
+        created_at=datetime.utcnow(),
+    )
+    db_session.add(orphan_action)
+    db_session.commit()
+
+    response = client.post(
+        "/ui/champions/refresh",
+        data={"from": "", "to": "", "project_id": "", "status_scope": "all"},
+        allow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    assert "Reassigned+1+actions+to+Unassigned" in response.headers["location"]
+    db_session.refresh(orphan_action)
+    assert orphan_action.champion_id is None
+
+
+def test_ui_champions_ranking_treats_orphan_champion_ids_as_unassigned(client, db_session):
+    db_session.add(
+        Action(
+            title="Legacy orphan",
+            status="OPEN",
+            champion_id=123456,
+            created_at=datetime.utcnow(),
+        )
+    )
+    db_session.commit()
+
+    response = client.get("/ui/champions")
+
+    assert response.status_code == 200
+    assert "Unassigned" in response.text
+    assert "/ui/champions/123456" not in response.text
