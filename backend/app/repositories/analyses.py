@@ -6,8 +6,16 @@ from typing import Iterable
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
-from app.models.analysis import Analysis, Analysis5Why
+from app.models.analysis import (
+    ALLOWED_OBSERVED_PROCESS_TYPES,
+    Analysis,
+    Analysis5Why,
+    OBSERVED_PROCESS_TYPE_ASSEMBLY,
+    OBSERVED_PROCESS_TYPE_METALIZATION,
+    OBSERVED_PROCESS_TYPE_MOULDING,
+)
 from app.models.tag import Tag
+
 
 ANALYSIS_TYPES = ["5WHY", "ISHIKAWA", "8D", "A3"]
 ANALYSIS_STATUSES = ["Open", "Closed"]
@@ -16,7 +24,9 @@ ANALYSIS_STATUSES = ["Open", "Closed"]
 def _analysis_load_options():
     return (
         selectinload(Analysis.tags),
-        selectinload(Analysis.details_5why),
+        selectinload(Analysis.details_5why).selectinload(Analysis5Why.moulding_tools),
+        selectinload(Analysis.details_5why).selectinload(Analysis5Why.metalization_masks),
+        selectinload(Analysis.details_5why).selectinload(Analysis5Why.assembly_references),
         selectinload(Analysis.actions),
     )
 
@@ -93,3 +103,48 @@ def generate_analysis_id(analysis_type: str, existing_ids: Iterable[str] | None 
                 if len(maybe_seq) == 4 and maybe_seq.isdigit():
                     max_seq = max(max_seq, int(maybe_seq))
     return f"{prefix}{max_seq + 1:04d}"
+
+
+def set_analysis_observed_components(
+    db: Session,
+    analysis_id: str,
+    process_type: str | None,
+    component_ids: list[int],
+) -> Analysis5Why:
+    details = get_analysis_5why(db, analysis_id)
+    if details is None:
+        raise ValueError("5WHY details not found")
+
+    normalized_process_type = (process_type or "").strip().lower() or None
+    if normalized_process_type and normalized_process_type not in ALLOWED_OBSERVED_PROCESS_TYPES:
+        raise ValueError("Invalid process type")
+
+    details.observed_process_type = normalized_process_type
+    unique_ids = sorted(set(component_ids))
+
+    details.moulding_tools = []
+    details.metalization_masks = []
+    details.assembly_references = []
+
+    if normalized_process_type == OBSERVED_PROCESS_TYPE_MOULDING and unique_ids:
+        from app.repositories import actions as actions_repo
+
+        details.moulding_tools = [
+            tool for component_id in unique_ids if (tool := actions_repo.get_moulding_tool_by_id(db, component_id)) is not None
+        ]
+    elif normalized_process_type == OBSERVED_PROCESS_TYPE_METALIZATION and unique_ids:
+        from app.repositories import actions as actions_repo
+
+        details.metalization_masks = [
+            mask for component_id in unique_ids if (mask := actions_repo.get_metalization_mask_by_id(db, component_id)) is not None
+        ]
+    elif normalized_process_type == OBSERVED_PROCESS_TYPE_ASSEMBLY and unique_ids:
+        from app.repositories import actions as actions_repo
+
+        details.assembly_references = [
+            reference
+            for component_id in unique_ids
+            if (reference := actions_repo.get_assembly_reference_by_id(db, component_id)) is not None
+        ]
+
+    return update_analysis_5why(db, details)

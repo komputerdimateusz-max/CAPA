@@ -8,6 +8,15 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.base import Base
 from app.models.tag import analysis_tags
 
+OBSERVED_PROCESS_TYPE_MOULDING = "moulding"
+OBSERVED_PROCESS_TYPE_METALIZATION = "metalization"
+OBSERVED_PROCESS_TYPE_ASSEMBLY = "assembly"
+ALLOWED_OBSERVED_PROCESS_TYPES = (
+    OBSERVED_PROCESS_TYPE_MOULDING,
+    OBSERVED_PROCESS_TYPE_METALIZATION,
+    OBSERVED_PROCESS_TYPE_ASSEMBLY,
+)
+
 
 class Analysis(Base):
     __tablename__ = "analyses"
@@ -49,6 +58,7 @@ class Analysis5Why(Base):
     )
     problem_statement: Mapped[str] = mapped_column(Text, nullable=False)
     where_observed: Mapped[str | None] = mapped_column(Text, nullable=True)
+    observed_process_type: Mapped[str | None] = mapped_column(String(32), nullable=True)
     date_detected: Mapped[date | None] = mapped_column(Date, nullable=True)
     why_1: Mapped[str | None] = mapped_column(Text, nullable=True)
     why_2: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -61,3 +71,57 @@ class Analysis5Why(Base):
     proposed_action: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     analysis = relationship("Analysis", back_populates="details_5why")
+    moulding_tools = relationship(
+        "MouldingTool",
+        secondary="analysis_5why_moulding_tools",
+        passive_deletes=True,
+    )
+    metalization_masks = relationship(
+        "MetalizationMask",
+        secondary="analysis_5why_metalization_masks",
+        passive_deletes=True,
+    )
+    assembly_references = relationship(
+        "AssemblyLineReference",
+        secondary="analysis_5why_assembly_references",
+        passive_deletes=True,
+    )
+
+
+class Analysis5WhyMouldingTool(Base):
+    __tablename__ = "analysis_5why_moulding_tools"
+
+    analysis_id: Mapped[str] = mapped_column(
+        ForeignKey("analyses.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    tool_id: Mapped[int] = mapped_column(
+        ForeignKey("moulding_tools.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+
+
+class Analysis5WhyMetalizationMask(Base):
+    __tablename__ = "analysis_5why_metalization_masks"
+
+    analysis_id: Mapped[str] = mapped_column(
+        ForeignKey("analyses.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    mask_id: Mapped[int] = mapped_column(
+        ForeignKey("metalization_masks.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+
+
+class Analysis5WhyAssemblyReference(Base):
+    __tablename__ = "analysis_5why_assembly_references"
+
+    analysis_id: Mapped[str] = mapped_column(
+        ForeignKey("analyses.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    reference_id: Mapped[int] = mapped_column(
+        ForeignKey("assembly_line_references.id", ondelete="CASCADE"),
+        primary_key=True,
+    )

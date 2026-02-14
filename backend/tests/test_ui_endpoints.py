@@ -705,6 +705,10 @@ def test_switching_process_clears_old_assignments(client, db_session):
 
 
 from app.models.analysis import Analysis, Analysis5Why
+from app.models.assembly_line import AssemblyLine, AssemblyLineReference
+from app.models.material import Material
+from app.models.metalization import MetalizationMask
+from app.models.moulding import MouldingTool
 
 
 def test_analysis_detail_renders_5why_form(client, db_session):
@@ -764,3 +768,117 @@ def test_save_5why_and_create_linked_action(client, db_session):
     db_session.refresh(analysis)
     assert len(analysis.actions) == 1
     assert analysis.actions[0].title.startswith("Action from 5WHY")
+
+
+def test_observed_process_switch_clears_previous_components(client, db_session):
+    analysis = Analysis(
+        id="5WHY-2026-0004",
+        type="5WHY",
+        title="Observed process",
+        description="",
+        champion="",
+        status="Open",
+        created_at=date.today(),
+        closed_at=None,
+    )
+    details = Analysis5Why(analysis_id=analysis.id, problem_statement="p", root_cause="r")
+    tool = MouldingTool(tool_pn="TOOL-100", description="Test tool", ct_seconds=4.5)
+    mask = MetalizationMask(mask_pn="MASK-100", description="Test mask", ct_seconds=5.1)
+    line = AssemblyLine(line_number="L-01", ct_seconds=7.2, hc=2)
+    fg = Material(part_number="FG-01", description="FG", unit="pcs", price_per_unit=1.0)
+    reference = AssemblyLineReference(line=line, reference_name="REF-100", fg_material=fg, ct_seconds=6.2)
+
+    db_session.add_all([analysis, details, tool, mask, line, fg, reference])
+    db_session.commit()
+
+    response = client.post(
+        f"/ui/analyses/{analysis.id}/observed/set-process",
+        data={"process_type": "moulding"},
+        allow_redirects=False,
+    )
+    assert response.status_code == 303
+
+    response = client.post(
+        f"/ui/analyses/{analysis.id}/observed/moulding-tools/add",
+        data={"tool_pn": tool.tool_pn},
+        allow_redirects=False,
+    )
+    assert response.status_code == 303
+
+    db_session.refresh(details)
+    assert details.observed_process_type == "moulding"
+    assert [item.tool_pn for item in details.moulding_tools] == ["TOOL-100"]
+
+    response = client.post(
+        f"/ui/analyses/{analysis.id}/observed/set-process",
+        data={"process_type": "metalization"},
+        allow_redirects=False,
+    )
+    assert response.status_code == 303
+
+    db_session.refresh(details)
+    assert details.observed_process_type == "metalization"
+    assert details.moulding_tools == []
+
+    response = client.post(
+        f"/ui/analyses/{analysis.id}/observed/metalization-masks/add",
+        data={"mask_pn": mask.mask_pn},
+        allow_redirects=False,
+    )
+    assert response.status_code == 303
+
+    db_session.refresh(details)
+    assert [item.mask_pn for item in details.metalization_masks] == ["MASK-100"]
+
+    response = client.post(
+        f"/ui/analyses/{analysis.id}/observed/set-process",
+        data={"process_type": "assembly"},
+        allow_redirects=False,
+    )
+    assert response.status_code == 303
+
+    response = client.post(
+        f"/ui/analyses/{analysis.id}/observed/assembly-references/add",
+        data={"reference_name": reference.reference_name},
+        allow_redirects=False,
+    )
+    assert response.status_code == 303
+
+    db_session.refresh(details)
+    assert details.observed_process_type == "assembly"
+    assert details.metalization_masks == []
+    assert [item.reference_name for item in details.assembly_references] == ["REF-100"]
+
+
+def test_remove_observed_component(client, db_session):
+    analysis = Analysis(
+        id="5WHY-2026-0005",
+        type="5WHY",
+        title="Observed remove",
+        description="",
+        champion="",
+        status="Open",
+        created_at=date.today(),
+        closed_at=None,
+    )
+    details = Analysis5Why(
+        analysis_id=analysis.id,
+        problem_statement="p",
+        root_cause="r",
+        observed_process_type="moulding",
+    )
+    tool = MouldingTool(tool_pn="TOOL-200", description="Test tool", ct_seconds=4.5)
+    details.moulding_tools.append(tool)
+
+    db_session.add_all([analysis, details, tool])
+    db_session.commit()
+
+    response = client.post(
+        f"/ui/analyses/{analysis.id}/observed/moulding-tools/remove",
+        data={"tool_id": tool.id},
+        allow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    db_session.refresh(details)
+    assert details.moulding_tools == []
