@@ -74,3 +74,26 @@ def test_summarize_champions_totals():
     assert summary[0].actions_total == 2
     assert summary[0].actions_closed == 1
     assert summary[0].total_score == 7
+
+
+def test_summarize_champions_assigns_orphan_fk_to_unassigned_even_with_legacy_owner_name():
+    ghost_name = "Ktokolwiek Ktos"
+    action = Action(
+        id=99,
+        title="Ghost champion",
+        description="",
+        status="OPEN",
+        created_at=datetime(2024, 1, 1, 8, 0, 0),
+        due_date=date(2024, 1, 5),
+        champion_id=404,
+        owner=ghost_name,
+        tags=[],
+    )
+
+    scores = score_actions([action], today=date(2024, 1, 10))
+    summary = summarize_champions(scores, valid_champion_ids={1, 2, 3})
+
+    assert len(summary) == 1
+    assert summary[0].champion_id is None
+    assert summary[0].champion_label == "Unassigned"
+    assert all(row.champion_label != ghost_name for row in summary)
