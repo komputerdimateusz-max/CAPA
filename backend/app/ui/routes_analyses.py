@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from datetime import date, datetime
 from pathlib import Path
 from urllib.parse import quote_plus
@@ -29,6 +30,7 @@ from app.services import analyses as analyses_service
 from app.ui.utils import build_query_params, format_date
 
 router = APIRouter(prefix="/ui", tags=["ui"])
+logger = logging.getLogger(__name__)
 
 TEMPLATES_DIR = Path(__file__).resolve().parents[1] / "templates"
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
@@ -308,6 +310,7 @@ def save_analysis_5why(
 def set_observed_process(
     analysis_id: str,
     request: Request,
+    observed_process_type: str | None = Form(default=None),
     process_type: str | None = Form(default=None),
     db: Session = Depends(get_db),
 ):
@@ -316,9 +319,15 @@ def set_observed_process(
         raise HTTPException(status_code=404, detail="Analysis not found")
     enforce_write_access(_current_user(request))
 
-    _ensure_5why_details(db, analysis_id)
-    normalized_process = _validate_observed_process_type(process_type)
-    analyses_service.set_observed_process(db, analysis_id, normalized_process)
+    details = _ensure_5why_details(db, analysis_id)
+    submitted_process_type = observed_process_type if observed_process_type is not None else process_type
+    normalized_process = _validate_observed_process_type(submitted_process_type)
+    logger.info("Set observed area requested", extra={"analysis_id": analysis_id, "observed_process_type": normalized_process})
+
+    if normalized_process is None:
+        return _analysis_redirect(analysis_id, "Select observed area before setting")
+
+    analyses_service.set_observed_process(db, analysis_id, details, normalized_process)
     return _analysis_redirect(analysis_id)
 
 

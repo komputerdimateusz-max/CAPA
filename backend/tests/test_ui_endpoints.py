@@ -732,6 +732,36 @@ def test_analysis_detail_renders_5why_form(client, db_session):
     assert "Create Action from this Analysis" in response.text
 
 
+def test_set_observed_area_persists_selected_option_in_ui(client, db_session):
+    analysis = Analysis(
+        id="5WHY-2026-0099",
+        type="5WHY",
+        title="Observed process persistence",
+        description="",
+        champion="",
+        status="Open",
+        created_at=date.today(),
+        closed_at=None,
+    )
+    details = Analysis5Why(analysis_id=analysis.id, problem_statement="p", root_cause="r")
+    db_session.add_all([analysis, details])
+    db_session.commit()
+
+    post_response = client.post(
+        f"/ui/analyses/{analysis.id}/observed/set-process",
+        data={"observed_process_type": "moulding"},
+        allow_redirects=False,
+    )
+    assert post_response.status_code == 303
+
+    db_session.refresh(details)
+    assert details.observed_process_type == "moulding"
+
+    get_response = client.get(f"/ui/analyses/{analysis.id}")
+    assert get_response.status_code == 200
+    assert '<option value="moulding" selected>Moulding</option>' in get_response.text
+
+
 def test_save_5why_and_create_linked_action(client, db_session):
     analysis = Analysis(
         id="5WHY-2026-0003",
@@ -793,7 +823,7 @@ def test_observed_process_switch_clears_previous_components(client, db_session):
 
     response = client.post(
         f"/ui/analyses/{analysis.id}/observed/set-process",
-        data={"process_type": "moulding"},
+        data={"observed_process_type": "moulding"},
         allow_redirects=False,
     )
     assert response.status_code == 303
