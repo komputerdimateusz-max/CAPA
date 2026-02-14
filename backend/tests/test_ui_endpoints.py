@@ -1239,7 +1239,7 @@ def test_ui_champions_refresh_reassigns_orphan_actions_to_unassigned(client, db_
     )
 
     assert response.status_code == 303
-    assert "Reassigned+1+actions+to+Unassigned" in response.headers["location"]
+    assert "Reassigned+orphan+champion+references%3A+actions%3D1%2C+analyses%3D0%2C+projects%3D0." in response.headers["location"]
     db_session.refresh(orphan_action)
     assert orphan_action.champion_id is None
 

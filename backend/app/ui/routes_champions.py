@@ -49,8 +49,13 @@ def champions_ranking(
         project_id=project_id,
     )
     actions = _filter_status_scope(actions, status_scope)
+    valid_champion_ids = {champion.id for champion in champions_repo.list_champions(db, active_only=False)}
     scores = champions_service.score_actions(actions)
-    summaries = champions_service.summarize_champions(scores, include_unassigned=True)
+    summaries = champions_service.summarize_champions(
+        scores,
+        include_unassigned=True,
+        valid_champion_ids=valid_champion_ids,
+    )
     projects = projects_repo.list_projects(db)
     filters = {
         "from": from_date.isoformat() if from_date else "",
@@ -87,8 +92,13 @@ def champions_table(
         project_id=project_id,
     )
     actions = _filter_status_scope(actions, status_scope)
+    valid_champion_ids = {champion.id for champion in champions_repo.list_champions(db, active_only=False)}
     scores = champions_service.score_actions(actions)
-    summaries = champions_service.summarize_champions(scores, include_unassigned=True)
+    summaries = champions_service.summarize_champions(
+        scores,
+        include_unassigned=True,
+        valid_champion_ids=valid_champion_ids,
+    )
     return templates.TemplateResponse(
         "partials/champions_table.html",
         {
@@ -107,12 +117,17 @@ def refresh_champions(
     db: Session = Depends(get_db),
 ):
     sync_stats = champions_service.sync_actions_champions_with_settings(db)
-    if sync_stats.actions_updated == 0:
+    total_reassigned = (
+        sync_stats.actions_updated + sync_stats.analyses_updated + sync_stats.projects_updated
+    )
+    if total_reassigned == 0:
         message = "No orphan champions found."
     else:
         message = (
-            f"Reassigned {sync_stats.actions_updated} actions to Unassigned "
-            "(missing champions removed)."
+            "Reassigned orphan champion references: "
+            f"actions={sync_stats.actions_updated}, "
+            f"analyses={sync_stats.analyses_updated}, "
+            f"projects={sync_stats.projects_updated}."
         )
     query = build_query_params(
         {
