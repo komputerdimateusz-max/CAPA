@@ -26,6 +26,12 @@
         <span class="kpi-label">Created</span>
         <strong>{{ format_date(analysis.created_at) }}</strong>
       </div>
+      {% if analysis.type == '5WHY' and analysis.details_5why and analysis.details_5why.observed_process_type %}
+        <div>
+          <span class="kpi-label">Observed</span>
+          <strong>{{ observed_process_labels.get(analysis.details_5why.observed_process_type, analysis.details_5why.observed_process_type) }} — {{ observed_components_count }} component{% if observed_components_count != 1 %}s{% endif %}</strong>
+        </div>
+      {% endif %}
     </div>
 
     <h3>{{ analysis.title or 'Untitled analysis' }}</h3>
@@ -42,10 +48,19 @@
               Problem statement *
               <textarea name="problem_statement" rows="3" required>{{ details.problem_statement if details else '' }}</textarea>
             </label>
-            <label>
-              Where observed
-              <input type="text" name="where_observed" value="{{ details.where_observed if details else '' }}" />
-            </label>
+            <input type="hidden" name="where_observed" value="{{ details.where_observed if details else '' }}" />
+            <div>
+              <label>
+                Observed area
+                <select name="observed_process_type">
+                  <option value="">Select area</option>
+                  {% for process_type, process_label in observed_process_labels.items() %}
+                    <option value="{{ process_type }}" {% if details and details.observed_process_type == process_type %}selected{% endif %}>{{ process_label }}</option>
+                  {% endfor %}
+                </select>
+              </label>
+              <button class="button secondary mt-8" type="submit" formaction="/ui/analyses/{{ analysis.id }}/observed/set-process">Set observed area</button>
+            </div>
             <label>
               Date detected
               <input type="date" name="date_detected" value="{{ details.date_detected.isoformat() if details and details.date_detected else '' }}" />
@@ -107,6 +122,83 @@
             </div>
           </div>
         </form>
+
+        {% if details and details.observed_process_type == 'assembly' %}
+          <div class="card card-compact mt-16">
+            <h6>References (select one or more)</h6>
+            <form method="post" action="/ui/analyses/{{ analysis.id }}/observed/assembly-references/add" class="form-inline mt-8">
+              <label>
+                Reference
+                <input type="text" name="reference_name" list="observed-assembly-reference-options" placeholder="Type reference name" />
+              </label>
+              <datalist id="observed-assembly-reference-options">
+                {% for reference in assembly_references %}
+                  <option value="{{ reference.reference_name }}">{{ reference.reference_name }} — FG: {{ reference.fg_material.part_number if reference.fg_material else '—' }} — Line: {{ reference.line.line_number if reference.line else '—' }}</option>
+                {% endfor %}
+              </datalist>
+              <button class="button secondary" type="submit">Add</button>
+            </form>
+            <div class="tag-list mt-8">
+              {% for reference in details.assembly_references %}
+                <form method="post" action="/ui/analyses/{{ analysis.id }}/observed/assembly-references/remove" class="tag-form">
+                  <input type="hidden" name="reference_id" value="{{ reference.id }}" />
+                  <span class="tag-chip">{{ reference.reference_name }}</span>
+                  <button class="tag-remove" type="submit">×</button>
+                </form>
+              {% endfor %}
+            </div>
+          </div>
+        {% elif details and details.observed_process_type == 'moulding' %}
+          <div class="card card-compact mt-16">
+            <h6>Moulding tools/forms</h6>
+            <form method="post" action="/ui/analyses/{{ analysis.id }}/observed/moulding-tools/add" class="form-inline mt-8">
+              <label>
+                Tool
+                <input type="text" name="tool_pn" list="observed-moulding-tool-options" placeholder="Type tool PN" />
+              </label>
+              <datalist id="observed-moulding-tool-options">
+                {% for tool in moulding_tools %}
+                  <option value="{{ tool.tool_pn }}">{{ tool.tool_pn }} — {{ tool.description or 'No description' }}</option>
+                {% endfor %}
+              </datalist>
+              <button class="button secondary" type="submit">Add</button>
+            </form>
+            <div class="tag-list mt-8">
+              {% for tool in details.moulding_tools %}
+                <form method="post" action="/ui/analyses/{{ analysis.id }}/observed/moulding-tools/remove" class="tag-form">
+                  <input type="hidden" name="tool_id" value="{{ tool.id }}" />
+                  <span class="tag-chip">{{ tool.tool_pn }}</span>
+                  <button class="tag-remove" type="submit">×</button>
+                </form>
+              {% endfor %}
+            </div>
+          </div>
+        {% elif details and details.observed_process_type == 'metalization' %}
+          <div class="card card-compact mt-16">
+            <h6>Masks</h6>
+            <form method="post" action="/ui/analyses/{{ analysis.id }}/observed/metalization-masks/add" class="form-inline mt-8">
+              <label>
+                Mask
+                <input type="text" name="mask_pn" list="observed-metalization-mask-options" placeholder="Type mask PN" />
+              </label>
+              <datalist id="observed-metalization-mask-options">
+                {% for mask in metalization_masks %}
+                  <option value="{{ mask.mask_pn }}">{{ mask.mask_pn }} — {{ mask.description or 'No description' }}</option>
+                {% endfor %}
+              </datalist>
+              <button class="button secondary" type="submit">Add</button>
+            </form>
+            <div class="tag-list mt-8">
+              {% for mask in details.metalization_masks %}
+                <form method="post" action="/ui/analyses/{{ analysis.id }}/observed/metalization-masks/remove" class="tag-form">
+                  <input type="hidden" name="mask_id" value="{{ mask.id }}" />
+                  <span class="tag-chip">{{ mask.mask_pn }}</span>
+                  <button class="tag-remove" type="submit">×</button>
+                </form>
+              {% endfor %}
+            </div>
+          </div>
+        {% endif %}
 
         <form method="post" action="/ui/analyses/{{ analysis.id }}/create-action" class="mt-16">
           <button class="button" type="submit">Create Action from this Analysis</button>
