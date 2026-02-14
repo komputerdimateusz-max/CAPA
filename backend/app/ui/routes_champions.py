@@ -3,8 +3,8 @@ from __future__ import annotations
 from datetime import date
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from fastapi.responses import HTMLResponse
+from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
@@ -13,7 +13,7 @@ from app.repositories import actions as actions_repo
 from app.repositories import champions as champions_repo
 from app.repositories import projects as projects_repo
 from app.services import champions as champions_service
-from app.ui.utils import format_date
+from app.ui.utils import build_query_params, format_date
 
 router = APIRouter(prefix="/ui", tags=["ui"])
 
@@ -39,6 +39,7 @@ def champions_ranking(
     to_date: date | None = Query(default=None, alias="to"),
     project_id: int | None = None,
     status_scope: str = "all",
+    message: str | None = None,
     db: Session = Depends(get_db),
 ):
     actions = actions_repo.list_actions_created_between(
@@ -48,7 +49,6 @@ def champions_ranking(
         project_id=project_id,
     )
     actions = _filter_status_scope(actions, status_scope)
-    actions = [action for action in actions if action.champion_id is None or action.champion is not None]
     scores = champions_service.score_actions(actions)
     summaries = champions_service.summarize_champions(scores, include_unassigned=True)
     projects = projects_repo.list_projects(db)
@@ -66,6 +66,7 @@ def champions_ranking(
             "filters": filters,
             "projects": projects,
             "status_scope_options": STATUS_SCOPE_OPTIONS,
+            "message": message,
         },
     )
 
@@ -86,7 +87,6 @@ def champions_table(
         project_id=project_id,
     )
     actions = _filter_status_scope(actions, status_scope)
-    actions = [action for action in actions if action.champion_id is None or action.champion is not None]
     scores = champions_service.score_actions(actions)
     summaries = champions_service.summarize_champions(scores, include_unassigned=True)
     return templates.TemplateResponse(
@@ -96,6 +96,34 @@ def champions_table(
             "champions": summaries,
         },
     )
+
+
+@router.post("/champions/refresh", response_model=None)
+def refresh_champions(
+    from_date: str = Form(default="", alias="from"),
+    to_date: str = Form(default="", alias="to"),
+    project_id: str = Form(default=""),
+    status_scope: str = Form(default="all"),
+    db: Session = Depends(get_db),
+):
+    sync_stats = champions_service.sync_actions_champions_with_settings(db)
+    if sync_stats.actions_updated == 0:
+        message = "No orphan champions found."
+    else:
+        message = (
+            f"Reassigned {sync_stats.actions_updated} actions to Unassigned "
+            "(missing champions removed)."
+        )
+    query = build_query_params(
+        {
+            "from": from_date,
+            "to": to_date,
+            "project_id": project_id,
+            "status_scope": status_scope,
+            "message": message,
+        }
+    )
+    return RedirectResponse(url=f"/ui/champions?{query}", status_code=303)
 
 
 @router.get("/champions/{champion_id}", response_class=HTMLResponse, response_model=None)

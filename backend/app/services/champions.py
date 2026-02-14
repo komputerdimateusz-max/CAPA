@@ -3,7 +3,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date
 
+from sqlalchemy import exists, select, update
+from sqlalchemy.orm import Session
+
 from app.models.action import Action
+from app.models.analysis import Analysis
+from app.models.champion import Champion
+from app.models.project import Project
 
 
 ACTION_STATUS_CLOSED = {"closed"}
@@ -38,6 +44,50 @@ class ChampionScoreSummary:
     actions_total: int
     actions_closed: int
     actions_late: int
+
+
+@dataclass(frozen=True)
+class ChampionSyncStats:
+    actions_updated: int
+    analyses_updated: int
+    projects_updated: int
+
+
+def sync_actions_champions_with_settings(db: Session) -> ChampionSyncStats:
+    orphan_action_where = (
+        Action.champion_id.is_not(None)
+        & ~exists(select(1).where(Champion.id == Action.champion_id))
+    )
+    orphan_project_where = (
+        Project.process_engineer_id.is_not(None)
+        & ~exists(select(1).where(Champion.id == Project.process_engineer_id))
+    )
+
+    orphan_action_ids = list(db.scalars(select(Action.id).where(orphan_action_where)))
+    orphan_project_ids = list(db.scalars(select(Project.id).where(orphan_project_where)))
+
+    if orphan_action_ids:
+        db.execute(update(Action).where(orphan_action_where).values(champion_id=None))
+    if orphan_project_ids:
+        db.execute(update(Project).where(orphan_project_where).values(process_engineer_id=None))
+
+    analyses_updated = 0
+    if hasattr(Analysis, "champion_id"):
+        orphan_analysis_where = (
+            Analysis.champion_id.is_not(None)
+            & ~exists(select(1).where(Champion.id == Analysis.champion_id))
+        )
+        orphan_analysis_ids = list(db.scalars(select(Analysis.id).where(orphan_analysis_where)))
+        if orphan_analysis_ids:
+            db.execute(update(Analysis).where(orphan_analysis_where).values(champion_id=None))
+            analyses_updated = len(orphan_analysis_ids)
+
+    db.commit()
+    return ChampionSyncStats(
+        actions_updated=len(orphan_action_ids),
+        analyses_updated=analyses_updated,
+        projects_updated=len(orphan_project_ids),
+    )
 
 
 def _normalize_status(status: str | None) -> str:
@@ -128,7 +178,7 @@ def summarize_champions(scores: list[ActionScore], *, include_unassigned: bool =
     action_refs: dict[tuple[int | None, str], list[ActionScore]] = {}
 
     for score in scores:
-        champion_id = score.action.champion_id
+        champion_id = score.action.champion_id if score.action.champion is not None else None
         if champion_id is None and not include_unassigned:
             continue
         key = (champion_id, score.champion_label)
