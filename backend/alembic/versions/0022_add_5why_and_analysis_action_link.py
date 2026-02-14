@@ -1,7 +1,7 @@
 """add 5why details and analysis-action links
 
 Revision ID: 0022
-Revises: 0021
+Revises: 0021_add_action_process_components
 Create Date: 2026-02-14
 """
 
@@ -10,7 +10,7 @@ import sqlalchemy as sa
 
 
 revision = "0022"
-down_revision = "0021"
+down_revision = "0021_add_action_process_components"
 branch_labels = None
 depends_on = None
 
