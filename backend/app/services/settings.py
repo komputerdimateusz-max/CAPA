@@ -98,7 +98,6 @@ def _ensure_unique_email(db: Session, email: str | None, exclude_id: int | None 
         raise ValueError("Champion email already exists.")
 
 
-
 ALLOWED_PROJECT_STATUSES = ("Serial production", "Spare Parts")
 
 
@@ -133,7 +132,10 @@ def _normalize_process_engineer_id(db: Session, value: int | None) -> int:
     champion = db.get(Champion, value)
     if champion is None:
         raise ValueError("Selected Process Engineer does not exist.")
+    if not champion.is_active:
+        raise ValueError("Selected Process Engineer is inactive.")
     return value
+
 
 def create_champion(
     db: Session,
@@ -185,6 +187,17 @@ def update_champion(
     champion.email = cleaned_email
     champion.position = cleaned_position
     champion.birth_date = _normalize_date(birth_date)
+    db.add(champion)
+    db.commit()
+    db.refresh(champion)
+    return champion
+
+
+def deactivate_champion(db: Session, champion_id: int) -> Champion:
+    champion = db.get(Champion, champion_id)
+    if not champion:
+        raise ValueError("Champion not found.")
+    champion.is_active = False
     db.add(champion)
     db.commit()
     db.refresh(champion)
@@ -406,7 +419,6 @@ def remove_project_metalization_mask(db: Session, project_id: int, mask_id: int)
     return project
 
 
-
 def _normalize_required_text(value: str, label: str) -> str:
     cleaned = " ".join(value.split()).strip()
     if not cleaned:
@@ -483,7 +495,9 @@ def _ensure_unique_tool_pn(db: Session, tool_pn: str, exclude_id: int | None = N
         raise ValueError("Tool P/N already exists.")
 
 
-def _ensure_unique_machine_number(db: Session, machine_number: str, exclude_id: int | None = None) -> None:
+def _ensure_unique_machine_number(
+    db: Session, machine_number: str, exclude_id: int | None = None
+) -> None:
     stmt = select(MouldingMachine).where(
         func.lower(MouldingMachine.machine_number) == machine_number.lower()
     )
@@ -510,10 +524,15 @@ def _normalize_hc_map(hc_map: dict[str, float] | None) -> dict[str, float]:
 
 def _labour_cost_map(db: Session) -> dict[str, float]:
     ensure_labour_cost_rows(db)
-    return {row.worker_type: row.cost_pln for row in labour_costs_repo.list_labour_costs(db, LABOUR_COST_WORKER_TYPES)}
+    return {
+        row.worker_type: row.cost_pln
+        for row in labour_costs_repo.list_labour_costs(db, LABOUR_COST_WORKER_TYPES)
+    }
 
 
-def _compute_unit_labour_cost(ct_seconds: float | None, hc_map: dict[str, float], labour_cost_map: dict[str, float]) -> float:
+def _compute_unit_labour_cost(
+    ct_seconds: float | None, hc_map: dict[str, float], labour_cost_map: dict[str, float]
+) -> float:
     if ct_seconds is None or ct_seconds <= 0:
         return 0
     pieces_time_hours = ct_seconds / 3600.0
@@ -549,8 +568,6 @@ def _attach_mask_cost_fields(db: Session, masks: list[MetalizationMask]) -> list
     return masks
 
 
-
-
 def _compute_reference_cost_fields(
     db: Session,
     references: list[AssemblyLineReference],
@@ -561,8 +578,12 @@ def _compute_reference_cost_fields(
     material_out_cost_map = assembly_lines_repo.material_out_cost_map_for_references(db)
     for reference in references:
         hc_map = assembly_lines_repo.get_reference_hc_map(db, reference.id)
-        reference.hc_total = sum(hc_map.get(worker_type, 0) for worker_type in LABOUR_COST_WORKER_TYPES)
-        reference.unit_labour_cost = _compute_unit_labour_cost(reference.ct_seconds, hc_map, labour_cost_map)
+        reference.hc_total = sum(
+            hc_map.get(worker_type, 0) for worker_type in LABOUR_COST_WORKER_TYPES
+        )
+        reference.unit_labour_cost = _compute_unit_labour_cost(
+            reference.ct_seconds, hc_map, labour_cost_map
+        )
         reference.material_cost = material_in_cost_map.get(reference.id, 0.0)
         reference.material_out_cost = material_out_cost_map.get(reference.id, 0.0)
     return references
@@ -573,14 +594,20 @@ def _attach_assembly_line_cost_fields(db: Session, lines: list[AssemblyLine]) ->
     material_in_cost_map = assembly_lines_repo.material_in_cost_map_for_lines(db)
     material_out_cost_map = assembly_lines_repo.material_out_cost_map_for_lines(db)
     for line in lines:
-        references = _compute_reference_cost_fields(db, assembly_lines_repo.list_references_for_line(db, line.id), labour_cost_map)
+        references = _compute_reference_cost_fields(
+            db, assembly_lines_repo.list_references_for_line(db, line.id), labour_cost_map
+        )
         line.reference_count = len(references)
         if references:
             line.ct_seconds = sum(ref.ct_seconds for ref in references) / len(references)
             line.hc_total = sum(ref.hc_total for ref in references) / len(references)
-            line.unit_labour_cost = sum(ref.unit_labour_cost for ref in references) / len(references)
+            line.unit_labour_cost = sum(ref.unit_labour_cost for ref in references) / len(
+                references
+            )
             line.material_cost = sum(ref.material_cost for ref in references) / len(references)
-            line.material_out_cost = sum(ref.material_out_cost for ref in references) / len(references)
+            line.material_out_cost = sum(ref.material_out_cost for ref in references) / len(
+                references
+            )
             continue
         hc_map = assembly_lines_repo.get_line_hc_map(db, line.id)
         line.hc_total = sum(hc_map.get(worker_type, 0) for worker_type in LABOUR_COST_WORKER_TYPES)
@@ -588,6 +615,7 @@ def _attach_assembly_line_cost_fields(db: Session, lines: list[AssemblyLine]) ->
         line.material_cost = material_in_cost_map.get(line.id, 0.0)
         line.material_out_cost = material_out_cost_map.get(line.id, 0.0)
     return lines
+
 
 def get_tool_hc_map(db: Session, tool_id: int) -> dict[str, float]:
     existing = moulding_repo.get_tool_hc_map(db, tool_id)
@@ -613,12 +641,20 @@ def set_mask_hc(db: Session, mask_id: int, hc_map: dict[str, float]) -> dict[str
     return normalized
 
 
-def compute_tool_unit_cost(db: Session, tool: MouldingTool, hc_map: dict[str, float] | None = None) -> float:
-    return _compute_unit_labour_cost(tool.ct_seconds, _normalize_hc_map(hc_map), _labour_cost_map(db))
+def compute_tool_unit_cost(
+    db: Session, tool: MouldingTool, hc_map: dict[str, float] | None = None
+) -> float:
+    return _compute_unit_labour_cost(
+        tool.ct_seconds, _normalize_hc_map(hc_map), _labour_cost_map(db)
+    )
 
 
-def compute_mask_unit_cost(db: Session, mask: MetalizationMask, hc_map: dict[str, float] | None = None) -> float:
-    return _compute_unit_labour_cost(mask.ct_seconds, _normalize_hc_map(hc_map), _labour_cost_map(db))
+def compute_mask_unit_cost(
+    db: Session, mask: MetalizationMask, hc_map: dict[str, float] | None = None
+) -> float:
+    return _compute_unit_labour_cost(
+        mask.ct_seconds, _normalize_hc_map(hc_map), _labour_cost_map(db)
+    )
 
 
 def compute_material_cost_for_tool(db: Session, tool_id: int) -> float:
@@ -697,7 +733,11 @@ def add_material_to_tool(
     tool = moulding_repo.get_moulding_tool(db, tool_id)
     if tool is None:
         raise ValueError("Moulding tool not found.")
-    material = _resolve_material_by_part_number(db, part_number.strip()) if part_number and part_number.strip() else None
+    material = (
+        _resolve_material_by_part_number(db, part_number.strip())
+        if part_number and part_number.strip()
+        else None
+    )
     if material is None and material_id is not None:
         material = materials_repo.get_material(db, material_id)
     if material is None:
@@ -710,7 +750,9 @@ def add_material_to_tool(
     )
 
 
-def update_tool_material_qty(db: Session, tool_id: int, material_id: int, qty_per_piece: float) -> None:
+def update_tool_material_qty(
+    db: Session, tool_id: int, material_id: int, qty_per_piece: float
+) -> None:
     tool = moulding_repo.get_moulding_tool(db, tool_id)
     if tool is None:
         raise ValueError("Moulding tool not found.")
@@ -752,7 +794,11 @@ def add_material_out_to_tool(
     tool = moulding_repo.get_moulding_tool(db, tool_id)
     if tool is None:
         raise ValueError("Moulding tool not found.")
-    material = _resolve_material_by_part_number(db, part_number.strip()) if part_number and part_number.strip() else None
+    material = (
+        _resolve_material_by_part_number(db, part_number.strip())
+        if part_number and part_number.strip()
+        else None
+    )
     if material is None and material_id is not None:
         material = materials_repo.get_material(db, material_id)
     if material is None:
@@ -763,10 +809,14 @@ def add_material_out_to_tool(
         material_id=material.id,
         qty_per_piece=_normalize_positive_qty_per_piece(qty_per_piece),
     )
-    _update_make_material_prices_from_process_cost(db, [material.id], _compute_tool_unit_process_cost(db, tool_id))
+    _update_make_material_prices_from_process_cost(
+        db, [material.id], _compute_tool_unit_process_cost(db, tool_id)
+    )
 
 
-def update_tool_material_out_qty(db: Session, tool_id: int, material_id: int, qty_per_piece: float) -> None:
+def update_tool_material_out_qty(
+    db: Session, tool_id: int, material_id: int, qty_per_piece: float
+) -> None:
     tool = moulding_repo.get_moulding_tool(db, tool_id)
     if tool is None:
         raise ValueError("Moulding tool not found.")
@@ -780,7 +830,9 @@ def update_tool_material_out_qty(db: Session, tool_id: int, material_id: int, qt
         material_id=material_id,
         qty_per_piece=_normalize_positive_qty_per_piece(qty_per_piece),
     )
-    _update_make_material_prices_from_process_cost(db, [material_id], _compute_tool_unit_process_cost(db, tool_id))
+    _update_make_material_prices_from_process_cost(
+        db, [material_id], _compute_tool_unit_process_cost(db, tool_id)
+    )
 
 
 def remove_material_out_from_tool(db: Session, tool_id: int, material_id: int) -> None:
@@ -815,7 +867,9 @@ def create_moulding_machine(db: Session, data: MouldingMachineCreate) -> Mouldin
     )
 
 
-def update_moulding_machine(db: Session, machine_id: int, data: MouldingMachineUpdate) -> MouldingMachine:
+def update_moulding_machine(
+    db: Session, machine_id: int, data: MouldingMachineUpdate
+) -> MouldingMachine:
     machine = moulding_repo.get_moulding_machine(db, machine_id)
     if machine is None:
         raise ValueError("Moulding machine not found.")
@@ -891,7 +945,9 @@ def remove_moulding_machine_tool(
     return machine
 
 
-def _ensure_unique_assembly_line_number(db: Session, line_number: str, exclude_id: int | None = None) -> None:
+def _ensure_unique_assembly_line_number(
+    db: Session, line_number: str, exclude_id: int | None = None
+) -> None:
     stmt = select(AssemblyLine).where(func.lower(AssemblyLine.line_number) == line_number.lower())
     if exclude_id is not None:
         stmt = stmt.where(AssemblyLine.id != exclude_id)
@@ -925,12 +981,16 @@ def create_assembly_line(db: Session, data: AssemblyLineCreate) -> AssemblyLine:
     return assembly_lines_repo.get_assembly_line(db, created.id) or created
 
 
-def update_assembly_line(db: Session, assembly_line_id: int, data: AssemblyLineUpdate) -> AssemblyLine:
+def update_assembly_line(
+    db: Session, assembly_line_id: int, data: AssemblyLineUpdate
+) -> AssemblyLine:
     assembly_line = assembly_lines_repo.get_assembly_line(db, assembly_line_id)
     if assembly_line is None:
         raise ValueError("Assembly line not found.")
 
-    next_line_number = _normalize_required_text(data.line_number or assembly_line.line_number, "Line number")
+    next_line_number = _normalize_required_text(
+        data.line_number or assembly_line.line_number, "Line number"
+    )
     next_ct_seconds = _normalize_non_negative_ct(
         data.ct_seconds if data.ct_seconds is not None else assembly_line.ct_seconds
     )
@@ -957,14 +1017,14 @@ def update_assembly_line(db: Session, assembly_line_id: int, data: AssemblyLineU
     return assembly_lines_repo.get_assembly_line(db, assembly_line_id) or updated
 
 
-
-
 def get_assembly_line_hc_map(db: Session, assembly_line_id: int) -> dict[str, float]:
     existing = assembly_lines_repo.get_line_hc_map(db, assembly_line_id)
     return {worker_type: existing.get(worker_type, 0) for worker_type in LABOUR_COST_WORKER_TYPES}
 
 
-def set_assembly_line_hc(db: Session, assembly_line_id: int, hc_map: dict[str, float]) -> dict[str, float]:
+def set_assembly_line_hc(
+    db: Session, assembly_line_id: int, hc_map: dict[str, float]
+) -> dict[str, float]:
     normalized = _normalize_hc_map(hc_map)
     assembly_line = assembly_lines_repo.get_assembly_line(db, assembly_line_id)
     if assembly_line is None:
@@ -993,7 +1053,11 @@ def list_materials_out_for_assembly_line(db: Session, assembly_line_id: int):
 
 
 def _resolve_material_for_line(db: Session, material_id: int | None, part_number: str | None):
-    material = _resolve_material_by_part_number(db, part_number.strip()) if part_number and part_number.strip() else None
+    material = (
+        _resolve_material_by_part_number(db, part_number.strip())
+        if part_number and part_number.strip()
+        else None
+    )
     if material is None and material_id is not None:
         material = materials_repo.get_material(db, material_id)
     if material is None:
@@ -1001,16 +1065,28 @@ def _resolve_material_for_line(db: Session, material_id: int | None, part_number
     return material
 
 
-def add_material_in_to_assembly_line(db: Session, assembly_line_id: int, *, material_id: int | None = None, part_number: str | None = None, qty_per_piece: float):
+def add_material_in_to_assembly_line(
+    db: Session,
+    assembly_line_id: int,
+    *,
+    material_id: int | None = None,
+    part_number: str | None = None,
+    qty_per_piece: float,
+):
     if assembly_lines_repo.get_assembly_line(db, assembly_line_id) is None:
         raise ValueError("Assembly line not found.")
     material = _resolve_material_for_line(db, material_id, part_number)
     assembly_lines_repo.upsert_line_material_in(
-        db, line_id=assembly_line_id, material_id=material.id, qty_per_piece=_normalize_positive_qty_per_piece(qty_per_piece)
+        db,
+        line_id=assembly_line_id,
+        material_id=material.id,
+        qty_per_piece=_normalize_positive_qty_per_piece(qty_per_piece),
     )
 
 
-def update_assembly_line_material_in_qty(db: Session, assembly_line_id: int, material_id: int, qty_per_piece: float) -> None:
+def update_assembly_line_material_in_qty(
+    db: Session, assembly_line_id: int, material_id: int, qty_per_piece: float
+) -> None:
     if assembly_lines_repo.get_assembly_line(db, assembly_line_id) is None:
         raise ValueError("Assembly line not found.")
     if materials_repo.get_material(db, material_id) is None:
@@ -1018,27 +1094,48 @@ def update_assembly_line_material_in_qty(db: Session, assembly_line_id: int, mat
     if assembly_lines_repo.get_line_material_in(db, assembly_line_id, material_id) is None:
         raise ValueError("Assembly line material assignment not found.")
     assembly_lines_repo.upsert_line_material_in(
-        db, line_id=assembly_line_id, material_id=material_id, qty_per_piece=_normalize_positive_qty_per_piece(qty_per_piece)
+        db,
+        line_id=assembly_line_id,
+        material_id=material_id,
+        qty_per_piece=_normalize_positive_qty_per_piece(qty_per_piece),
     )
 
 
-def remove_material_in_from_assembly_line(db: Session, assembly_line_id: int, material_id: int) -> None:
+def remove_material_in_from_assembly_line(
+    db: Session, assembly_line_id: int, material_id: int
+) -> None:
     if assembly_lines_repo.get_assembly_line(db, assembly_line_id) is None:
         raise ValueError("Assembly line not found.")
-    assembly_lines_repo.delete_line_material_in(db, line_id=assembly_line_id, material_id=material_id)
+    assembly_lines_repo.delete_line_material_in(
+        db, line_id=assembly_line_id, material_id=material_id
+    )
 
 
-def add_material_out_to_assembly_line(db: Session, assembly_line_id: int, *, material_id: int | None = None, part_number: str | None = None, qty_per_piece: float):
+def add_material_out_to_assembly_line(
+    db: Session,
+    assembly_line_id: int,
+    *,
+    material_id: int | None = None,
+    part_number: str | None = None,
+    qty_per_piece: float,
+):
     if assembly_lines_repo.get_assembly_line(db, assembly_line_id) is None:
         raise ValueError("Assembly line not found.")
     material = _resolve_material_for_line(db, material_id, part_number)
     assembly_lines_repo.upsert_line_material_out(
-        db, line_id=assembly_line_id, material_id=material.id, qty_per_piece=_normalize_positive_qty_per_piece(qty_per_piece)
+        db,
+        line_id=assembly_line_id,
+        material_id=material.id,
+        qty_per_piece=_normalize_positive_qty_per_piece(qty_per_piece),
     )
-    _update_make_material_prices_from_process_cost(db, [material.id], _compute_assembly_line_unit_process_cost(db, assembly_line_id))
+    _update_make_material_prices_from_process_cost(
+        db, [material.id], _compute_assembly_line_unit_process_cost(db, assembly_line_id)
+    )
 
 
-def update_assembly_line_material_out_qty(db: Session, assembly_line_id: int, material_id: int, qty_per_piece: float) -> None:
+def update_assembly_line_material_out_qty(
+    db: Session, assembly_line_id: int, material_id: int, qty_per_piece: float
+) -> None:
     if assembly_lines_repo.get_assembly_line(db, assembly_line_id) is None:
         raise ValueError("Assembly line not found.")
     if materials_repo.get_material(db, material_id) is None:
@@ -1046,15 +1143,25 @@ def update_assembly_line_material_out_qty(db: Session, assembly_line_id: int, ma
     if assembly_lines_repo.get_line_material_out(db, assembly_line_id, material_id) is None:
         raise ValueError("Assembly line material assignment not found.")
     assembly_lines_repo.upsert_line_material_out(
-        db, line_id=assembly_line_id, material_id=material_id, qty_per_piece=_normalize_positive_qty_per_piece(qty_per_piece)
+        db,
+        line_id=assembly_line_id,
+        material_id=material_id,
+        qty_per_piece=_normalize_positive_qty_per_piece(qty_per_piece),
     )
-    _update_make_material_prices_from_process_cost(db, [material_id], _compute_assembly_line_unit_process_cost(db, assembly_line_id))
+    _update_make_material_prices_from_process_cost(
+        db, [material_id], _compute_assembly_line_unit_process_cost(db, assembly_line_id)
+    )
 
 
-def remove_material_out_from_assembly_line(db: Session, assembly_line_id: int, material_id: int) -> None:
+def remove_material_out_from_assembly_line(
+    db: Session, assembly_line_id: int, material_id: int
+) -> None:
     if assembly_lines_repo.get_assembly_line(db, assembly_line_id) is None:
         raise ValueError("Assembly line not found.")
-    assembly_lines_repo.delete_line_material_out(db, line_id=assembly_line_id, material_id=material_id)
+    assembly_lines_repo.delete_line_material_out(
+        db, line_id=assembly_line_id, material_id=material_id
+    )
+
 
 def delete_assembly_line(db: Session, assembly_line_id: int) -> None:
     assembly_line = assembly_lines_repo.get_assembly_line(db, assembly_line_id)
@@ -1063,7 +1170,9 @@ def delete_assembly_line(db: Session, assembly_line_id: int) -> None:
     assembly_lines_repo.delete_assembly_line(db, assembly_line=assembly_line)
 
 
-def _ensure_unique_reference_name(db: Session, line_id: int, reference_name: str, exclude_id: int | None = None) -> None:
+def _ensure_unique_reference_name(
+    db: Session, line_id: int, reference_name: str, exclude_id: int | None = None
+) -> None:
     existing = assembly_lines_repo.get_reference_by_name(db, line_id, reference_name)
     if existing is not None and existing.id != exclude_id:
         raise ValueError("Reference name already exists for this line.")
@@ -1080,7 +1189,9 @@ def _resolve_fg_material(db: Session, fg_material_id: int | None) -> int | None:
 def list_assembly_line_references(db: Session, line_id: int) -> list[AssemblyLineReference]:
     if assembly_lines_repo.get_assembly_line(db, line_id) is None:
         raise ValueError("Assembly line not found.")
-    return _compute_reference_cost_fields(db, assembly_lines_repo.list_references_for_line(db, line_id))
+    return _compute_reference_cost_fields(
+        db, assembly_lines_repo.list_references_for_line(db, line_id)
+    )
 
 
 def get_assembly_line_reference(db: Session, reference_id: int) -> AssemblyLineReference | None:
@@ -1092,7 +1203,9 @@ def get_assembly_line_reference_hc_map(db: Session, reference_id: int) -> dict[s
     return {worker_type: existing.get(worker_type, 0) for worker_type in LABOUR_COST_WORKER_TYPES}
 
 
-def create_assembly_line_reference(db: Session, line_id: int, data: AssemblyLineReferenceCreate) -> AssemblyLineReference:
+def create_assembly_line_reference(
+    db: Session, line_id: int, data: AssemblyLineReferenceCreate
+) -> AssemblyLineReference:
     if assembly_lines_repo.get_assembly_line(db, line_id) is None:
         raise ValueError("Assembly line not found.")
     reference_name = _normalize_required_text(data.reference_name, "Reference name")
@@ -1109,20 +1222,28 @@ def create_assembly_line_reference(db: Session, line_id: int, data: AssemblyLine
     return assembly_lines_repo.get_reference(db, created.id) or created
 
 
-def update_assembly_line_reference(db: Session, reference_id: int, data: AssemblyLineReferenceUpdate) -> AssemblyLineReference:
+def update_assembly_line_reference(
+    db: Session, reference_id: int, data: AssemblyLineReferenceUpdate
+) -> AssemblyLineReference:
     reference = assembly_lines_repo.get_reference(db, reference_id)
     if reference is None:
         raise ValueError("Assembly line reference not found.")
 
-    reference_name = _normalize_required_text(data.reference_name or reference.reference_name, "Reference name")
+    reference_name = _normalize_required_text(
+        data.reference_name or reference.reference_name, "Reference name"
+    )
     _ensure_unique_reference_name(db, reference.line_id, reference_name, exclude_id=reference_id)
 
     updated = assembly_lines_repo.update_reference(
         db,
         reference=reference,
         reference_name=reference_name,
-        fg_material_id=_resolve_fg_material(db, data.fg_material_id if data.fg_material_id is not None else reference.fg_material_id),
-        ct_seconds=_normalize_non_negative_ct(data.ct_seconds if data.ct_seconds is not None else reference.ct_seconds),
+        fg_material_id=_resolve_fg_material(
+            db, data.fg_material_id if data.fg_material_id is not None else reference.fg_material_id
+        ),
+        ct_seconds=_normalize_non_negative_ct(
+            data.ct_seconds if data.ct_seconds is not None else reference.ct_seconds
+        ),
     )
     if data.hc_map is not None:
         assembly_lines_repo.set_reference_hc(db, reference_id, _normalize_hc_map(data.hc_map))
@@ -1153,7 +1274,14 @@ def list_materials_out_for_reference(db: Session, reference_id: int):
     return sorted(rows, key=lambda row: row.material.part_number.lower())
 
 
-def add_material_in_to_reference(db: Session, reference_id: int, *, material_id: int | None = None, part_number: str | None = None, qty_per_piece: float):
+def add_material_in_to_reference(
+    db: Session,
+    reference_id: int,
+    *,
+    material_id: int | None = None,
+    part_number: str | None = None,
+    qty_per_piece: float,
+):
     if assembly_lines_repo.get_reference(db, reference_id) is None:
         raise ValueError("Assembly line reference not found.")
     material = _resolve_material_for_line(db, material_id, part_number)
@@ -1165,7 +1293,9 @@ def add_material_in_to_reference(db: Session, reference_id: int, *, material_id:
     )
 
 
-def update_reference_material_in_qty(db: Session, reference_id: int, material_id: int, qty_per_piece: float) -> None:
+def update_reference_material_in_qty(
+    db: Session, reference_id: int, material_id: int, qty_per_piece: float
+) -> None:
     if assembly_lines_repo.get_reference(db, reference_id) is None:
         raise ValueError("Assembly line reference not found.")
     if materials_repo.get_material(db, material_id) is None:
@@ -1183,10 +1313,19 @@ def update_reference_material_in_qty(db: Session, reference_id: int, material_id
 def remove_material_in_from_reference(db: Session, reference_id: int, material_id: int) -> None:
     if assembly_lines_repo.get_reference(db, reference_id) is None:
         raise ValueError("Assembly line reference not found.")
-    assembly_lines_repo.delete_reference_material_in(db, reference_id=reference_id, material_id=material_id)
+    assembly_lines_repo.delete_reference_material_in(
+        db, reference_id=reference_id, material_id=material_id
+    )
 
 
-def add_material_out_to_reference(db: Session, reference_id: int, *, material_id: int | None = None, part_number: str | None = None, qty_per_piece: float):
+def add_material_out_to_reference(
+    db: Session,
+    reference_id: int,
+    *,
+    material_id: int | None = None,
+    part_number: str | None = None,
+    qty_per_piece: float,
+):
     reference = assembly_lines_repo.get_reference(db, reference_id)
     if reference is None:
         raise ValueError("Assembly line reference not found.")
@@ -1197,10 +1336,14 @@ def add_material_out_to_reference(db: Session, reference_id: int, *, material_id
         material_id=material.id,
         qty_per_piece=_normalize_positive_qty_per_piece(qty_per_piece),
     )
-    _update_make_material_prices_from_process_cost(db, [material.id], _compute_assembly_reference_unit_process_cost(db, reference_id))
+    _update_make_material_prices_from_process_cost(
+        db, [material.id], _compute_assembly_reference_unit_process_cost(db, reference_id)
+    )
 
 
-def update_reference_material_out_qty(db: Session, reference_id: int, material_id: int, qty_per_piece: float) -> None:
+def update_reference_material_out_qty(
+    db: Session, reference_id: int, material_id: int, qty_per_piece: float
+) -> None:
     if assembly_lines_repo.get_reference(db, reference_id) is None:
         raise ValueError("Assembly line reference not found.")
     if materials_repo.get_material(db, material_id) is None:
@@ -1213,13 +1356,17 @@ def update_reference_material_out_qty(db: Session, reference_id: int, material_i
         material_id=material_id,
         qty_per_piece=_normalize_positive_qty_per_piece(qty_per_piece),
     )
-    _update_make_material_prices_from_process_cost(db, [material_id], _compute_assembly_reference_unit_process_cost(db, reference_id))
+    _update_make_material_prices_from_process_cost(
+        db, [material_id], _compute_assembly_reference_unit_process_cost(db, reference_id)
+    )
 
 
 def remove_material_out_from_reference(db: Session, reference_id: int, material_id: int) -> None:
     if assembly_lines_repo.get_reference(db, reference_id) is None:
         raise ValueError("Assembly line reference not found.")
-    assembly_lines_repo.delete_reference_material_out(db, reference_id=reference_id, material_id=material_id)
+    assembly_lines_repo.delete_reference_material_out(
+        db, reference_id=reference_id, material_id=material_id
+    )
 
 
 def _normalize_mask_ids(mask_ids: list[int] | None) -> list[int]:
@@ -1255,8 +1402,12 @@ def _ensure_unique_mask_pn(db: Session, mask_pn: str, exclude_id: int | None = N
         raise ValueError("Mask P/N already exists.")
 
 
-def _ensure_unique_chamber_number(db: Session, chamber_number: str, exclude_id: int | None = None) -> None:
-    stmt = select(MetalizationChamber).where(func.lower(MetalizationChamber.chamber_number) == chamber_number.lower())
+def _ensure_unique_chamber_number(
+    db: Session, chamber_number: str, exclude_id: int | None = None
+) -> None:
+    stmt = select(MetalizationChamber).where(
+        func.lower(MetalizationChamber.chamber_number) == chamber_number.lower()
+    )
     if exclude_id is not None:
         stmt = stmt.where(MetalizationChamber.id != exclude_id)
     if db.scalar(stmt):
@@ -1280,7 +1431,9 @@ def create_metalization_mask(db: Session, data: MetalizationMaskCreate) -> Metal
     return metalization_repo.get_metalization_mask(db, mask.id) or mask
 
 
-def update_metalization_mask(db: Session, mask_id: int, data: MetalizationMaskUpdate) -> MetalizationMask:
+def update_metalization_mask(
+    db: Session, mask_id: int, data: MetalizationMaskUpdate
+) -> MetalizationMask:
     mask = metalization_repo.get_metalization_mask(db, mask_id)
     if mask is None:
         raise ValueError("Metalization mask not found.")
@@ -1323,7 +1476,11 @@ def add_material_to_mask(
     mask = metalization_repo.get_metalization_mask(db, mask_id)
     if mask is None:
         raise ValueError("Metalization mask not found.")
-    material = _resolve_material_by_part_number(db, part_number.strip()) if part_number and part_number.strip() else None
+    material = (
+        _resolve_material_by_part_number(db, part_number.strip())
+        if part_number and part_number.strip()
+        else None
+    )
     if material is None and material_id is not None:
         material = materials_repo.get_material(db, material_id)
     if material is None:
@@ -1336,7 +1493,9 @@ def add_material_to_mask(
     )
 
 
-def update_mask_material_qty(db: Session, mask_id: int, material_id: int, qty_per_piece: float) -> None:
+def update_mask_material_qty(
+    db: Session, mask_id: int, material_id: int, qty_per_piece: float
+) -> None:
     mask = metalization_repo.get_metalization_mask(db, mask_id)
     if mask is None:
         raise ValueError("Metalization mask not found.")
@@ -1378,7 +1537,11 @@ def add_material_out_to_mask(
     mask = metalization_repo.get_metalization_mask(db, mask_id)
     if mask is None:
         raise ValueError("Metalization mask not found.")
-    material = _resolve_material_by_part_number(db, part_number.strip()) if part_number and part_number.strip() else None
+    material = (
+        _resolve_material_by_part_number(db, part_number.strip())
+        if part_number and part_number.strip()
+        else None
+    )
     if material is None and material_id is not None:
         material = materials_repo.get_material(db, material_id)
     if material is None:
@@ -1389,10 +1552,14 @@ def add_material_out_to_mask(
         material_id=material.id,
         qty_per_piece=_normalize_positive_qty_per_piece(qty_per_piece),
     )
-    _update_make_material_prices_from_process_cost(db, [material.id], _compute_mask_unit_process_cost(db, mask_id))
+    _update_make_material_prices_from_process_cost(
+        db, [material.id], _compute_mask_unit_process_cost(db, mask_id)
+    )
 
 
-def update_mask_material_out_qty(db: Session, mask_id: int, material_id: int, qty_per_piece: float) -> None:
+def update_mask_material_out_qty(
+    db: Session, mask_id: int, material_id: int, qty_per_piece: float
+) -> None:
     mask = metalization_repo.get_metalization_mask(db, mask_id)
     if mask is None:
         raise ValueError("Metalization mask not found.")
@@ -1406,7 +1573,9 @@ def update_mask_material_out_qty(db: Session, mask_id: int, material_id: int, qt
         material_id=material_id,
         qty_per_piece=_normalize_positive_qty_per_piece(qty_per_piece),
     )
-    _update_make_material_prices_from_process_cost(db, [material_id], _compute_mask_unit_process_cost(db, mask_id))
+    _update_make_material_prices_from_process_cost(
+        db, [material_id], _compute_mask_unit_process_cost(db, mask_id)
+    )
 
 
 def remove_material_out_from_mask(db: Session, mask_id: int, material_id: int) -> None:
@@ -1420,7 +1589,9 @@ def list_metalization_chambers(db: Session) -> list[MetalizationChamber]:
     return metalization_repo.list_metalization_chambers(db)
 
 
-def list_masks_for_chamber(db: Session, chamber_id: int) -> tuple[MetalizationChamber, list[MetalizationMask]]:
+def list_masks_for_chamber(
+    db: Session, chamber_id: int
+) -> tuple[MetalizationChamber, list[MetalizationMask]]:
     chamber = metalization_repo.get_metalization_chamber(db, chamber_id)
     if chamber is None:
         raise ValueError("Metalization chamber not found.")
@@ -1428,7 +1599,9 @@ def list_masks_for_chamber(db: Session, chamber_id: int) -> tuple[MetalizationCh
     return chamber, _attach_mask_cost_fields(db, sorted_masks)
 
 
-def create_metalization_chamber(db: Session, data: MetalizationChamberCreate) -> MetalizationChamber:
+def create_metalization_chamber(
+    db: Session, data: MetalizationChamberCreate
+) -> MetalizationChamber:
     chamber_number = _normalize_required_text(data.chamber_number, "Chamber number")
     _ensure_unique_chamber_number(db, chamber_number)
     mask_ids = _normalize_mask_ids(data.mask_ids)
@@ -1440,7 +1613,9 @@ def create_metalization_chamber(db: Session, data: MetalizationChamberCreate) ->
     )
 
 
-def update_metalization_chamber(db: Session, chamber_id: int, data: MetalizationChamberUpdate) -> MetalizationChamber:
+def update_metalization_chamber(
+    db: Session, chamber_id: int, data: MetalizationChamberUpdate
+) -> MetalizationChamber:
     chamber = metalization_repo.get_metalization_chamber(db, chamber_id)
     if chamber is None:
         raise ValueError("Metalization chamber not found.")
@@ -1515,12 +1690,23 @@ def remove_metalization_chamber_mask(
     return chamber
 
 
-LABOUR_COST_WORKER_TYPES = ("Operator", "Logistic", "TeamLeader", "Inspector", "Specialist", "Technican")
+LABOUR_COST_WORKER_TYPES = (
+    "Operator",
+    "Logistic",
+    "TeamLeader",
+    "Inspector",
+    "Specialist",
+    "Technican",
+)
 
 
 def ensure_labour_cost_rows(db: Session) -> None:
-    existing = {row.worker_type for row in labour_costs_repo.list_labour_costs(db, LABOUR_COST_WORKER_TYPES)}
-    missing = [worker_type for worker_type in LABOUR_COST_WORKER_TYPES if worker_type not in existing]
+    existing = {
+        row.worker_type for row in labour_costs_repo.list_labour_costs(db, LABOUR_COST_WORKER_TYPES)
+    }
+    missing = [
+        worker_type for worker_type in LABOUR_COST_WORKER_TYPES if worker_type not in existing
+    ]
     for worker_type in missing:
         labour_costs_repo.create_labour_cost(db, worker_type=worker_type, cost_pln=0)
 
@@ -1552,11 +1738,17 @@ def update_labour_cost(db: Session, worker_type: str, cost_pln: float) -> Labour
     normalized_cost_pln = _validate_cost_pln(cost_pln)
     labour_cost = labour_costs_repo.get_by_worker_type(db, normalized_worker_type)
     if labour_cost is None:
-        labour_cost = labour_costs_repo.create_labour_cost(db, worker_type=normalized_worker_type, cost_pln=0)
-    return labour_costs_repo.update_labour_cost(db, labour_cost=labour_cost, cost_pln=normalized_cost_pln)
+        labour_cost = labour_costs_repo.create_labour_cost(
+            db, worker_type=normalized_worker_type, cost_pln=0
+        )
+    return labour_costs_repo.update_labour_cost(
+        db, labour_cost=labour_cost, cost_pln=normalized_cost_pln
+    )
 
 
-def _ensure_unique_material_part_number(db: Session, part_number: str, exclude_id: int | None = None) -> None:
+def _ensure_unique_material_part_number(
+    db: Session, part_number: str, exclude_id: int | None = None
+) -> None:
     stmt = select(Material).where(func.lower(Material.part_number) == part_number.lower())
     if exclude_id is not None:
         stmt = stmt.where(Material.id != exclude_id)
@@ -1572,7 +1764,9 @@ def _normalize_non_negative_price(value: float | None) -> float | None:
     return float(value)
 
 
-def _normalize_material_price_for_make_buy(*, make_buy: bool, price_per_unit: float | None) -> float | None:
+def _normalize_material_price_for_make_buy(
+    *, make_buy: bool, price_per_unit: float | None
+) -> float | None:
     normalized_price = _normalize_non_negative_price(price_per_unit)
     if make_buy:
         return None
@@ -1581,7 +1775,9 @@ def _normalize_material_price_for_make_buy(*, make_buy: bool, price_per_unit: fl
     return normalized_price
 
 
-def _update_make_material_prices_from_process_cost(db: Session, material_ids: list[int], unit_process_cost: float) -> None:
+def _update_make_material_prices_from_process_cost(
+    db: Session, material_ids: list[int], unit_process_cost: float
+) -> None:
     for material_id in dict.fromkeys(material_ids):
         material = materials_repo.get_material(db, material_id)
         if material is None or not material.make_buy:
@@ -1613,8 +1809,14 @@ def _compute_assembly_reference_unit_process_cost(db: Session, reference_id: int
     reference = assembly_lines_repo.get_reference(db, reference_id)
     if reference is None:
         raise ValueError("Assembly line reference not found.")
-    labour_cost = _compute_unit_labour_cost(reference.ct_seconds, assembly_lines_repo.get_reference_hc_map(db, reference_id), _labour_cost_map(db))
-    material_income_cost = assembly_lines_repo.material_in_cost_map_for_references(db).get(reference_id, 0.0)
+    labour_cost = _compute_unit_labour_cost(
+        reference.ct_seconds,
+        assembly_lines_repo.get_reference_hc_map(db, reference_id),
+        _labour_cost_map(db),
+    )
+    material_income_cost = assembly_lines_repo.material_in_cost_map_for_references(db).get(
+        reference_id, 0.0
+    )
     return float(labour_cost + material_income_cost)
 
 
@@ -1622,8 +1824,14 @@ def _compute_assembly_line_unit_process_cost(db: Session, assembly_line_id: int)
     line = assembly_lines_repo.get_assembly_line(db, assembly_line_id)
     if line is None:
         raise ValueError("Assembly line not found.")
-    labour_cost = _compute_unit_labour_cost(line.ct_seconds, assembly_lines_repo.get_line_hc_map(db, assembly_line_id), _labour_cost_map(db))
-    material_income_cost = assembly_lines_repo.material_in_cost_map_for_lines(db).get(assembly_line_id, 0.0)
+    labour_cost = _compute_unit_labour_cost(
+        line.ct_seconds,
+        assembly_lines_repo.get_line_hc_map(db, assembly_line_id),
+        _labour_cost_map(db),
+    )
+    material_income_cost = assembly_lines_repo.material_in_cost_map_for_lines(db).get(
+        assembly_line_id, 0.0
+    )
     return float(labour_cost + material_income_cost)
 
 
@@ -1640,7 +1848,9 @@ def create_material(db: Session, data: MaterialCreate) -> Material:
         part_number=part_number,
         description=_normalize_optional_text(data.description),
         unit=unit,
-        price_per_unit=_normalize_material_price_for_make_buy(make_buy=data.make_buy, price_per_unit=data.price_per_unit),
+        price_per_unit=_normalize_material_price_for_make_buy(
+            make_buy=data.make_buy, price_per_unit=data.price_per_unit
+        ),
         category=data.category,
         make_buy=data.make_buy,
     )
@@ -1659,7 +1869,9 @@ def update_material(db: Session, material_id: int, data: MaterialUpdate) -> Mate
         part_number=part_number,
         description=_normalize_optional_text(data.description),
         unit=unit,
-        price_per_unit=_normalize_material_price_for_make_buy(make_buy=data.make_buy, price_per_unit=data.price_per_unit),
+        price_per_unit=_normalize_material_price_for_make_buy(
+            make_buy=data.make_buy, price_per_unit=data.price_per_unit
+        ),
         category=data.category,
         make_buy=data.make_buy,
     )
