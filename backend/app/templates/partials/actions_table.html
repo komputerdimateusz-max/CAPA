@@ -6,6 +6,8 @@
           <th>Title</th>
           <th>Project</th>
           <th>Status</th>
+          <th>Process</th>
+          <th>Components</th>
           <th>Due date</th>
           <th>Days late</th>
           <th>Action Owner</th>
@@ -20,6 +22,8 @@
             <td><a href="/ui/actions/{{ action.id }}">{{ action.title }}</a></td>
             <td>{{ action.project }}</td>
             <td><span class="status-badge status-{{ action.status|lower }}">{{ action.status }}</span></td>
+            <td>{{ action.process|capitalize if action.process != "—" else "—" }}</td>
+            <td><a href="/ui/actions/{{ action.id }}">{{ action.process_components }}</a></td>
             <td>{{ action.due_date }}</td>
             <td>{{ action.days_late }}</td>
             <td>{{ action.owner }}</td>

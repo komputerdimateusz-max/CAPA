@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from app.core.auth import enforce_action_create_permission, enforce_action_ownership, enforce_write_access
 from app.core.config import settings
 from app.db.session import get_db
-from app.models.action import Action
+from app.models.action import ALLOWED_PROCESS_TYPES, Action
 from app.models.subtask import Subtask
 from app.repositories import actions as actions_repo
 from app.repositories import champions as champions_repo
@@ -37,6 +37,42 @@ SORT_OPTIONS = (
 STATUS_OPTIONS = ("OPEN", "IN_PROGRESS", "BLOCKED", "CLOSED")
 PRIORITY_OPTIONS = ("LOW", "MEDIUM", "HIGH", "CRITICAL")
 logger = logging.getLogger("app.ui")
+
+
+PROCESS_LABELS = {
+    "moulding": "Moulding",
+    "metalization": "Metalization",
+    "assembly": "Assembly",
+}
+
+
+def _validate_process_type_or_422(process_type: str | None) -> str:
+    normalized = (process_type or "").strip().lower()
+    if normalized not in ALLOWED_PROCESS_TYPES:
+        raise HTTPException(status_code=422, detail="Process is required and must be moulding, metalization, or assembly")
+    return normalized
+
+
+def _clear_non_matching_components(action: Action) -> None:
+    if action.process_type == "moulding":
+        action.metalization_masks = []
+        action.assembly_references = []
+    elif action.process_type == "metalization":
+        action.moulding_tools = []
+        action.assembly_references = []
+    elif action.process_type == "assembly":
+        action.moulding_tools = []
+        action.metalization_masks = []
+
+
+def _action_process_components_label(action: Action) -> str:
+    if action.process_type == "moulding":
+        return f"Moulding ({len(action.moulding_tools)})"
+    if action.process_type == "metalization":
+        return f"Metalization ({len(action.metalization_masks)})"
+    if action.process_type == "assembly":
+        return f"Assembly ({len(action.assembly_references)})"
+    return "—"
 
 
 def _html_fallback_page(title: str, message: str, status_code: int = 500) -> HTMLResponse:
@@ -317,6 +353,11 @@ def action_detail(
             "status_options": STATUS_OPTIONS,
             "priority_options": PRIORITY_OPTIONS,
             "edit_mode": edit,
+            "process_options": ALLOWED_PROCESS_TYPES,
+            "process_labels": PROCESS_LABELS,
+            "moulding_tools": actions_repo.list_moulding_tools(db),
+            "metalization_masks": actions_repo.list_metalization_masks(db),
+            "assembly_references": actions_repo.list_assembly_references(db),
         },
     )
 
@@ -333,6 +374,7 @@ def update_action_detail(
     due_date: str | None = Form(None),
     project_id: str | None = Form(None),
     priority: str | None = Form(None),
+    process_type: str = Form(...),
     db: Session = Depends(get_db),
 ):
     action = actions_repo.get_action(db, action_id)
@@ -351,6 +393,10 @@ def update_action_detail(
     action.due_date = _parse_optional_date(due_date)
     action.project_id = _parse_optional_int(project_id)
     action.priority = (priority or "").strip() or None
+    previous_process_type = action.process_type
+    action.process_type = _validate_process_type_or_422(process_type)
+    if action.process_type != previous_process_type:
+        _clear_non_matching_components(action)
 
     if normalized_status == "CLOSED" and action.closed_at is None:
         action.closed_at = datetime.utcnow()
@@ -372,6 +418,7 @@ def create_action(
     status: str = Form("OPEN"),
     due_date: str | None = Form(None),
     tags: str | None = Form(None),
+    process_type: str = Form(...),
     db: Session = Depends(get_db),
 ):
     parsed_champion_id = _parse_optional_int(champion_id)
@@ -385,13 +432,150 @@ def create_action(
         status=status or "OPEN",
         due_date=_parse_optional_date(due_date),
         created_at=datetime.utcnow(),
+        process_type=_validate_process_type_or_422(process_type),
     )
     if tags:
         parsed_tags = [item.strip() for item in tags.split(",") if item.strip()]
         action.tags = [tags_repo.get_or_create_tag(db, tag_name) for tag_name in parsed_tags]
+    _clear_non_matching_components(action)
     action = actions_repo.create_action(db, action)
-    return RedirectResponse(url=f"/ui/actions/{action.id}", status_code=303)
+    return RedirectResponse(url=f"/ui/actions/{action.id}?edit=1", status_code=303)
 
+
+
+@router.post("/actions/{action_id}/moulding-tools/add", response_model=None)
+def add_action_moulding_tool(
+    action_id: int,
+    request: Request,
+    tool_id: str | None = Form(None),
+    tool_pn: str | None = Form(None),
+    db: Session = Depends(get_db),
+):
+    action = actions_repo.get_action(db, action_id)
+    if not action:
+        raise HTTPException(status_code=404, detail="Action not found")
+    user = _current_user(request)
+    enforce_write_access(user)
+    enforce_action_ownership(user, action)
+    if action.process_type != "moulding":
+        raise HTTPException(status_code=400, detail="Action process_type must be moulding")
+    tool = actions_repo.get_moulding_tool_by_id(db, int(tool_id)) if tool_id else None
+    if tool is None and tool_pn:
+        tool = actions_repo.get_moulding_tool_by_pn(db, tool_pn.strip())
+    if not tool:
+        raise HTTPException(status_code=404, detail="Moulding tool not found")
+    if all(existing.id != tool.id for existing in action.moulding_tools):
+        action.moulding_tools.append(tool)
+    actions_repo.update_action(db, action)
+    return RedirectResponse(url=f"/ui/actions/{action_id}?edit=1", status_code=303)
+
+
+@router.post("/actions/{action_id}/moulding-tools/remove", response_model=None)
+def remove_action_moulding_tool(
+    action_id: int,
+    request: Request,
+    tool_id: int = Form(...),
+    db: Session = Depends(get_db),
+):
+    action = actions_repo.get_action(db, action_id)
+    if not action:
+        raise HTTPException(status_code=404, detail="Action not found")
+    user = _current_user(request)
+    enforce_write_access(user)
+    enforce_action_ownership(user, action)
+    action.moulding_tools = [tool for tool in action.moulding_tools if tool.id != tool_id]
+    actions_repo.update_action(db, action)
+    return RedirectResponse(url=f"/ui/actions/{action_id}?edit=1", status_code=303)
+
+
+@router.post("/actions/{action_id}/metalization-masks/add", response_model=None)
+def add_action_metalization_mask(
+    action_id: int,
+    request: Request,
+    mask_id: str | None = Form(None),
+    mask_pn: str | None = Form(None),
+    db: Session = Depends(get_db),
+):
+    action = actions_repo.get_action(db, action_id)
+    if not action:
+        raise HTTPException(status_code=404, detail="Action not found")
+    user = _current_user(request)
+    enforce_write_access(user)
+    enforce_action_ownership(user, action)
+    if action.process_type != "metalization":
+        raise HTTPException(status_code=400, detail="Action process_type must be metalization")
+    mask = actions_repo.get_metalization_mask_by_id(db, int(mask_id)) if mask_id else None
+    if mask is None and mask_pn:
+        mask = actions_repo.get_metalization_mask_by_pn(db, mask_pn.strip())
+    if not mask:
+        raise HTTPException(status_code=404, detail="Metalization mask not found")
+    if all(existing.id != mask.id for existing in action.metalization_masks):
+        action.metalization_masks.append(mask)
+    actions_repo.update_action(db, action)
+    return RedirectResponse(url=f"/ui/actions/{action_id}?edit=1", status_code=303)
+
+
+@router.post("/actions/{action_id}/metalization-masks/remove", response_model=None)
+def remove_action_metalization_mask(
+    action_id: int,
+    request: Request,
+    mask_id: int = Form(...),
+    db: Session = Depends(get_db),
+):
+    action = actions_repo.get_action(db, action_id)
+    if not action:
+        raise HTTPException(status_code=404, detail="Action not found")
+    user = _current_user(request)
+    enforce_write_access(user)
+    enforce_action_ownership(user, action)
+    action.metalization_masks = [mask for mask in action.metalization_masks if mask.id != mask_id]
+    actions_repo.update_action(db, action)
+    return RedirectResponse(url=f"/ui/actions/{action_id}?edit=1", status_code=303)
+
+
+@router.post("/actions/{action_id}/assembly-references/add", response_model=None)
+def add_action_assembly_reference(
+    action_id: int,
+    request: Request,
+    reference_id: str | None = Form(None),
+    reference_name: str | None = Form(None),
+    db: Session = Depends(get_db),
+):
+    action = actions_repo.get_action(db, action_id)
+    if not action:
+        raise HTTPException(status_code=404, detail="Action not found")
+    user = _current_user(request)
+    enforce_write_access(user)
+    enforce_action_ownership(user, action)
+    if action.process_type != "assembly":
+        raise HTTPException(status_code=400, detail="Action process_type must be assembly")
+    reference = actions_repo.get_assembly_reference_by_id(db, int(reference_id)) if reference_id else None
+    if reference is None and reference_name:
+        reference = actions_repo.get_assembly_reference_by_name(db, reference_name.strip())
+    if not reference:
+        raise HTTPException(status_code=404, detail="Assembly reference not found")
+    if all(existing.id != reference.id for existing in action.assembly_references):
+        action.assembly_references.append(reference)
+    actions_repo.update_action(db, action)
+    return RedirectResponse(url=f"/ui/actions/{action_id}?edit=1", status_code=303)
+
+
+@router.post("/actions/{action_id}/assembly-references/remove", response_model=None)
+def remove_action_assembly_reference(
+    action_id: int,
+    request: Request,
+    reference_id: int = Form(...),
+    db: Session = Depends(get_db),
+):
+    action = actions_repo.get_action(db, action_id)
+    if not action:
+        raise HTTPException(status_code=404, detail="Action not found")
+    user = _current_user(request)
+    enforce_write_access(user)
+    enforce_action_ownership(user, action)
+    action.assembly_references = [reference for reference in action.assembly_references if reference.id != reference_id]
+    actions_repo.update_action(db, action)
+    return RedirectResponse(url=f"/ui/actions/{action_id}?edit=1", status_code=303)
 
 
 
@@ -464,6 +648,7 @@ def create_subtask(
         status="OPEN",
         due_date=_parse_optional_date(due_date),
         created_at=datetime.utcnow(),
+        process_type=_validate_process_type_or_422(process_type),
     )
     actions_repo.create_subtask(db, subtask)
     subtasks = actions_repo.list_subtasks(db, action_id)

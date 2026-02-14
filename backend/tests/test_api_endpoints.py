@@ -201,3 +201,32 @@ def test_actions_sorting_end_to_end(client, db_session):
     invalid_sort = client.get("/api/actions?sort=not_valid")
     assert invalid_sort.status_code == 200
     assert [item["title"] for item in invalid_sort.json()["items"]] == ["Beta action", "Gamma action", "Alpha action"]
+
+
+def test_create_action_with_process_type(client):
+    response = client.post(
+        "/api/actions",
+        json={
+            "title": "Process-aware action",
+            "status": "OPEN",
+            "process_type": "assembly",
+        },
+    )
+
+    assert response.status_code == 201
+    payload = response.json()
+    assert payload["process_type"] == "assembly"
+
+
+def test_create_action_rejects_invalid_process_type(client):
+    response = client.post(
+        "/api/actions",
+        json={
+            "title": "Invalid process",
+            "status": "OPEN",
+            "process_type": "painting",
+        },
+    )
+
+    assert response.status_code == 422
+    assert "Invalid process_type" in response.json()["detail"]

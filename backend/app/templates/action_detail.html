@@ -15,6 +15,14 @@
     {% if edit_mode %}
       <form method="post" action="/ui/actions/{{ action.id }}/edit">
         <div class="form-grid">
+          <label>
+            Process
+            <select name="process_type" required>
+              {% for process in process_options %}
+                <option value="{{ process }}" {% if action.process_type == process %}selected{% endif %}>{{ process_labels[process] }}</option>
+              {% endfor %}
+            </select>
+          </label>
           <label class="full-row">
             Title
             <input type="text" name="title" value="{{ action.title }}" required />
@@ -36,9 +44,7 @@
             <select name="champion_id">
               <option value="">—</option>
               {% for champion in champions %}
-                <option value="{{ champion.id }}" {% if action.champion_id == champion.id %}selected{% endif %}>
-                  {{ champion.full_name }}
-                </option>
+                <option value="{{ champion.id }}" {% if action.champion_id == champion.id %}selected{% endif %}>{{ champion.full_name }}</option>
               {% endfor %}
             </select>
           </label>
@@ -77,11 +83,87 @@
           <a class="button secondary" href="/ui/actions/{{ action.id }}">Cancel</a>
         </div>
       </form>
+
+      <div class="card card-compact mt-16" data-process-section="moulding" {% if action.process_type != 'moulding' %}style="display:none"{% endif %}>
+        <h4>Moulding tools (forms) affected</h4>
+        <form method="post" action="/ui/actions/{{ action.id }}/moulding-tools/add" class="form-inline mt-8">
+          <label>
+            Tool
+            <input type="text" name="tool_pn" list="moulding-tool-options" placeholder="Type tool PN" />
+          </label>
+          <datalist id="moulding-tool-options">
+            {% for tool in moulding_tools %}
+              <option value="{{ tool.tool_pn }}">{{ tool.tool_pn }} — {{ tool.description or 'No description' }} (CT {{ tool.ct_seconds }} s)</option>
+            {% endfor %}
+          </datalist>
+          <button class="button secondary" type="submit">Add</button>
+        </form>
+        <div class="tag-list mt-8">
+          {% for tool in action.moulding_tools %}
+            <form method="post" action="/ui/actions/{{ action.id }}/moulding-tools/remove" class="tag-form">
+              <input type="hidden" name="tool_id" value="{{ tool.id }}" />
+              <span class="tag-chip">{{ tool.tool_pn }}</span>
+              <button class="tag-remove" type="submit">×</button>
+            </form>
+          {% endfor %}
+        </div>
+      </div>
+
+      <div class="card card-compact mt-16" data-process-section="metalization" {% if action.process_type != 'metalization' %}style="display:none"{% endif %}>
+        <h4>Metalization masks affected</h4>
+        <form method="post" action="/ui/actions/{{ action.id }}/metalization-masks/add" class="form-inline mt-8">
+          <label>
+            Mask
+            <input type="text" name="mask_pn" list="metalization-mask-options" placeholder="Type mask PN" />
+          </label>
+          <datalist id="metalization-mask-options">
+            {% for mask in metalization_masks %}
+              <option value="{{ mask.mask_pn }}">{{ mask.mask_pn }} — {{ mask.description or 'No description' }} (CT {{ mask.ct_seconds }} s)</option>
+            {% endfor %}
+          </datalist>
+          <button class="button secondary" type="submit">Add</button>
+        </form>
+        <div class="tag-list mt-8">
+          {% for mask in action.metalization_masks %}
+            <form method="post" action="/ui/actions/{{ action.id }}/metalization-masks/remove" class="tag-form">
+              <input type="hidden" name="mask_id" value="{{ mask.id }}" />
+              <span class="tag-chip">{{ mask.mask_pn }}</span>
+              <button class="tag-remove" type="submit">×</button>
+            </form>
+          {% endfor %}
+        </div>
+      </div>
+
+      <div class="card card-compact mt-16" data-process-section="assembly" {% if action.process_type != 'assembly' %}style="display:none"{% endif %}>
+        <h4>Assembly references affected</h4>
+        <form method="post" action="/ui/actions/{{ action.id }}/assembly-references/add" class="form-inline mt-8">
+          <label>
+            Reference
+            <input type="text" name="reference_name" list="assembly-reference-options" placeholder="Type reference name" />
+          </label>
+          <datalist id="assembly-reference-options">
+            {% for reference in assembly_references %}
+              <option value="{{ reference.reference_name }}">{{ reference.reference_name }} — FG: {{ reference.fg_material.part_number if reference.fg_material else '—' }} — Line: {{ reference.line.line_number if reference.line else '—' }} (CT {{ reference.ct_seconds }} s)</option>
+            {% endfor %}
+          </datalist>
+          <button class="button secondary" type="submit">Add</button>
+        </form>
+        <div class="tag-list mt-8">
+          {% for reference in action.assembly_references %}
+            <form method="post" action="/ui/actions/{{ action.id }}/assembly-references/remove" class="tag-form">
+              <input type="hidden" name="reference_id" value="{{ reference.id }}" />
+              <span class="tag-chip">{{ reference.reference_name }}</span>
+              <button class="tag-remove" type="submit">×</button>
+            </form>
+          {% endfor %}
+        </div>
+      </div>
     {% else %}
       <h3>{{ action.title }}</h3>
       <p class="muted">{{ action.description or "No description provided." }}</p>
       <div class="detail-grid">
         <div><strong>Status</strong><p><span class="status-badge status-{{ action.status|lower }}">{{ action.status }}</span></p></div>
+        <div><strong>Process</strong><p>{{ process_labels.get(action.process_type, '—') }}</p></div>
         <div><strong>Champion</strong><p>{{ action.champion.full_name if action.champion else "—" }}</p></div>
         <div><strong>Project</strong><p>{{ action.project.name if action.project else "—" }}</p></div>
         <div><strong>Owner</strong><p>{{ action.owner or "—" }}</p></div>
@@ -90,6 +172,18 @@
         <div><strong>Created at</strong><p>{{ format_date(action.created_at) }}</p></div>
         <div><strong>Closed at</strong><p>{{ format_date(action.closed_at) }}</p></div>
         <div><strong>Days late</strong><p>{{ days_late }}</p></div>
+      </div>
+      <div class="card card-compact mt-16">
+        <h4>Affected components</h4>
+        {% if action.process_type == 'moulding' %}
+          <p>{{ action.moulding_tools | map(attribute='tool_pn') | join(', ') if action.moulding_tools else '—' }}</p>
+        {% elif action.process_type == 'metalization' %}
+          <p>{{ action.metalization_masks | map(attribute='mask_pn') | join(', ') if action.metalization_masks else '—' }}</p>
+        {% elif action.process_type == 'assembly' %}
+          <p>{{ action.assembly_references | map(attribute='reference_name') | join(', ') if action.assembly_references else '—' }}</p>
+        {% else %}
+          <p>—</p>
+        {% endif %}
       </div>
     {% endif %}
 
@@ -124,4 +218,21 @@
     </form>
   </section>
   {% include "partials/subtasks.html" %}
+
+  {% if edit_mode %}
+    <script>
+      (() => {
+        const processSelect = document.querySelector('select[name="process_type"]');
+        const sections = document.querySelectorAll('[data-process-section]');
+        const syncSections = () => {
+          const value = processSelect?.value;
+          sections.forEach((section) => {
+            section.style.display = section.dataset.processSection === value ? '' : 'none';
+          });
+        };
+        processSelect?.addEventListener('change', syncSections);
+        syncSections();
+      })();
+    </script>
+  {% endif %}
 {% endblock %}

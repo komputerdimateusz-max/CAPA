@@ -577,3 +577,128 @@ def test_ui_assembly_line_references_page_and_average_link(client, db_session):
     assert ref_response.status_code == 200
     assert "Assembly Line References" in ref_response.text
     assert "R1" in ref_response.text
+
+
+def test_ui_action_add_remove_moulding_tools(client, db_session):
+    tool = settings_service.create_moulding_tool(
+        db_session,
+        MouldingToolCreate(tool_pn="T-100", description="Form", ct_seconds=10),
+    )
+    action = Action(title="Moulding action", status="OPEN", process_type="moulding", created_at=datetime.utcnow())
+    db_session.add(action)
+    db_session.commit()
+
+    add_response = client.post(
+        f"/ui/actions/{action.id}/moulding-tools/add",
+        data={"tool_pn": "T-100"},
+        allow_redirects=False,
+    )
+    assert add_response.status_code == 303
+
+    db_session.refresh(action)
+    assert [item.tool_pn for item in action.moulding_tools] == [tool.tool_pn]
+
+    remove_response = client.post(
+        f"/ui/actions/{action.id}/moulding-tools/remove",
+        data={"tool_id": tool.id},
+        allow_redirects=False,
+    )
+    assert remove_response.status_code == 303
+    db_session.refresh(action)
+    assert action.moulding_tools == []
+
+
+def test_ui_action_add_remove_metalization_masks(client, db_session):
+    mask = settings_service.create_metalization_mask(
+        db_session,
+        MetalizationMaskCreate(mask_pn="M-200", description="Mask", ct_seconds=11),
+    )
+    action = Action(title="Metalization action", status="OPEN", process_type="metalization", created_at=datetime.utcnow())
+    db_session.add(action)
+    db_session.commit()
+
+    add_response = client.post(
+        f"/ui/actions/{action.id}/metalization-masks/add",
+        data={"mask_pn": "M-200"},
+        allow_redirects=False,
+    )
+    assert add_response.status_code == 303
+
+    db_session.refresh(action)
+    assert [item.mask_pn for item in action.metalization_masks] == [mask.mask_pn]
+
+    remove_response = client.post(
+        f"/ui/actions/{action.id}/metalization-masks/remove",
+        data={"mask_id": mask.id},
+        allow_redirects=False,
+    )
+    assert remove_response.status_code == 303
+    db_session.refresh(action)
+    assert action.metalization_masks == []
+
+
+def test_ui_action_add_remove_assembly_references(client, db_session):
+    fg = settings_service.create_material(
+        db_session,
+        MaterialCreate(part_number="FG-10", description="FG", unit="pcs", price_per_unit=1.0, category="FG"),
+    )
+    line = settings_service.create_assembly_line(db_session, AssemblyLineCreate(line_number="L-1", labor_cost_per_h=20.0))
+    reference = settings_service.create_assembly_line_reference(
+        db_session,
+        line.id,
+        AssemblyLineReferenceCreate(reference_name="REF-1", fg_part_number=fg.part_number, ct_seconds=8),
+    )
+    action = Action(title="Assembly action", status="OPEN", process_type="assembly", created_at=datetime.utcnow())
+    db_session.add(action)
+    db_session.commit()
+
+    add_response = client.post(
+        f"/ui/actions/{action.id}/assembly-references/add",
+        data={"reference_name": "REF-1"},
+        allow_redirects=False,
+    )
+    assert add_response.status_code == 303
+
+    db_session.refresh(action)
+    assert [item.reference_name for item in action.assembly_references] == [reference.reference_name]
+
+    remove_response = client.post(
+        f"/ui/actions/{action.id}/assembly-references/remove",
+        data={"reference_id": reference.id},
+        allow_redirects=False,
+    )
+    assert remove_response.status_code == 303
+    db_session.refresh(action)
+    assert action.assembly_references == []
+
+
+def test_switching_process_clears_old_assignments(client, db_session):
+    tool = settings_service.create_moulding_tool(
+        db_session,
+        MouldingToolCreate(tool_pn="T-101", description="Form", ct_seconds=10),
+    )
+    action = Action(title="Switch process", status="OPEN", process_type="moulding", created_at=datetime.utcnow())
+    action.moulding_tools.append(tool)
+    db_session.add(action)
+    db_session.commit()
+
+    response = client.post(
+        f"/ui/actions/{action.id}/edit",
+        data={
+            "title": action.title,
+            "description": "",
+            "status": "OPEN",
+            "champion_id": "",
+            "owner": "",
+            "due_date": "",
+            "project_id": "",
+            "priority": "",
+            "process_type": "assembly",
+        },
+        allow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    db_session.refresh(action)
+    assert action.process_type == "assembly"
+    assert action.moulding_tools == []

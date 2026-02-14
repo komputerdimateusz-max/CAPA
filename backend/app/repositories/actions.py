@@ -8,6 +8,9 @@ from sqlalchemy.orm import selectinload
 from sqlalchemy.orm import Session
 
 from app.models.action import Action
+from app.models.assembly_line import AssemblyLineReference
+from app.models.metalization import MetalizationMask
+from app.models.moulding import MouldingTool
 from app.models.champion import Champion
 from app.models.project import Project
 from app.models.subtask import Subtask
@@ -58,7 +61,14 @@ def list_actions(
     limit: int = 100,
     offset: int = 0,
 ) -> tuple[list[Action], int]:
-    stmt = select(Action).options(selectinload(Action.project), selectinload(Action.champion), selectinload(Action.tags))
+    stmt = select(Action).options(
+        selectinload(Action.project),
+        selectinload(Action.champion),
+        selectinload(Action.tags),
+        selectinload(Action.moulding_tools),
+        selectinload(Action.metalization_masks),
+        selectinload(Action.assembly_references),
+    )
 
     if statuses:
         stmt = stmt.where(Action.status.in_(statuses))
@@ -119,7 +129,14 @@ def list_actions_for_projects(db: Session, project_ids: list[int]) -> list[Actio
         return []
     stmt = (
         select(Action)
-        .options(selectinload(Action.project), selectinload(Action.champion), selectinload(Action.tags))
+        .options(
+            selectinload(Action.project),
+            selectinload(Action.champion),
+            selectinload(Action.tags),
+            selectinload(Action.moulding_tools),
+            selectinload(Action.metalization_masks),
+            selectinload(Action.assembly_references),
+        )
         .where(Action.project_id.in_(project_ids))
     )
     return list(db.scalars(stmt).all())
@@ -132,7 +149,14 @@ def list_actions_created_between(
     project_id: int | None = None,
     champion_id: int | None = None,
 ) -> list[Action]:
-    stmt = select(Action).options(selectinload(Action.project), selectinload(Action.champion), selectinload(Action.tags))
+    stmt = select(Action).options(
+        selectinload(Action.project),
+        selectinload(Action.champion),
+        selectinload(Action.tags),
+        selectinload(Action.moulding_tools),
+        selectinload(Action.metalization_masks),
+        selectinload(Action.assembly_references),
+    )
     created_date = func.date(Action.created_at).cast(Date)
     if date_from:
         stmt = stmt.where(created_date >= date_from)
@@ -147,14 +171,28 @@ def list_actions_created_between(
 
 
 def get_action(db: Session, action_id: int) -> Action | None:
-    stmt = select(Action).options(selectinload(Action.project), selectinload(Action.champion), selectinload(Action.tags)).where(Action.id == action_id)
+    stmt = select(Action).options(
+        selectinload(Action.project),
+        selectinload(Action.champion),
+        selectinload(Action.tags),
+        selectinload(Action.moulding_tools),
+        selectinload(Action.metalization_masks),
+        selectinload(Action.assembly_references),
+    ).where(Action.id == action_id)
     return db.scalar(stmt)
 
 
 def list_actions_by_project(db: Session, project_id: int) -> list[Action]:
     stmt = (
         select(Action)
-        .options(selectinload(Action.project), selectinload(Action.champion), selectinload(Action.tags))
+        .options(
+            selectinload(Action.project),
+            selectinload(Action.champion),
+            selectinload(Action.tags),
+            selectinload(Action.moulding_tools),
+            selectinload(Action.metalization_masks),
+            selectinload(Action.assembly_references),
+        )
         .where(Action.project_id == project_id)
         .order_by(Action.id.desc())
     )
@@ -213,3 +251,49 @@ def update_subtask(db: Session, subtask: Subtask) -> Subtask:
 def delete_subtask(db: Session, subtask: Subtask) -> None:
     db.delete(subtask)
     db.commit()
+
+
+def get_moulding_tool_by_id(db: Session, tool_id: int) -> MouldingTool | None:
+    return db.get(MouldingTool, tool_id)
+
+
+def get_moulding_tool_by_pn(db: Session, tool_pn: str) -> MouldingTool | None:
+    stmt = select(MouldingTool).where(func.lower(MouldingTool.tool_pn) == tool_pn.lower())
+    return db.scalar(stmt)
+
+
+def get_metalization_mask_by_id(db: Session, mask_id: int) -> MetalizationMask | None:
+    return db.get(MetalizationMask, mask_id)
+
+
+def get_metalization_mask_by_pn(db: Session, mask_pn: str) -> MetalizationMask | None:
+    stmt = select(MetalizationMask).where(func.lower(MetalizationMask.mask_pn) == mask_pn.lower())
+    return db.scalar(stmt)
+
+
+def get_assembly_reference_by_id(db: Session, reference_id: int) -> AssemblyLineReference | None:
+    return db.get(AssemblyLineReference, reference_id)
+
+
+def get_assembly_reference_by_name(db: Session, reference_name: str) -> AssemblyLineReference | None:
+    stmt = select(AssemblyLineReference).where(func.lower(AssemblyLineReference.reference_name) == reference_name.lower())
+    return db.scalar(stmt)
+
+
+def list_moulding_tools(db: Session) -> list[MouldingTool]:
+    stmt = select(MouldingTool).order_by(func.lower(MouldingTool.tool_pn).asc())
+    return list(db.scalars(stmt).all())
+
+
+def list_metalization_masks(db: Session) -> list[MetalizationMask]:
+    stmt = select(MetalizationMask).order_by(func.lower(MetalizationMask.mask_pn).asc())
+    return list(db.scalars(stmt).all())
+
+
+def list_assembly_references(db: Session) -> list[AssemblyLineReference]:
+    stmt = (
+        select(AssemblyLineReference)
+        .options(selectinload(AssemblyLineReference.line), selectinload(AssemblyLineReference.fg_material))
+        .order_by(func.lower(AssemblyLineReference.reference_name).asc())
+    )
+    return list(db.scalars(stmt).all())

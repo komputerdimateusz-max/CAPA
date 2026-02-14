@@ -27,7 +27,7 @@ from app.ui import routes_analyses, routes_auth, routes_champions, routes_metric
 
 REQUIRED_CHAMPION_COLUMNS = {"first_name", "last_name", "email", "position", "birth_date"}
 REQUIRED_USERS_COLUMNS = {"username", "password_hash", "role", "is_active", "email"}
-REQUIRED_ACTION_COLUMNS = {"updated_at"}
+REQUIRED_ACTION_COLUMNS = {"updated_at", "process_type"}
 
 
 logger = logging.getLogger("app.request")

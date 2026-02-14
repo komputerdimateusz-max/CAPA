@@ -164,6 +164,14 @@
       <p class="muted">Add a new corrective action without leaving the list.</p>
       <form class="form-grid" id="create-action-form" method="post" action="/ui/actions">
         <label>
+          Process
+          <select name="process_type" required>
+            <option value="moulding">Moulding</option>
+            <option value="metalization">Metalization</option>
+            <option value="assembly" selected>Assembly</option>
+          </select>
+        </label>
+        <label>
           Title
           <input type="text" name="title" placeholder="Action title" required />
         </label>
