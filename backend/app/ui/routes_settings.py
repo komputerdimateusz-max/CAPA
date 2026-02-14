@@ -785,7 +785,7 @@ def delete_champion(
 ):
     enforce_admin(_current_user(request))
     try:
-        settings_service.deactivate_champion(db, champion_id)
+        settings_service.delete_champion(db, champion_id)
     except ValueError as exc:
         return _render_settings(
             "settings_champions.html",
@@ -795,7 +795,7 @@ def delete_champion(
             project_id=None,
             error=str(exc),
         )
-    return RedirectResponse(url="/ui/settings/champions?deleted=champion", status_code=303)
+    return RedirectResponse(url="/ui/settings/champions?message=Champion+deleted", status_code=303)
 
 
 @router.post("/settings/projects", response_model=None)

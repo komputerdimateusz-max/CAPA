@@ -163,7 +163,7 @@
                     <td>{{ project.status or '—' }}</td>
                     <td>{{ project.max_volume if project.max_volume is not none else '—' }}</td>
                     <td>{% if project.flex_percent is not none %}{{ project.flex_percent }}%{% else %}—{% endif %}</td>
-                    <td>{{ project.process_engineer.full_name if project.process_engineer else '—' }}</td>
+                    <td>{{ project.process_engineer.full_name if project.process_engineer else 'Unassigned' }}</td>
                     <td>{{ format_date(project.due_date) }}</td>
                     <td>
                       <a class="button secondary" href="/ui/settings?project_id={{ project.id }}">Edit</a>

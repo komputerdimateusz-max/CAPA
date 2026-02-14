@@ -60,7 +60,10 @@ class Action(Base):
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=True, default="")
     project_id: Mapped[int | None] = mapped_column(ForeignKey("projects.id"), nullable=True)
-    champion_id: Mapped[int | None] = mapped_column(ForeignKey("champions.id"), nullable=True)
+    champion_id: Mapped[int | None] = mapped_column(
+        ForeignKey("champions.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     owner: Mapped[str | None] = mapped_column(String(255), nullable=True)
     status: Mapped[str] = mapped_column(String(50), nullable=False, default="OPEN")
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)

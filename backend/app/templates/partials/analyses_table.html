@@ -19,7 +19,7 @@
             <td>{{ analysis.type }}</td>
             <td><a href="/ui/analyses/{{ analysis.id }}">{{ analysis.title or '—' }}</a></td>
             <td>{{ analysis.status or 'Open' }}</td>
-            <td>{{ analysis.champion or '—' }}</td>
+            <td>{{ analysis.champion or 'Unassigned' }}</td>
             <td>{{ format_date(analysis.created_at) }}</td>
             <td>
               {% if analysis.tags %}

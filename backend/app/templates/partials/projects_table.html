@@ -21,7 +21,7 @@
             <td>{{ rollup.project.status or "—" }}</td>
             <td>{{ rollup.project.max_volume if rollup.project.max_volume is not none else "—" }}</td>
             <td>{% if rollup.project.flex_percent is not none %}{{ rollup.project.flex_percent }}%{% else %}—{% endif %}</td>
-            <td>{{ rollup.project.process_engineer.full_name if rollup.project.process_engineer else "—" }}</td>
+            <td>{{ rollup.project.process_engineer.full_name if rollup.project.process_engineer else "Unassigned" }}</td>
             <td>{{ format_date(rollup.project.due_date) }}</td>
             <td>{{ rollup.open_actions }}</td>
             <td>{{ rollup.overdue_actions }}</td>

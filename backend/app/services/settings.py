@@ -126,9 +126,9 @@ def _normalize_project_flex(value: float | None) -> float:
     return value
 
 
-def _normalize_process_engineer_id(db: Session, value: int | None) -> int:
+def _normalize_process_engineer_id(db: Session, value: int | None) -> int | None:
     if value is None:
-        raise ValueError("Process Engineer is required.")
+        return None
     champion = db.get(Champion, value)
     if champion is None:
         raise ValueError("Selected Process Engineer does not exist.")
@@ -193,15 +193,12 @@ def update_champion(
     return champion
 
 
-def deactivate_champion(db: Session, champion_id: int) -> Champion:
+def delete_champion(db: Session, champion_id: int) -> None:
     champion = db.get(Champion, champion_id)
     if not champion:
         raise ValueError("Champion not found.")
-    champion.is_active = False
-    db.add(champion)
+    db.delete(champion)
     db.commit()
-    db.refresh(champion)
-    return champion
 
 
 def _normalize_project_assignment_ids(ids: list[int] | None, label: str) -> list[int]:
