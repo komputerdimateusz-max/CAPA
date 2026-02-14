@@ -8,7 +8,7 @@ from app.core.config import settings
 from app.models.action import Action
 from app.models.project import Project
 from app.models.user import User
-from app.schemas.assembly_line import AssemblyLineCreate
+from app.schemas.assembly_line import AssemblyLineCreate, AssemblyLineReferenceCreate
 from app.schemas.material import MaterialCreate
 from app.schemas.metalization import MetalizationChamberCreate, MetalizationMaskCreate
 from app.schemas.moulding import MouldingMachineCreate, MouldingToolCreate
@@ -454,7 +454,7 @@ def test_ui_moulding_tools_list_shows_hc_total_unit_and_material_cost(client, db
 
     assert response.status_code == 200
     assert "HC total" in response.text
-    assert "Unit labour cost [PLN]" in response.text
+    assert "Unit labour cost avg [PLN]" in response.text
     assert "Material cost [PLN]" in response.text
     assert "0.33" in response.text
     assert "12.00" in response.text
@@ -476,7 +476,7 @@ def test_ui_metalization_masks_list_shows_hc_total_unit_and_material_cost(client
 
     assert response.status_code == 200
     assert "HC total" in response.text
-    assert "Unit labour cost [PLN]" in response.text
+    assert "Unit labour cost avg [PLN]" in response.text
     assert "Material cost [PLN]" in response.text
     assert "0.25" in response.text
     assert "5.00" in response.text
@@ -548,7 +548,32 @@ def test_ui_assembly_lines_list_shows_labour_and_material_costs(client, db_sessi
     response = client.get("/ui/settings/assembly-lines")
 
     assert response.status_code == 200
-    assert "Unit labour cost [PLN]" in response.text
-    assert "Outcome material cost [PLN]" in response.text
+    assert "Unit labour cost avg [PLN]" in response.text
+    assert "Outcome cost avg [PLN]" in response.text
     assert "0.40" in response.text
     assert "5.00" in response.text
+
+
+def test_ui_assembly_line_references_page_and_average_link(client, db_session):
+    line = settings_service.create_assembly_line(
+        db_session,
+        AssemblyLineCreate(line_number="UI-AL-REF-1", ct_seconds=10, hc=0),
+    )
+    fg = settings_service.create_material(
+        db_session,
+        MaterialCreate(part_number="UI-AL-REF-FG", description="fg", unit="pc", price_per_unit=2, category="FG", make_buy=False),
+    )
+    settings_service.create_assembly_line_reference(
+        db_session,
+        line.id,
+        AssemblyLineReferenceCreate(reference_name="R1", fg_material_id=fg.id, ct_seconds=12, hc_map={"Operator": 1}),
+    )
+
+    list_response = client.get("/ui/settings/assembly-lines")
+    ref_response = client.get(f"/ui/settings/assembly-lines/{line.id}/references")
+
+    assert list_response.status_code == 200
+    assert f'href="/ui/settings/assembly-lines/{line.id}/references">1</a>' in list_response.text
+    assert ref_response.status_code == 200
+    assert "Assembly Line References" in ref_response.text
+    assert "R1" in ref_response.text

@@ -6,7 +6,16 @@ from app.models.champion import Champion
 from app.models.tag import Tag
 from app.models.user import User
 from app.models.moulding import MouldingMachine, MouldingMachineTool, MouldingTool, MouldingToolHC, MouldingToolMaterial, MouldingToolMaterialOut
-from app.models.assembly_line import AssemblyLine, AssemblyLineHC, AssemblyLineMaterialIn, AssemblyLineMaterialOut
+from app.models.assembly_line import (
+    AssemblyLine,
+    AssemblyLineHC,
+    AssemblyLineMaterialIn,
+    AssemblyLineMaterialOut,
+    AssemblyLineReference,
+    AssemblyLineReferenceHC,
+    AssemblyLineReferenceMaterialIn,
+    AssemblyLineReferenceMaterialOut,
+)
 from app.models.labour_cost import LabourCost
 from app.models.material import Material
 from app.models.metalization import (
@@ -37,6 +46,10 @@ __all__ = [
     "AssemblyLineHC",
     "AssemblyLineMaterialIn",
     "AssemblyLineMaterialOut",
+    "AssemblyLineReference",
+    "AssemblyLineReferenceHC",
+    "AssemblyLineReferenceMaterialIn",
+    "AssemblyLineReferenceMaterialOut",
     "LabourCost",
     "Material",
     "MetalizationMask",

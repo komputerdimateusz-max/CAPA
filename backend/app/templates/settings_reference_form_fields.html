@@ -1,0 +1,10 @@
+<label>Reference name<input name="reference_name" required value="{{ form.reference_name or (selected_reference.reference_name if selected_reference else '') }}" /></label>
+<label>FG material
+  <input list="fg-materials" name="fg_part_number" required value="{{ form.fg_part_number or (selected_reference.fg_material.part_number if selected_reference and selected_reference.fg_material else '') }}" />
+  <datalist id="fg-materials">{% for material in materials %}<option value="{{ material.part_number }}">{{ material.description or '' }}</option>{% endfor %}</datalist>
+</label>
+<label>CT (s)<input type="number" min="0" step="0.1" name="ct_seconds" required value="{{ form.ct_seconds or (selected_reference.ct_seconds if selected_reference else '') }}" /></label>
+<h5>HC (by function)</h5>
+{% for worker_type in worker_types %}
+<label>{{ worker_type }} HC<input type="number" name="hc_{{ worker_type.lower() }}" min="0" step="0.01" value="{{ form['hc_' ~ worker_type.lower()] if ('hc_' ~ worker_type.lower()) in form else (selected_reference_hc_map.get(worker_type, 0) if selected_reference_hc_map else 0) }}" /></label>
+{% endfor %}

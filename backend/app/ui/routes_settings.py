@@ -15,7 +15,12 @@ from app.db.session import get_db
 from app.models.user import User
 from app.repositories import champions as champions_repo
 from app.repositories import projects as projects_repo
-from app.schemas.assembly_line import AssemblyLineCreate, AssemblyLineUpdate
+from app.schemas.assembly_line import (
+    AssemblyLineCreate,
+    AssemblyLineReferenceCreate,
+    AssemblyLineReferenceUpdate,
+    AssemblyLineUpdate,
+)
 from app.schemas.material import MATERIAL_CATEGORY_OPTIONS, MaterialCreate, MaterialUpdate
 from app.schemas.metalization import (
     MetalizationChamberCreate,
@@ -403,6 +408,63 @@ def settings_assembly_lines_page(
         message=message or ("Assembly line added" if (created or "").strip().lower() == "assembly_line" else None),
         error=error,
         assembly_line_id=assembly_line_id,
+    )
+
+def _render_reference_settings_page(
+    request: Request,
+    db: Session,
+    line_id: int,
+    reference_id: int | None = None,
+    message: str | None = None,
+    error: str | None = None,
+    form: dict[str, str] | None = None,
+    open_modal: str | None = None,
+):
+    line = settings_service.get_assembly_line(db, line_id)
+    if line is None:
+        raise HTTPException(status_code=404, detail="Assembly line not found")
+    references = settings_service.list_assembly_line_references(db, line_id)
+    selected_reference = next((ref for ref in references if ref.id == reference_id), None) if reference_id else None
+    selected_reference_hc_map = settings_service.get_assembly_line_reference_hc_map(db, selected_reference.id) if selected_reference else {}
+    selected_reference_materials_in = settings_service.list_materials_in_for_reference(db, selected_reference.id) if selected_reference else []
+    selected_reference_materials_out = settings_service.list_materials_out_for_reference(db, selected_reference.id) if selected_reference else []
+    return templates.TemplateResponse(
+        "settings_assembly_line_references.html",
+        {
+            "request": request,
+            "line": line,
+            "references": references,
+            "selected_reference": selected_reference,
+            "selected_reference_hc_map": selected_reference_hc_map,
+            "selected_reference_materials_in": selected_reference_materials_in,
+            "selected_reference_materials_out": selected_reference_materials_out,
+            "materials": settings_service.list_materials(db),
+            "worker_types": settings_service.LABOUR_COST_WORKER_TYPES,
+            "message": message,
+            "error": error,
+            "form": form or {},
+            "open_modal": open_modal,
+        },
+    )
+
+
+@router.get("/settings/assembly-lines/{line_id}/references", response_class=HTMLResponse, response_model=None)
+def settings_assembly_line_references_page(
+    request: Request,
+    line_id: int,
+    reference_id: int | None = None,
+    message: str | None = None,
+    created: str | None = None,
+    error: str | None = None,
+    db: Session = Depends(get_db),
+):
+    return _render_reference_settings_page(
+        request,
+        db,
+        line_id,
+        reference_id=reference_id,
+        message=message or ("Reference added" if (created or "").strip().lower() == "reference" else None),
+        error=error,
     )
 
 @router.get("/settings/metalization-masks", response_class=HTMLResponse, response_model=None)
@@ -1890,3 +1952,191 @@ def delete_material(
     except ValueError as exc:
         return _render_settings("settings_materials.html", request, db, champion_id=None, project_id=None, error=str(exc))
     return RedirectResponse(url="/ui/settings/materials?message=Material+deleted", status_code=303)
+
+@router.post("/settings/assembly-lines/{line_id}/references/create", response_model=None)
+def create_assembly_line_reference(
+    line_id: int,
+    request: Request,
+    reference_name: str = Form(...),
+    fg_part_number: str = Form(...),
+    ct_seconds: str = Form(...),
+    hc_operator: str = Form(default="0"),
+    hc_logistic: str = Form(default="0"),
+    hc_teamleader: str = Form(default="0"),
+    hc_inspector: str = Form(default="0"),
+    hc_specialist: str = Form(default="0"),
+    hc_technican: str = Form(default="0"),
+    db: Session = Depends(get_db),
+):
+    enforce_admin(_current_user(request))
+    hc_map: dict[str, float] = {}
+    try:
+        fg_material_id = _resolve_material_id(db, fg_part_number)
+        parsed_ct = _parse_optional_float(ct_seconds, "CT")
+        if parsed_ct is None:
+            raise ValueError("CT is required.")
+        hc_map = _build_hc_map(hc_operator, hc_logistic, hc_teamleader, hc_inspector, hc_specialist, hc_technican)
+        reference = settings_service.create_assembly_line_reference(
+            db,
+            line_id,
+            AssemblyLineReferenceCreate(
+                reference_name=reference_name,
+                fg_material_id=fg_material_id,
+                ct_seconds=parsed_ct,
+                hc_map=hc_map,
+            ),
+        )
+    except (ValidationError, ValueError, TypeError) as exc:
+        return _render_reference_settings_page(
+            request,
+            db,
+            line_id,
+            error=str(exc),
+            form={"reference_name": reference_name, "fg_part_number": fg_part_number, "ct_seconds": ct_seconds, **{f"hc_{k.lower()}": v for k, v in hc_map.items()}},
+            open_modal="reference-add",
+        )
+    return RedirectResponse(url=f"/ui/settings/assembly-lines/{line_id}/references?created=reference&reference_id={reference.id}", status_code=303)
+
+
+@router.post("/settings/assembly-lines/references/{reference_id}/update", response_model=None)
+def update_assembly_line_reference(
+    reference_id: int,
+    request: Request,
+    reference_name: str = Form(...),
+    fg_part_number: str = Form(...),
+    ct_seconds: str = Form(...),
+    hc_operator: str = Form(default="0"),
+    hc_logistic: str = Form(default="0"),
+    hc_teamleader: str = Form(default="0"),
+    hc_inspector: str = Form(default="0"),
+    hc_specialist: str = Form(default="0"),
+    hc_technican: str = Form(default="0"),
+    db: Session = Depends(get_db),
+):
+    enforce_admin(_current_user(request))
+    ref = settings_service.get_assembly_line_reference(db, reference_id)
+    if ref is None:
+        raise HTTPException(status_code=404, detail="Assembly line reference not found")
+    hc_map: dict[str, float] = {}
+    try:
+        fg_material_id = _resolve_material_id(db, fg_part_number)
+        parsed_ct = _parse_optional_float(ct_seconds, "CT")
+        if parsed_ct is None:
+            raise ValueError("CT is required.")
+        hc_map = _build_hc_map(hc_operator, hc_logistic, hc_teamleader, hc_inspector, hc_specialist, hc_technican)
+        settings_service.update_assembly_line_reference(
+            db,
+            reference_id,
+            AssemblyLineReferenceUpdate(
+                reference_name=reference_name,
+                fg_material_id=fg_material_id,
+                ct_seconds=parsed_ct,
+                hc_map=hc_map,
+            ),
+        )
+    except (ValidationError, ValueError, TypeError) as exc:
+        return _render_reference_settings_page(
+            request,
+            db,
+            ref.line_id,
+            reference_id=reference_id,
+            error=str(exc),
+            form={"reference_name": reference_name, "fg_part_number": fg_part_number, "ct_seconds": ct_seconds, **{f"hc_{k.lower()}": v for k, v in hc_map.items()}},
+            open_modal="reference-edit",
+        )
+    return RedirectResponse(url=f"/ui/settings/assembly-lines/{ref.line_id}/references?message=Reference+updated&reference_id={reference_id}", status_code=303)
+
+
+@router.post("/settings/assembly-lines/references/{reference_id}/delete", response_model=None)
+def delete_assembly_line_reference(reference_id: int, request: Request, db: Session = Depends(get_db)):
+    enforce_admin(_current_user(request))
+    ref = settings_service.get_assembly_line_reference(db, reference_id)
+    if ref is None:
+        raise HTTPException(status_code=404, detail="Assembly line reference not found")
+    line_id = ref.line_id
+    settings_service.delete_assembly_line_reference(db, reference_id)
+    return RedirectResponse(url=f"/ui/settings/assembly-lines/{line_id}/references?message=Reference+deleted", status_code=303)
+
+
+@router.post("/settings/assembly-lines/references/{reference_id}/materials-in/add", response_model=None)
+def add_reference_material_in(reference_id: int, request: Request, part_number: str = Form(...), qty_per_piece: str = Form(...), db: Session = Depends(get_db)):
+    enforce_admin(_current_user(request))
+    ref = settings_service.get_assembly_line_reference(db, reference_id)
+    if ref is None:
+        raise HTTPException(status_code=404, detail="Assembly line reference not found")
+    try:
+        parsed_qty = _parse_optional_float(qty_per_piece, "Qty / piece")
+        if parsed_qty is None:
+            raise ValueError("Qty / piece is required.")
+        settings_service.add_material_in_to_reference(db, reference_id, part_number=part_number, qty_per_piece=parsed_qty)
+    except ValueError as exc:
+        return RedirectResponse(url=f"/ui/settings/assembly-lines/{ref.line_id}/references?reference_id={reference_id}&error={quote_plus(str(exc))}", status_code=303)
+    return RedirectResponse(url=f"/ui/settings/assembly-lines/{ref.line_id}/references?reference_id={reference_id}&message=Material+added", status_code=303)
+
+
+@router.post("/settings/assembly-lines/references/{reference_id}/materials-in/{material_id}/qty", response_model=None)
+def update_reference_material_in(reference_id: int, material_id: int, request: Request, qty_per_piece: str = Form(...), db: Session = Depends(get_db)):
+    enforce_admin(_current_user(request))
+    ref = settings_service.get_assembly_line_reference(db, reference_id)
+    if ref is None:
+        raise HTTPException(status_code=404, detail="Assembly line reference not found")
+    try:
+        parsed_qty = _parse_optional_float(qty_per_piece, "Qty / piece")
+        if parsed_qty is None:
+            raise ValueError("Qty / piece is required.")
+        settings_service.update_reference_material_in_qty(db, reference_id, material_id, parsed_qty)
+    except ValueError as exc:
+        return RedirectResponse(url=f"/ui/settings/assembly-lines/{ref.line_id}/references?reference_id={reference_id}&error={quote_plus(str(exc))}", status_code=303)
+    return RedirectResponse(url=f"/ui/settings/assembly-lines/{ref.line_id}/references?reference_id={reference_id}&message=Material+updated", status_code=303)
+
+
+@router.post("/settings/assembly-lines/references/{reference_id}/materials-in/{material_id}/remove", response_model=None)
+def remove_reference_material_in(reference_id: int, material_id: int, request: Request, db: Session = Depends(get_db)):
+    enforce_admin(_current_user(request))
+    ref = settings_service.get_assembly_line_reference(db, reference_id)
+    if ref is None:
+        raise HTTPException(status_code=404, detail="Assembly line reference not found")
+    settings_service.remove_material_in_from_reference(db, reference_id, material_id)
+    return RedirectResponse(url=f"/ui/settings/assembly-lines/{ref.line_id}/references?reference_id={reference_id}&message=Material+removed", status_code=303)
+
+
+@router.post("/settings/assembly-lines/references/{reference_id}/materials-out/add", response_model=None)
+def add_reference_material_out(reference_id: int, request: Request, part_number: str = Form(...), qty_per_piece: str = Form(...), db: Session = Depends(get_db)):
+    enforce_admin(_current_user(request))
+    ref = settings_service.get_assembly_line_reference(db, reference_id)
+    if ref is None:
+        raise HTTPException(status_code=404, detail="Assembly line reference not found")
+    try:
+        parsed_qty = _parse_optional_float(qty_per_piece, "Qty / piece")
+        if parsed_qty is None:
+            raise ValueError("Qty / piece is required.")
+        settings_service.add_material_out_to_reference(db, reference_id, part_number=part_number, qty_per_piece=parsed_qty)
+    except ValueError as exc:
+        return RedirectResponse(url=f"/ui/settings/assembly-lines/{ref.line_id}/references?reference_id={reference_id}&error={quote_plus(str(exc))}", status_code=303)
+    return RedirectResponse(url=f"/ui/settings/assembly-lines/{ref.line_id}/references?reference_id={reference_id}&message=Outcome+material+added", status_code=303)
+
+
+@router.post("/settings/assembly-lines/references/{reference_id}/materials-out/{material_id}/qty", response_model=None)
+def update_reference_material_out(reference_id: int, material_id: int, request: Request, qty_per_piece: str = Form(...), db: Session = Depends(get_db)):
+    enforce_admin(_current_user(request))
+    ref = settings_service.get_assembly_line_reference(db, reference_id)
+    if ref is None:
+        raise HTTPException(status_code=404, detail="Assembly line reference not found")
+    try:
+        parsed_qty = _parse_optional_float(qty_per_piece, "Qty / piece")
+        if parsed_qty is None:
+            raise ValueError("Qty / piece is required.")
+        settings_service.update_reference_material_out_qty(db, reference_id, material_id, parsed_qty)
+    except ValueError as exc:
+        return RedirectResponse(url=f"/ui/settings/assembly-lines/{ref.line_id}/references?reference_id={reference_id}&error={quote_plus(str(exc))}", status_code=303)
+    return RedirectResponse(url=f"/ui/settings/assembly-lines/{ref.line_id}/references?reference_id={reference_id}&message=Outcome+material+updated", status_code=303)
+
+
+@router.post("/settings/assembly-lines/references/{reference_id}/materials-out/{material_id}/remove", response_model=None)
+def remove_reference_material_out(reference_id: int, material_id: int, request: Request, db: Session = Depends(get_db)):
+    enforce_admin(_current_user(request))
+    ref = settings_service.get_assembly_line_reference(db, reference_id)
+    if ref is None:
+        raise HTTPException(status_code=404, detail="Assembly line reference not found")
+    settings_service.remove_material_out_from_reference(db, reference_id, material_id)
+    return RedirectResponse(url=f"/ui/settings/assembly-lines/{ref.line_id}/references?reference_id={reference_id}&message=Outcome+material+removed", status_code=303)

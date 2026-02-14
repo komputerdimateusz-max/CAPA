@@ -8,7 +8,7 @@ from sqlalchemy import select
 from app.models.assembly_line import ProjectAssemblyLine
 from app.models.metalization import ProjectMetalizationMask
 from app.models.moulding import ProjectMouldingTool
-from app.schemas.assembly_line import AssemblyLineCreate
+from app.schemas.assembly_line import AssemblyLineCreate, AssemblyLineReferenceCreate
 from app.schemas.material import MaterialCreate, MaterialUpdate
 from app.schemas.metalization import MetalizationChamberCreate, MetalizationMaskCreate
 from app.schemas.moulding import MouldingMachineCreate, MouldingMachineUpdate, MouldingToolCreate
@@ -927,3 +927,70 @@ def test_assembly_line_labour_and_material_costs(db_session):
     assert listed.unit_labour_cost == pytest.approx(2.333333, rel=1e-4)
     assert listed.material_cost == pytest.approx(8.0)
     assert listed.material_out_cost == pytest.approx(2.5)
+
+
+def test_assembly_line_reference_averages_and_costs(db_session):
+    settings_service.update_labour_cost(db_session, "Operator", 60)
+    line = settings_service.create_assembly_line(
+        db_session,
+        AssemblyLineCreate(line_number="AL-REF-AVG", ct_seconds=20, hc=0, hc_map={"Operator": 1}),
+    )
+    mat_a = settings_service.create_material(
+        db_session,
+        MaterialCreate(part_number="AL-REF-IN", description="in", unit="kg", price_per_unit=4, category="Raw material", make_buy=False),
+    )
+    fg_1 = settings_service.create_material(
+        db_session,
+        MaterialCreate(part_number="AL-REF-FG-1", description="fg1", unit="pc", price_per_unit=3, category="FG", make_buy=False),
+    )
+    fg_2 = settings_service.create_material(
+        db_session,
+        MaterialCreate(part_number="AL-REF-FG-2", description="fg2", unit="pc", price_per_unit=5, category="FG", make_buy=False),
+    )
+
+    ref_a = settings_service.create_assembly_line_reference(
+        db_session,
+        line.id,
+        AssemblyLineReferenceCreate(reference_name="Ref A", fg_material_id=fg_1.id, ct_seconds=60, hc_map={"Operator": 1}),
+    )
+    ref_b = settings_service.create_assembly_line_reference(
+        db_session,
+        line.id,
+        AssemblyLineReferenceCreate(reference_name="Ref B", fg_material_id=fg_2.id, ct_seconds=120, hc_map={"Operator": 2}),
+    )
+    settings_service.add_material_in_to_reference(db_session, ref_a.id, material_id=mat_a.id, qty_per_piece=1)
+    settings_service.add_material_in_to_reference(db_session, ref_b.id, material_id=mat_a.id, qty_per_piece=3)
+    settings_service.add_material_out_to_reference(db_session, ref_a.id, material_id=fg_1.id, qty_per_piece=1)
+    settings_service.add_material_out_to_reference(db_session, ref_b.id, material_id=fg_2.id, qty_per_piece=1)
+
+    listed = next(l for l in settings_service.list_assembly_lines(db_session) if l.id == line.id)
+
+    assert listed.reference_count == 2
+    assert listed.ct_seconds == pytest.approx(90)
+    assert listed.hc_total == pytest.approx(1.5)
+    assert listed.unit_labour_cost == pytest.approx(2.5)
+    assert listed.material_cost == pytest.approx(8)
+    assert listed.material_out_cost == pytest.approx(4)
+
+
+def test_assembly_line_reference_name_unique_within_line(db_session):
+    line = settings_service.create_assembly_line(
+        db_session,
+        AssemblyLineCreate(line_number="AL-REF-UNIQ", ct_seconds=20, hc=0),
+    )
+    fg = settings_service.create_material(
+        db_session,
+        MaterialCreate(part_number="AL-REF-U-FG", description="fg", unit="pc", price_per_unit=1, category="FG", make_buy=False),
+    )
+    settings_service.create_assembly_line_reference(
+        db_session,
+        line.id,
+        AssemblyLineReferenceCreate(reference_name="Ref-X", fg_material_id=fg.id, ct_seconds=10),
+    )
+
+    with pytest.raises(ValueError, match="Reference name already exists"):
+        settings_service.create_assembly_line_reference(
+            db_session,
+            line.id,
+            AssemblyLineReferenceCreate(reference_name="Ref-X", fg_material_id=fg.id, ct_seconds=12),
+        )
