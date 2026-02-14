@@ -5,6 +5,11 @@ from datetime import date
 
 from sqlalchemy.orm import Session
 
+from app.models.analysis import (
+    OBSERVED_PROCESS_TYPE_ASSEMBLY,
+    OBSERVED_PROCESS_TYPE_METALIZATION,
+    OBSERVED_PROCESS_TYPE_MOULDING,
+)
 from app.repositories import analyses as analyses_repo
 
 
@@ -61,3 +66,44 @@ def create_analysis(
         "closed_at": None,
     }
     return analyses_repo.create_analysis(db, payload)
+
+
+def set_observed_process(db: Session, analysis_id: str, process_type: str | None):
+    return analyses_repo.set_analysis_observed_components(db, analysis_id, process_type, [])
+
+
+def add_observed_component(db: Session, analysis_id: str, process_type: str, component_id: int):
+    details = analyses_repo.get_analysis_5why(db, analysis_id)
+    if details is None:
+        raise ValueError("5WHY details not found")
+
+    if process_type == OBSERVED_PROCESS_TYPE_MOULDING:
+        current_ids = [item.id for item in details.moulding_tools]
+    elif process_type == OBSERVED_PROCESS_TYPE_METALIZATION:
+        current_ids = [item.id for item in details.metalization_masks]
+    elif process_type == OBSERVED_PROCESS_TYPE_ASSEMBLY:
+        current_ids = [item.id for item in details.assembly_references]
+    else:
+        raise ValueError("Invalid process type")
+
+    if component_id not in current_ids:
+        current_ids.append(component_id)
+    return analyses_repo.set_analysis_observed_components(db, analysis_id, process_type, current_ids)
+
+
+def remove_observed_component(db: Session, analysis_id: str, process_type: str, component_id: int):
+    details = analyses_repo.get_analysis_5why(db, analysis_id)
+    if details is None:
+        raise ValueError("5WHY details not found")
+
+    if process_type == OBSERVED_PROCESS_TYPE_MOULDING:
+        current_ids = [item.id for item in details.moulding_tools]
+    elif process_type == OBSERVED_PROCESS_TYPE_METALIZATION:
+        current_ids = [item.id for item in details.metalization_masks]
+    elif process_type == OBSERVED_PROCESS_TYPE_ASSEMBLY:
+        current_ids = [item.id for item in details.assembly_references]
+    else:
+        raise ValueError("Invalid process type")
+
+    kept_ids = [item_id for item_id in current_ids if item_id != component_id]
+    return analyses_repo.set_analysis_observed_components(db, analysis_id, process_type, kept_ids)

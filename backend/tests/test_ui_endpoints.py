@@ -839,7 +839,7 @@ def test_observed_process_switch_clears_previous_components(client, db_session):
 
     response = client.post(
         f"/ui/analyses/{analysis.id}/observed/assembly-references/add",
-        data={"reference_name": reference.reference_name},
+        data={"reference_id": str(reference.id)},
         allow_redirects=False,
     )
     assert response.status_code == 303
@@ -882,3 +882,114 @@ def test_remove_observed_component(client, db_session):
     assert response.status_code == 303
     db_session.refresh(details)
     assert details.moulding_tools == []
+
+
+def test_observed_component_add_remove_for_each_process(client, db_session):
+    analysis = Analysis(
+        id="5WHY-2026-0006",
+        type="5WHY",
+        title="Observed each type",
+        description="",
+        champion="",
+        status="Open",
+        created_at=date.today(),
+        closed_at=None,
+    )
+    details = Analysis5Why(analysis_id=analysis.id, problem_statement="p", root_cause="r")
+    tool = MouldingTool(tool_pn="TOOL-300", description="Test tool", ct_seconds=4.5)
+    mask = MetalizationMask(mask_pn="MASK-300", description="Test mask", ct_seconds=5.1)
+    line = AssemblyLine(line_number="L-03", ct_seconds=7.2, hc=2)
+    fg = Material(part_number="FG-03", description="FG", unit="pcs", price_per_unit=1.0)
+    reference = AssemblyLineReference(line=line, reference_name="REF-300", fg_material=fg, ct_seconds=6.2)
+    db_session.add_all([analysis, details, tool, mask, line, fg, reference])
+    db_session.commit()
+
+    client.post(
+        f"/ui/analyses/{analysis.id}/observed/set-process",
+        data={"process_type": "moulding"},
+        allow_redirects=False,
+    )
+    add_tool_response = client.post(
+        f"/ui/analyses/{analysis.id}/observed/moulding-tools/add",
+        data={"tool_pn": tool.tool_pn},
+        allow_redirects=False,
+    )
+    remove_tool_response = client.post(
+        f"/ui/analyses/{analysis.id}/observed/moulding-tools/remove",
+        data={"tool_id": tool.id},
+        allow_redirects=False,
+    )
+
+    assert add_tool_response.status_code == 303
+    assert remove_tool_response.status_code == 303
+
+    client.post(
+        f"/ui/analyses/{analysis.id}/observed/set-process",
+        data={"process_type": "metalization"},
+        allow_redirects=False,
+    )
+    add_mask_response = client.post(
+        f"/ui/analyses/{analysis.id}/observed/metalization-masks/add",
+        data={"mask_pn": mask.mask_pn},
+        allow_redirects=False,
+    )
+    remove_mask_response = client.post(
+        f"/ui/analyses/{analysis.id}/observed/metalization-masks/remove",
+        data={"mask_id": mask.id},
+        allow_redirects=False,
+    )
+
+    assert add_mask_response.status_code == 303
+    assert remove_mask_response.status_code == 303
+
+    client.post(
+        f"/ui/analyses/{analysis.id}/observed/set-process",
+        data={"process_type": "assembly"},
+        allow_redirects=False,
+    )
+    add_ref_response = client.post(
+        f"/ui/analyses/{analysis.id}/observed/assembly-references/add",
+        data={"reference_id": str(reference.id)},
+        allow_redirects=False,
+    )
+    remove_ref_response = client.post(
+        f"/ui/analyses/{analysis.id}/observed/assembly-references/remove",
+        data={"reference_id": reference.id},
+        allow_redirects=False,
+    )
+
+    assert add_ref_response.status_code == 303
+    assert remove_ref_response.status_code == 303
+
+
+def test_observed_component_process_mismatch_redirects_with_message(client, db_session):
+    analysis = Analysis(
+        id="5WHY-2026-0007",
+        type="5WHY",
+        title="Observed mismatch",
+        description="",
+        champion="",
+        status="Open",
+        created_at=date.today(),
+        closed_at=None,
+    )
+    details = Analysis5Why(
+        analysis_id=analysis.id,
+        problem_statement="p",
+        root_cause="r",
+        observed_process_type="moulding",
+    )
+    mask = MetalizationMask(mask_pn="MASK-400", description="Test mask", ct_seconds=5.1)
+    db_session.add_all([analysis, details, mask])
+    db_session.commit()
+
+    response = client.post(
+        f"/ui/analyses/{analysis.id}/observed/metalization-masks/add",
+        data={"mask_pn": mask.mask_pn},
+        allow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    assert "message=" in response.headers["location"]
+    db_session.refresh(details)
+    assert details.metalization_masks == []
