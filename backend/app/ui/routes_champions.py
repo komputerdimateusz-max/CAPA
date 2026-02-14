@@ -48,8 +48,9 @@ def champions_ranking(
         project_id=project_id,
     )
     actions = _filter_status_scope(actions, status_scope)
+    actions = [action for action in actions if action.champion_id is None or action.champion is not None]
     scores = champions_service.score_actions(actions)
-    summaries = champions_service.summarize_champions(scores)
+    summaries = champions_service.summarize_champions(scores, include_unassigned=True)
     projects = projects_repo.list_projects(db)
     filters = {
         "from": from_date.isoformat() if from_date else "",
@@ -85,8 +86,9 @@ def champions_table(
         project_id=project_id,
     )
     actions = _filter_status_scope(actions, status_scope)
+    actions = [action for action in actions if action.champion_id is None or action.champion is not None]
     scores = champions_service.score_actions(actions)
-    summaries = champions_service.summarize_champions(scores)
+    summaries = champions_service.summarize_champions(scores, include_unassigned=True)
     return templates.TemplateResponse(
         "partials/champions_table.html",
         {

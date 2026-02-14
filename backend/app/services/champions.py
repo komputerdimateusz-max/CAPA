@@ -63,8 +63,6 @@ def _compute_late_days(
 def _champion_label(action: Action) -> str:
     if action.champion:
         return action.champion.full_name
-    if action.owner:
-        return action.owner
     return "Unassigned"
 
 
@@ -125,12 +123,14 @@ def score_actions(actions: list[Action], today: date | None = None) -> list[Acti
     return scored
 
 
-def summarize_champions(scores: list[ActionScore]) -> list[ChampionScoreSummary]:
+def summarize_champions(scores: list[ActionScore], *, include_unassigned: bool = True) -> list[ChampionScoreSummary]:
     summaries: dict[tuple[int | None, str], dict[str, int]] = {}
     action_refs: dict[tuple[int | None, str], list[ActionScore]] = {}
 
     for score in scores:
         champion_id = score.action.champion_id
+        if champion_id is None and not include_unassigned:
+            continue
         key = (champion_id, score.champion_label)
         summaries.setdefault(
             key,
@@ -186,5 +186,12 @@ def summarize_champions(scores: list[ActionScore]) -> list[ChampionScoreSummary]
             )
         )
 
-    results.sort(key=lambda item: (item.total_score, item.actions_closed), reverse=True)
+    results.sort(
+        key=lambda item: (
+            item.champion_id is None,
+            -item.total_score,
+            -item.actions_closed,
+            item.champion_label.lower(),
+        )
+    )
     return results

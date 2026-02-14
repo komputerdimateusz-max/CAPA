@@ -37,7 +37,7 @@ def test_ui_settings_champions_subpage(client):
     assert "Add champion" in response.text
 
 
-def test_ui_settings_soft_delete_champion(client, db_session):
+def test_ui_settings_delete_champion_hard_delete(client, db_session):
     champion = settings_service.create_champion(
         db_session,
         first_name="Delete",
@@ -50,15 +50,14 @@ def test_ui_settings_soft_delete_champion(client, db_session):
     response = client.post(f"/ui/settings/champions/{champion.id}/delete", allow_redirects=False)
 
     assert response.status_code == 303
-    assert response.headers["location"] == "/ui/settings/champions?deleted=champion"
-    db_session.refresh(champion)
-    assert champion.is_active is False
+    assert response.headers["location"] == "/ui/settings/champions?message=Champion+deleted"
+    assert db_session.get(Champion, champion.id) is None
 
     list_response = client.get("/ui/settings/champions")
     assert "Delete Me" not in list_response.text
 
 
-def test_ui_action_detail_keeps_inactive_champion_visible(client, db_session):
+def test_ui_action_detail_shows_unassigned_when_champion_deleted(client, db_session):
     champion = settings_service.create_champion(
         db_session,
         first_name="Legacy",
@@ -73,12 +72,12 @@ def test_ui_action_detail_keeps_inactive_champion_visible(client, db_session):
     db_session.add(action)
     db_session.commit()
 
-    settings_service.deactivate_champion(db_session, champion.id)
+    settings_service.delete_champion(db_session, champion.id)
 
-    response = client.get(f"/ui/actions/{action.id}?edit=1")
+    response = client.get(f"/ui/actions/{action.id}")
 
     assert response.status_code == 200
-    assert "Legacy Owner" in response.text
+    assert "Unassigned" in response.text
 
 
 def test_ui_analyses_page(client, monkeypatch, tmp_path):
@@ -1200,3 +1199,24 @@ def test_observed_component_process_mismatch_redirects_with_message(client, db_s
     assert "message=" in response.headers["location"]
     db_session.refresh(details)
     assert details.metalization_masks == []
+
+
+def test_ui_champions_ranking_excludes_deleted_and_shows_unassigned(client, db_session):
+    champion = settings_service.create_champion(
+        db_session,
+        first_name="Rank",
+        last_name="Owner",
+        email="rank.owner@example.com",
+        position="PE",
+        birth_date=None,
+    )
+    db_session.add(Action(title="Ranked Action", status="CLOSED", champion_id=champion.id, created_at=datetime.utcnow()))
+    db_session.commit()
+
+    settings_service.delete_champion(db_session, champion.id)
+
+    response = client.get("/ui/champions")
+
+    assert response.status_code == 200
+    assert "Rank Owner" not in response.text
+    assert "Unassigned" in response.text

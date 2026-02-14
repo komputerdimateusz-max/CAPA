@@ -17,7 +17,10 @@ class Project(Base):
     status: Mapped[str | None] = mapped_column(String(50), nullable=True)
     max_volume: Mapped[int | None] = mapped_column(Integer, nullable=True)
     flex_percent: Mapped[float | None] = mapped_column(Float, nullable=True)
-    process_engineer_id: Mapped[int | None] = mapped_column(ForeignKey("champions.id"), nullable=True)
+    process_engineer_id: Mapped[int | None] = mapped_column(
+        ForeignKey("champions.id", ondelete="SET NULL"),
+        nullable=True,
+    )
 
     actions = relationship("Action", back_populates="project")
     process_engineer = relationship("Champion", back_populates="process_engineer_projects")

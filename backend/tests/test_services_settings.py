@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 
 import pytest
 from sqlalchemy import select
@@ -8,7 +8,6 @@ from sqlalchemy import select
 from app.models.assembly_line import ProjectAssemblyLine
 from app.models.metalization import ProjectMetalizationMask
 from app.models.moulding import ProjectMouldingTool
-from app.repositories import champions as champions_repo
 from app.schemas.assembly_line import AssemblyLineCreate, AssemblyLineReferenceCreate
 from app.schemas.material import MaterialCreate, MaterialUpdate
 from app.schemas.metalization import MetalizationChamberCreate, MetalizationMaskCreate
@@ -40,7 +39,7 @@ def test_create_champion_unique(db_session):
         )
 
 
-def test_deactivate_champion_soft_delete(db_session):
+def test_delete_champion_hard_delete_and_nullify_assignments(db_session):
     champion = settings_service.create_champion(
         db_session,
         first_name="Inactive",
@@ -50,13 +49,31 @@ def test_deactivate_champion_soft_delete(db_session):
         birth_date=None,
     )
 
-    deactivated = settings_service.deactivate_champion(db_session, champion.id)
+    project = settings_service.create_project(
+        db_session,
+        "Delete Champion Project",
+        "Serial production",
+        10,
+        5,
+        champion.id,
+        None,
+    )
 
-    assert deactivated.is_active is False
-    active = champions_repo.list_champions(db_session)
-    assert [row.id for row in active] == []
-    all_champions = champions_repo.list_champions(db_session, active_only=False)
-    assert [row.id for row in all_champions] == [champion.id]
+    from app.models.action import Action
+
+    action = Action(title="Owned action", status="OPEN", champion_id=champion.id, created_at=datetime.utcnow())
+    db_session.add(action)
+    db_session.commit()
+
+    settings_service.delete_champion(db_session, champion.id)
+
+    from app.models.champion import Champion
+
+    assert db_session.get(Champion, champion.id) is None
+    db_session.refresh(action)
+    db_session.refresh(project)
+    assert action.champion_id is None
+    assert project.process_engineer_id is None
 
 
 def test_update_project_fields(db_session):

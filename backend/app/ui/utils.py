@@ -30,7 +30,7 @@ def build_action_rows(actions: list[Action], subtasks: list[Subtask]) -> list[di
     for action in actions:
         days_late = calculate_action_days_late(action, subtask_map.get(action.id, []))
         owner = action.owner or "—"
-        champion = action.champion.full_name if action.champion else "—"
+        champion = action.champion.full_name if action.champion else "Unassigned"
         if action.process_type == "moulding":
             process_components = f"Moulding ({len(action.moulding_tools)})"
         elif action.process_type == "metalization":

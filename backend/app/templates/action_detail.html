@@ -42,7 +42,7 @@
           <label>
             Champion
             <select name="champion_id">
-              <option value="">—</option>
+              <option value="">Unassigned</option>
               {% for champion in champions %}
                 <option value="{{ champion.id }}" {% if action.champion_id == champion.id %}selected{% endif %}>{{ champion.full_name }}</option>
               {% endfor %}
@@ -167,7 +167,7 @@
       <div class="detail-grid">
         <div><strong>Status</strong><p><span class="status-badge status-{{ action.status|lower }}">{{ action.status }}</span></p></div>
         <div><strong>Process</strong><p>{{ process_labels.get(action.process_type, '—') }}</p></div>
-        <div><strong>Champion</strong><p>{{ action.champion.full_name if action.champion else "—" }}</p></div>
+        <div><strong>Champion</strong><p>{{ action.champion.full_name if action.champion else "Unassigned" }}</p></div>
         <div><strong>Project</strong><p>{{ action.project.name if action.project else "—" }}</p></div>
         <div><strong>Owner</strong><p>{{ action.owner or "—" }}</p></div>
         <div><strong>Due date</strong><p>{{ format_date(action.due_date) }}</p></div>
