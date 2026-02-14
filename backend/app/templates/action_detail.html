@@ -160,6 +160,9 @@
       </div>
     {% else %}
       <h3>{{ action.title }}</h3>
+      {% if action.analyses %}
+        <p><strong>Linked analysis:</strong> <a href="/ui/analyses/{{ action.analyses[0].id }}">{{ action.analyses[0].id }}</a></p>
+      {% endif %}
       <p class="muted">{{ action.description or "No description provided." }}</p>
       <div class="detail-grid">
         <div><strong>Status</strong><p><span class="status-badge status-{{ action.status|lower }}">{{ action.status }}</span></p></div>

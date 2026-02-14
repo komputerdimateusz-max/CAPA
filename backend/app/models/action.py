@@ -98,3 +98,4 @@ class Action(Base):
         secondary="action_assembly_references",
         passive_deletes=True,
     )
+    analyses = relationship("Analysis", secondary="analysis_actions", back_populates="actions")

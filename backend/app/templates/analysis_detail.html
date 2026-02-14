@@ -34,7 +34,83 @@
     <div class="card mt-16">
       <h4>Template sections</h4>
       {% if analysis.type == '5WHY' %}
-        <p class="muted">Placeholder for 5 Why prompts (problem statement, why ladder, root cause).</p>
+        {% set details = analysis.details_5why %}
+        <form method="post" action="/ui/analyses/{{ analysis.id }}/save-5why" class="stack-lg">
+          <div class="card card-compact">
+            <h5>SECTION 1 – Problem definition</h5>
+            <label>
+              Problem statement *
+              <textarea name="problem_statement" rows="3" required>{{ details.problem_statement if details else '' }}</textarea>
+            </label>
+            <label>
+              Where observed
+              <input type="text" name="where_observed" value="{{ details.where_observed if details else '' }}" />
+            </label>
+            <label>
+              Date detected
+              <input type="date" name="date_detected" value="{{ details.date_detected.isoformat() if details and details.date_detected else '' }}" />
+            </label>
+          </div>
+
+          <div class="card card-compact">
+            <h5>SECTION 2 – Why ladder</h5>
+            <label>Why 1: Why did the problem occur?
+              <textarea name="why_1" rows="3">{{ details.why_1 if details else '' }}</textarea>
+            </label>
+            <label>Why 2: Why did Why 1 occur?
+              <textarea name="why_2" rows="3">{{ details.why_2 if details else '' }}</textarea>
+            </label>
+            <label>Why 3: Why did Why 2 occur?
+              <textarea name="why_3" rows="3">{{ details.why_3 if details else '' }}</textarea>
+            </label>
+            <label>Why 4: Why did Why 3 occur?
+              <textarea name="why_4" rows="3">{{ details.why_4 if details else '' }}</textarea>
+            </label>
+            <label>Why 5: Why did Why 4 occur?
+              <textarea name="why_5" rows="3">{{ details.why_5 if details else '' }}</textarea>
+            </label>
+          </div>
+
+          <div class="card card-compact">
+            <h5>SECTION 3 – Root cause</h5>
+            <label>
+              Root cause *
+              <textarea name="root_cause" rows="3" required>{{ details.root_cause if details else '' }}</textarea>
+            </label>
+            <label>
+              Root cause category
+              <select name="root_cause_category">
+                <option value="">Select category</option>
+                {% for category in root_cause_categories %}
+                  <option value="{{ category }}" {% if details and details.root_cause_category == category %}selected{% endif %}>{{ category }}</option>
+                {% endfor %}
+              </select>
+            </label>
+          </div>
+
+          <div class="card card-compact">
+            <h5>SECTION 4 – Containment action (optional)</h5>
+            <label>
+              Immediate containment
+              <textarea name="containment_action" rows="3">{{ details.containment_action if details else '' }}</textarea>
+            </label>
+          </div>
+
+          <div class="card card-compact">
+            <h5>SECTION 5 – Corrective action proposal</h5>
+            <label>
+              Proposed corrective action
+              <textarea name="proposed_action" rows="3">{{ details.proposed_action if details else '' }}</textarea>
+            </label>
+            <div class="button-row mt-8">
+              <button class="button" type="submit">Save analysis</button>
+            </div>
+          </div>
+        </form>
+
+        <form method="post" action="/ui/analyses/{{ analysis.id }}/create-action" class="mt-16">
+          <button class="button" type="submit">Create Action from this Analysis</button>
+        </form>
       {% elif analysis.type == '8D' %}
         <p class="muted">Placeholder for 8D sections (team, problem, containment, root cause, corrective actions).</p>
       {% elif analysis.type == 'A3' %}
@@ -75,7 +151,15 @@
 
     <div class="card mt-16">
       <h4>Linked actions</h4>
-      <p class="muted">No linked actions yet. TODO: link actions to analyses for traceability.</p>
+      {% if analysis.actions %}
+        <ul>
+          {% for action in analysis.actions %}
+            <li><a href="/ui/actions/{{ action.id }}">#{{ action.id }} — {{ action.title }}</a></li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <p class="muted">No linked actions yet.</p>
+      {% endif %}
     </div>
   </section>
 {% endblock %}
