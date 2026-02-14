@@ -4,7 +4,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import date
 
-from sqlalchemy import exists, select, update
+from sqlalchemy import MetaData, exists, select, update
 from sqlalchemy.orm import Session
 
 from app.models.action import Action
@@ -55,32 +55,64 @@ class ChampionSyncStats:
 
 
 def sync_actions_champions_with_settings(db: Session) -> ChampionSyncStats:
+    metadata = MetaData()
+    metadata.reflect(bind=db.bind, only=["actions", "champions", "projects", "analyses"], resolve_fks=False)
+
+    actions_table = metadata.tables["actions"]
+    champions_table = metadata.tables["champions"]
+    projects_table = metadata.tables["projects"]
+    analyses_table = metadata.tables.get("analyses")
+
     orphan_action_where = (
-        Action.champion_id.is_not(None)
-        & ~exists(select(1).where(Champion.id == Action.champion_id))
+        actions_table.c.champion_id.is_not(None)
+        & ~exists(select(1).where(champions_table.c.id == actions_table.c.champion_id))
     )
+    unassigned_or_orphan_action_where = actions_table.c.champion_id.is_(None) | orphan_action_where
+
+    action_update_values: dict[str, object] = {"champion_id": None}
+    for optional_column in ("champion_name", "champion_first_name", "champion_last_name"):
+        if optional_column in actions_table.c:
+            action_update_values[optional_column] = None
+
     orphan_project_where = (
-        Project.process_engineer_id.is_not(None)
-        & ~exists(select(1).where(Champion.id == Project.process_engineer_id))
+        projects_table.c.process_engineer_id.is_not(None)
+        & ~exists(select(1).where(champions_table.c.id == projects_table.c.process_engineer_id))
     )
 
-    orphan_action_ids = list(db.scalars(select(Action.id).where(orphan_action_where)))
-    orphan_project_ids = list(db.scalars(select(Project.id).where(orphan_project_where)))
+    orphan_action_ids = list(db.scalars(select(actions_table.c.id).where(unassigned_or_orphan_action_where)))
+    orphan_project_ids = list(db.scalars(select(projects_table.c.id).where(orphan_project_where)))
 
     if orphan_action_ids:
-        db.execute(update(Action).where(orphan_action_where).values(champion_id=None))
+        db.execute(
+            update(actions_table)
+            .where(unassigned_or_orphan_action_where)
+            .values(**action_update_values)
+        )
     if orphan_project_ids:
-        db.execute(update(Project).where(orphan_project_where).values(process_engineer_id=None))
+        db.execute(update(projects_table).where(orphan_project_where).values(process_engineer_id=None))
 
     analyses_updated = 0
-    if hasattr(Analysis, "champion_id"):
+    if analyses_table is not None and "champion_id" in analyses_table.c:
         orphan_analysis_where = (
-            Analysis.champion_id.is_not(None)
-            & ~exists(select(1).where(Champion.id == Analysis.champion_id))
+            analyses_table.c.champion_id.is_not(None)
+            & ~exists(select(1).where(champions_table.c.id == analyses_table.c.champion_id))
         )
-        orphan_analysis_ids = list(db.scalars(select(Analysis.id).where(orphan_analysis_where)))
+        unassigned_or_orphan_analysis_where = analyses_table.c.champion_id.is_(None) | orphan_analysis_where
+
+        analysis_update_values: dict[str, object] = {"champion_id": None}
+        for optional_column in ("champion_name", "champion_first_name", "champion_last_name"):
+            if optional_column in analyses_table.c:
+                analysis_update_values[optional_column] = None
+
+        orphan_analysis_ids = list(
+            db.scalars(select(analyses_table.c.id).where(unassigned_or_orphan_analysis_where))
+        )
         if orphan_analysis_ids:
-            db.execute(update(Analysis).where(orphan_analysis_where).values(champion_id=None))
+            db.execute(
+                update(analyses_table)
+                .where(unassigned_or_orphan_analysis_where)
+                .values(**analysis_update_values)
+            )
             analyses_updated = len(orphan_analysis_ids)
 
     db.commit()
@@ -111,12 +143,6 @@ def _compute_late_days(
     return 0
 
 
-def _champion_label(action: Action) -> str:
-    if action.champion:
-        return action.champion.full_name
-    return "Unassigned"
-
-
 def score_actions(actions: list[Action], today: date | None = None) -> list[ActionScore]:
     today = today or date.today()
     scored: list[ActionScore] = []
@@ -124,7 +150,7 @@ def score_actions(actions: list[Action], today: date | None = None) -> list[Acti
     for action in actions:
         status = _normalize_status(action.status)
         events: list[ScoreEvent] = []
-        champion_label = _champion_label(action)
+        champion_label = "Unassigned"
         closed_date = action.closed_at.date() if action.closed_at else None
 
         if action.created_at:
@@ -184,9 +210,10 @@ def _bucket_champion(
         return None, "Unassigned"
     if valid_champion_ids is not None and champion_id not in valid_champion_ids:
         return None, "Unassigned"
-    if score.action.champion is None:
+    champion = score.action.champion
+    if champion is None:
         return None, "Unassigned"
-    return champion_id, score.action.champion.full_name
+    return champion_id, champion.full_name
 
 
 def summarize_champions(
