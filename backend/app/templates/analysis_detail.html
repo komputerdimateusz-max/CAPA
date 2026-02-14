@@ -60,6 +60,7 @@
                 </select>
               </label>
               <button class="button secondary mt-8" type="submit" formaction="/ui/analyses/{{ analysis.id }}/observed/set-process">Set observed area</button>
+
             </div>
             <label>
               Date detected
@@ -123,20 +124,21 @@
           </div>
         </form>
 
-        {% if details and details.observed_process_type == 'assembly' %}
-          <div class="card card-compact mt-16">
-            <h6>References (select one or more)</h6>
+        <div class="card card-compact mt-16">
+          <h5>Observed components</h5>
+          {% if details and details.observed_process_type == 'assembly' %}
+            <h6>Observed references</h6>
             <form method="post" action="/ui/analyses/{{ analysis.id }}/observed/assembly-references/add" class="form-inline mt-8">
               <label>
                 Reference
-                <input type="text" name="reference_name" list="observed-assembly-reference-options" placeholder="Type reference name" />
+                <input type="text" name="reference_id" list="observed-assembly-reference-options" placeholder="Type reference name / FG code..." autocomplete="off" />
               </label>
               <datalist id="observed-assembly-reference-options">
                 {% for reference in assembly_references %}
-                  <option value="{{ reference.reference_name }}">{{ reference.reference_name }} — FG: {{ reference.fg_material.part_number if reference.fg_material else '—' }} — Line: {{ reference.line.line_number if reference.line else '—' }}</option>
+                  <option value="{{ reference.id }}">{{ reference.reference_name }} — FG: {{ reference.fg_material.part_number if reference.fg_material else '—' }} — Line: {{ reference.line.line_number if reference.line else '—' }}</option>
                 {% endfor %}
               </datalist>
-              <button class="button secondary" type="submit">Add</button>
+              <button class="button secondary" type="submit">Add reference</button>
             </form>
             <div class="tag-list mt-8">
               {% for reference in details.assembly_references %}
@@ -147,21 +149,19 @@
                 </form>
               {% endfor %}
             </div>
-          </div>
-        {% elif details and details.observed_process_type == 'moulding' %}
-          <div class="card card-compact mt-16">
-            <h6>Moulding tools/forms</h6>
+          {% elif details and details.observed_process_type == 'moulding' %}
+            <h6>Observed moulding tools</h6>
             <form method="post" action="/ui/analyses/{{ analysis.id }}/observed/moulding-tools/add" class="form-inline mt-8">
               <label>
                 Tool
-                <input type="text" name="tool_pn" list="observed-moulding-tool-options" placeholder="Type tool PN" />
+                <input type="text" name="tool_pn" list="observed-moulding-tool-options" placeholder="Type tool PN" autocomplete="off" />
               </label>
               <datalist id="observed-moulding-tool-options">
                 {% for tool in moulding_tools %}
                   <option value="{{ tool.tool_pn }}">{{ tool.tool_pn }} — {{ tool.description or 'No description' }}</option>
                 {% endfor %}
               </datalist>
-              <button class="button secondary" type="submit">Add</button>
+              <button class="button secondary" type="submit">Add tool</button>
             </form>
             <div class="tag-list mt-8">
               {% for tool in details.moulding_tools %}
@@ -172,21 +172,19 @@
                 </form>
               {% endfor %}
             </div>
-          </div>
-        {% elif details and details.observed_process_type == 'metalization' %}
-          <div class="card card-compact mt-16">
-            <h6>Masks</h6>
+          {% elif details and details.observed_process_type == 'metalization' %}
+            <h6>Observed masks</h6>
             <form method="post" action="/ui/analyses/{{ analysis.id }}/observed/metalization-masks/add" class="form-inline mt-8">
               <label>
                 Mask
-                <input type="text" name="mask_pn" list="observed-metalization-mask-options" placeholder="Type mask PN" />
+                <input type="text" name="mask_pn" list="observed-metalization-mask-options" placeholder="Type mask PN" autocomplete="off" />
               </label>
               <datalist id="observed-metalization-mask-options">
                 {% for mask in metalization_masks %}
                   <option value="{{ mask.mask_pn }}">{{ mask.mask_pn }} — {{ mask.description or 'No description' }}</option>
                 {% endfor %}
               </datalist>
-              <button class="button secondary" type="submit">Add</button>
+              <button class="button secondary" type="submit">Add mask</button>
             </form>
             <div class="tag-list mt-8">
               {% for mask in details.metalization_masks %}
@@ -197,8 +195,10 @@
                 </form>
               {% endfor %}
             </div>
-          </div>
-        {% endif %}
+          {% else %}
+            <p class="muted">Select observed area first.</p>
+          {% endif %}
+        </div>
 
         <form method="post" action="/ui/analyses/{{ analysis.id }}/create-action" class="mt-16">
           <button class="button" type="submit">Create Action from this Analysis</button>

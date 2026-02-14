@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from pathlib import Path
+from urllib.parse import quote_plus
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -68,6 +69,13 @@ def _observed_component_count(details: Analysis5Why | None) -> int:
     if details.observed_process_type == OBSERVED_PROCESS_TYPE_ASSEMBLY:
         return len(details.assembly_references)
     return 0
+
+
+def _analysis_redirect(analysis_id: str, message: str | None = None) -> RedirectResponse:
+    url = f"/ui/analyses/{analysis_id}"
+    if message:
+        url = f"{url}?message={quote_plus(message)}"
+    return RedirectResponse(url=url, status_code=303)
 
 
 def _current_user(request: Request):
@@ -308,18 +316,10 @@ def set_observed_process(
         raise HTTPException(status_code=404, detail="Analysis not found")
     enforce_write_access(_current_user(request))
 
-    details = _ensure_5why_details(db, analysis_id)
+    _ensure_5why_details(db, analysis_id)
     normalized_process = _validate_observed_process_type(process_type)
-    component_ids: list[int] = []
-    if normalized_process == details.observed_process_type:
-        if normalized_process == OBSERVED_PROCESS_TYPE_MOULDING:
-            component_ids = [tool.id for tool in details.moulding_tools]
-        elif normalized_process == OBSERVED_PROCESS_TYPE_METALIZATION:
-            component_ids = [mask.id for mask in details.metalization_masks]
-        elif normalized_process == OBSERVED_PROCESS_TYPE_ASSEMBLY:
-            component_ids = [reference.id for reference in details.assembly_references]
-    analyses_repo.set_analysis_observed_components(db, analysis_id, normalized_process, component_ids)
-    return RedirectResponse(url=f"/ui/analyses/{analysis_id}", status_code=303)
+    analyses_service.set_observed_process(db, analysis_id, normalized_process)
+    return _analysis_redirect(analysis_id)
 
 
 @router.post("/analyses/{analysis_id}/observed/moulding-tools/add", response_model=None)
@@ -337,7 +337,7 @@ def add_observed_moulding_tool(
 
     details = _ensure_5why_details(db, analysis_id)
     if details.observed_process_type != OBSERVED_PROCESS_TYPE_MOULDING:
-        raise HTTPException(status_code=400, detail="Observed process_type must be moulding")
+        return _analysis_redirect(analysis_id, "Set observed area to Moulding before adding tools")
 
     tool = actions_repo.get_moulding_tool_by_id(db, int(tool_id)) if tool_id else None
     if tool is None and tool_pn:
@@ -345,11 +345,8 @@ def add_observed_moulding_tool(
     if not tool:
         raise HTTPException(status_code=404, detail="Moulding tool not found")
 
-    component_ids = [existing.id for existing in details.moulding_tools]
-    if tool.id not in component_ids:
-        component_ids.append(tool.id)
-    analyses_repo.set_analysis_observed_components(db, analysis_id, OBSERVED_PROCESS_TYPE_MOULDING, component_ids)
-    return RedirectResponse(url=f"/ui/analyses/{analysis_id}", status_code=303)
+    analyses_service.add_observed_component(db, analysis_id, OBSERVED_PROCESS_TYPE_MOULDING, tool.id)
+    return _analysis_redirect(analysis_id)
 
 
 @router.post("/analyses/{analysis_id}/observed/moulding-tools/remove", response_model=None)
@@ -365,9 +362,11 @@ def remove_observed_moulding_tool(
     enforce_write_access(_current_user(request))
 
     details = _ensure_5why_details(db, analysis_id)
-    component_ids = [existing.id for existing in details.moulding_tools if existing.id != tool_id]
-    analyses_repo.set_analysis_observed_components(db, analysis_id, OBSERVED_PROCESS_TYPE_MOULDING, component_ids)
-    return RedirectResponse(url=f"/ui/analyses/{analysis_id}", status_code=303)
+    if details.observed_process_type != OBSERVED_PROCESS_TYPE_MOULDING:
+        return _analysis_redirect(analysis_id, "Set observed area to Moulding before removing tools")
+
+    analyses_service.remove_observed_component(db, analysis_id, OBSERVED_PROCESS_TYPE_MOULDING, tool_id)
+    return _analysis_redirect(analysis_id)
 
 
 @router.post("/analyses/{analysis_id}/observed/metalization-masks/add", response_model=None)
@@ -385,7 +384,7 @@ def add_observed_metalization_mask(
 
     details = _ensure_5why_details(db, analysis_id)
     if details.observed_process_type != OBSERVED_PROCESS_TYPE_METALIZATION:
-        raise HTTPException(status_code=400, detail="Observed process_type must be metalization")
+        return _analysis_redirect(analysis_id, "Set observed area to Metalization before adding masks")
 
     mask = actions_repo.get_metalization_mask_by_id(db, int(mask_id)) if mask_id else None
     if mask is None and mask_pn:
@@ -393,11 +392,8 @@ def add_observed_metalization_mask(
     if not mask:
         raise HTTPException(status_code=404, detail="Metalization mask not found")
 
-    component_ids = [existing.id for existing in details.metalization_masks]
-    if mask.id not in component_ids:
-        component_ids.append(mask.id)
-    analyses_repo.set_analysis_observed_components(db, analysis_id, OBSERVED_PROCESS_TYPE_METALIZATION, component_ids)
-    return RedirectResponse(url=f"/ui/analyses/{analysis_id}", status_code=303)
+    analyses_service.add_observed_component(db, analysis_id, OBSERVED_PROCESS_TYPE_METALIZATION, mask.id)
+    return _analysis_redirect(analysis_id)
 
 
 @router.post("/analyses/{analysis_id}/observed/metalization-masks/remove", response_model=None)
@@ -413,9 +409,11 @@ def remove_observed_metalization_mask(
     enforce_write_access(_current_user(request))
 
     details = _ensure_5why_details(db, analysis_id)
-    component_ids = [existing.id for existing in details.metalization_masks if existing.id != mask_id]
-    analyses_repo.set_analysis_observed_components(db, analysis_id, OBSERVED_PROCESS_TYPE_METALIZATION, component_ids)
-    return RedirectResponse(url=f"/ui/analyses/{analysis_id}", status_code=303)
+    if details.observed_process_type != OBSERVED_PROCESS_TYPE_METALIZATION:
+        return _analysis_redirect(analysis_id, "Set observed area to Metalization before removing masks")
+
+    analyses_service.remove_observed_component(db, analysis_id, OBSERVED_PROCESS_TYPE_METALIZATION, mask_id)
+    return _analysis_redirect(analysis_id)
 
 
 @router.post("/analyses/{analysis_id}/observed/assembly-references/add", response_model=None)
@@ -423,7 +421,7 @@ def add_observed_assembly_reference(
     analysis_id: str,
     request: Request,
     reference_id: str | None = Form(None),
-    reference_name: str | None = Form(None),
+    reference_key: str | None = Form(None),
     db: Session = Depends(get_db),
 ):
     analysis = analyses_repo.get_analysis(db, analysis_id)
@@ -433,19 +431,20 @@ def add_observed_assembly_reference(
 
     details = _ensure_5why_details(db, analysis_id)
     if details.observed_process_type != OBSERVED_PROCESS_TYPE_ASSEMBLY:
-        raise HTTPException(status_code=400, detail="Observed process_type must be assembly")
+        return _analysis_redirect(analysis_id, "Set observed area to Assembly before adding references")
 
     reference = actions_repo.get_assembly_reference_by_id(db, int(reference_id)) if reference_id else None
-    if reference is None and reference_name:
-        reference = actions_repo.get_assembly_reference_by_name(db, reference_name.strip())
+    if reference is None and reference_key:
+        key = reference_key.strip()
+        if key.isdigit():
+            reference = actions_repo.get_assembly_reference_by_id(db, int(key))
+        if reference is None:
+            reference = actions_repo.get_assembly_reference_by_name(db, key)
     if not reference:
         raise HTTPException(status_code=404, detail="Assembly reference not found")
 
-    component_ids = [existing.id for existing in details.assembly_references]
-    if reference.id not in component_ids:
-        component_ids.append(reference.id)
-    analyses_repo.set_analysis_observed_components(db, analysis_id, OBSERVED_PROCESS_TYPE_ASSEMBLY, component_ids)
-    return RedirectResponse(url=f"/ui/analyses/{analysis_id}", status_code=303)
+    analyses_service.add_observed_component(db, analysis_id, OBSERVED_PROCESS_TYPE_ASSEMBLY, reference.id)
+    return _analysis_redirect(analysis_id)
 
 
 @router.post("/analyses/{analysis_id}/observed/assembly-references/remove", response_model=None)
@@ -461,9 +460,11 @@ def remove_observed_assembly_reference(
     enforce_write_access(_current_user(request))
 
     details = _ensure_5why_details(db, analysis_id)
-    component_ids = [existing.id for existing in details.assembly_references if existing.id != reference_id]
-    analyses_repo.set_analysis_observed_components(db, analysis_id, OBSERVED_PROCESS_TYPE_ASSEMBLY, component_ids)
-    return RedirectResponse(url=f"/ui/analyses/{analysis_id}", status_code=303)
+    if details.observed_process_type != OBSERVED_PROCESS_TYPE_ASSEMBLY:
+        return _analysis_redirect(analysis_id, "Set observed area to Assembly before removing references")
+
+    analyses_service.remove_observed_component(db, analysis_id, OBSERVED_PROCESS_TYPE_ASSEMBLY, reference_id)
+    return _analysis_redirect(analysis_id)
 
 
 @router.post("/analyses/{analysis_id}/create-action", response_model=None)
